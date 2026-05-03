@@ -142,6 +142,13 @@ def parse_portion_range(
     weight_parse = _parse_weight_hint(hint_text)
     if weight_parse is not None:
         unit_name, quantity = weight_parse
+        if quantity <= 0:
+            return _build_fallback_result(
+                component_name=component,
+                portion_hint=portion_hint,
+                reason_detail="parsed non-positive portion quantity",
+                confidence=0.20,
+            )
         grams = quantity * (1000.0 if unit_name == "kilogram" else 1.0)
         uncertainty = max(5.0, grams * 0.10)
         return PortionGramRange(
@@ -209,10 +216,10 @@ def _normalize_hint_text(value: str | None) -> str | None:
     text = value.casefold().strip()
     if not text:
         return None
-    text = re.sub(r"[-–—]+", " ", text)
+    text = re.sub(r"(?<=[a-z])[-–—]+(?=[a-z])", " ", text)
     text = re.sub(r"(?<=\d)(?=[a-z])", " ", text)
     text = re.sub(r"(?<=[a-z])(?=\d)", " ", text)
-    text = re.sub(r"[^a-z0-9./\s]", " ", text)
+    text = re.sub(r"[^a-z0-9./+\-\s]", " ", text)
     text = " ".join(text.split())
     return text or None
 
@@ -224,7 +231,7 @@ def _parse_weight_hint(hint_text: str) -> tuple[str, float] | None:
         if unit not in _WEIGHT_UNITS:
             continue
         quantity, explicit_quantity = _extract_quantity(tokens, unit_index=index)
-        if quantity is None or quantity <= 0 or not explicit_quantity:
+        if quantity is None or not explicit_quantity:
             continue
         return (unit, quantity)
     return None
@@ -259,15 +266,18 @@ def _extract_quantity(tokens: list[str], *, unit_index: int) -> tuple[float | No
         if quantity is not None:
             return (quantity, True)
 
-    return (None, False)
+    if any(any(char.isdigit() for char in token) for token in filtered):
+        return (None, False)
 
+    # Treat adjective-only hints like "medium bowl" as an implicit single unit.
+    return (1.0, False)
 
 def _parse_quantity_text(quantity_text: str) -> float | None:
     normalized = " ".join(quantity_text.split())
     if not normalized:
         return None
 
-    mixed_number_match = re.fullmatch(r"(\d+)\s+(\d+)\s*/\s*(\d+)", normalized)
+    mixed_number_match = re.fullmatch(r"([+-]?\d+)\s+(\d+)\s*/\s*(\d+)", normalized)
     if mixed_number_match is not None:
         whole, numerator, denominator = mixed_number_match.groups()
         denominator_value = int(denominator)
@@ -275,7 +285,7 @@ def _parse_quantity_text(quantity_text: str) -> float | None:
             return None
         return float(int(whole) + (int(numerator) / denominator_value))
 
-    fraction_match = re.fullmatch(r"(\d+)\s*/\s*(\d+)", normalized)
+    fraction_match = re.fullmatch(r"([+-]?\d+)\s*/\s*(\d+)", normalized)
     if fraction_match is not None:
         numerator, denominator = fraction_match.groups()
         denominator_value = int(denominator)
@@ -283,7 +293,7 @@ def _parse_quantity_text(quantity_text: str) -> float | None:
             return None
         return float(int(numerator) / denominator_value)
 
-    if re.fullmatch(r"\d+(?:\.\d+)?", normalized):
+    if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", normalized):
         return float(normalized)
 
     return _parse_word_quantity(normalized)
