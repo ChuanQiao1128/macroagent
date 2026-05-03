@@ -1,0 +1,222 @@
+[
+  {
+    "id": "personal_seed_0001",
+    "name": "Fairlife 2% ultra-filtered milk",
+    "aliases": ["fairlife 2% milk", "fairlife reduced fat milk"],
+    "category": "dairy",
+    "source": "PERSONAL",
+    "kcal_per_100g": 50,
+    "protein_g_per_100g": 5.6,
+    "carbs_g_per_100g": 2.5,
+    "fat_g_per_100g": 1.9
+  },
+  {
+    "id": "personal_seed_0002",
+    "name": "Optimum Nutrition Gold Standard Whey, double rich chocolate",
+    "aliases": ["on whey", "gold standard whey"],
+    "category": "dairy",
+    "source": "PERSONAL",
+    "kcal_per_100g": 374,
+    "protein_g_per_100g": 76.0,
+    "carbs_g_per_100g": 5.3,
+    "fat_g_per_100g": 4.6
+  },
+  {
+    "id": "personal_seed_0003",
+    "name": "Fage Total 0% Greek yogurt",
+    "aliases": ["fage 0 greek yogurt", "plain greek yogurt 0%"],
+    "category": "dairy",
+    "source": "PERSONAL",
+    "kcal_per_100g": 54,
+    "protein_g_per_100g": 10.3,
+    "carbs_g_per_100g": 3.9,
+    "fat_g_per_100g": 0.4
+  },
+  {
+    "id": "personal_seed_0004",
+    "name": "Egg, whole, hard-boiled",
+    "aliases": ["hard boiled egg", "boiled egg"],
+    "category": "egg",
+    "source": "PERSONAL",
+    "kcal_per_100g": 155,
+    "protein_g_per_100g": 12.6,
+    "carbs_g_per_100g": 1.1,
+    "fat_g_per_100g": 10.6
+  },
+  {
+    "id": "personal_seed_0005",
+    "name": "Coffee, brewed, black",
+    "aliases": ["black coffee", "drip coffee"],
+    "category": "beverages",
+    "source": "PERSONAL",
+    "kcal_per_100g": 2,
+    "protein_g_per_100g": 0.1,
+    "carbs_g_per_100g": 0.0,
+    "fat_g_per_100g": 0.0
+  },
+  {
+    "id": "personal_seed_0006",
+    "name": "Oats, rolled, dry",
+    "aliases": ["rolled oats", "old fashioned oats"],
+    "category": "grains",
+    "source": "PERSONAL",
+    "kcal_per_100g": 389,
+    "protein_g_per_100g": 16.9,
+    "carbs_g_per_100g": 66.3,
+    "fat_g_per_100g": 6.9
+  },
+  {
+    "id": "personal_seed_0007",
+    "name": "White rice, cooked (personal prep)",
+    "aliases": ["personal white rice", "home cooked white rice"],
+    "category": "rice",
+    "source": "PERSONAL",
+    "kcal_per_100g": 130,
+    "protein_g_per_100g": 2.4,
+    "carbs_g_per_100g": 28.2,
+    "fat_g_per_100g": 0.3
+  },
+  {
+    "id": "personal_seed_0008",
+    "name": "Brown rice, cooked (personal prep)",
+    "aliases": ["personal brown rice", "home cooked brown rice"],
+    "category": "rice",
+    "source": "PERSONAL",
+    "kcal_per_100g": 123,
+    "protein_g_per_100g": 2.7,
+    "carbs_g_per_100g": 25.6,
+    "fat_g_per_100g": 1.0
+  },
+  {
+    "id": "personal_seed_0009",
+    "name": "Chicken breast, cooked (home prep)",
+    "aliases": ["home chicken breast", "meal prep chicken breast"],
+    "category": "chicken",
+    "source": "PERSONAL",
+    "kcal_per_100g": 165,
+    "protein_g_per_100g": 31.0,
+    "carbs_g_per_100g": 0.0,
+    "fat_g_per_100g": 3.6
+  },
+  {
+    "id": "personal_seed_0010",
+    "name": "Tuna, canned in water, drained",
+    "aliases": ["canned tuna", "tuna in water"],
+    "category": "fish",
+    "source": "PERSONAL",
+    "kcal_per_100g": 116,
+    "protein_g_per_100g": 25.5,
+    "carbs_g_per_100g": 0.0,
+    "fat_g_per_100g": 0.8
+  },
+  {
+    "id": "personal_seed_0011",
+    "name": "Tofu, firm",
+    "aliases": ["firm tofu", "pressed tofu"],
+    "category": "legumes",
+    "source": "PERSONAL",
+    "kcal_per_100g": 144,
+    "protein_g_per_100g": 17.3,
+    "carbs_g_per_100g": 2.8,
+    "fat_g_per_100g": 8.7
+  },
+  {
+    "id": "personal_seed_0012",
+    "name": "Banana, raw",
+    "aliases": ["banana", "fresh banana"],
+    "category": "fruit",
+    "source": "PERSONAL",
+    "kcal_per_100g": 89,
+    "protein_g_per_100g": 1.1,
+    "carbs_g_per_100g": 22.8,
+    "fat_g_per_100g": 0.3
+  },
+  {
+    "id": "personal_seed_0013",
+    "name": "Apple, raw, with skin",
+    "aliases": ["apple", "fresh apple"],
+    "category": "fruit",
+    "source": "PERSONAL",
+    "kcal_per_100g": 52,
+    "protein_g_per_100g": 0.3,
+    "carbs_g_per_100g": 13.8,
+    "fat_g_per_100g": 0.2
+  },
+  {
+    "id": "personal_seed_0014",
+    "name": "Blueberries, raw",
+    "aliases": ["blueberries", "fresh blueberries"],
+    "category": "fruit",
+    "source": "PERSONAL",
+    "kcal_per_100g": 57,
+    "protein_g_per_100g": 0.7,
+    "carbs_g_per_100g": 14.5,
+    "fat_g_per_100g": 0.3
+  },
+  {
+    "id": "personal_seed_0015",
+    "name": "Almonds, dry roasted, unsalted",
+    "aliases": ["almonds", "roasted almonds"],
+    "category": "nuts",
+    "source": "PERSONAL",
+    "kcal_per_100g": 579,
+    "protein_g_per_100g": 21.2,
+    "carbs_g_per_100g": 21.6,
+    "fat_g_per_100g": 49.9
+  },
+  {
+    "id": "personal_seed_0016",
+    "name": "Peanut butter, natural",
+    "aliases": ["natural peanut butter", "peanut butter"],
+    "category": "nuts",
+    "source": "PERSONAL",
+    "kcal_per_100g": 588,
+    "protein_g_per_100g": 25.1,
+    "carbs_g_per_100g": 20.0,
+    "fat_g_per_100g": 50.4
+  },
+  {
+    "id": "personal_seed_0017",
+    "name": "Olive oil, extra virgin",
+    "aliases": ["extra virgin olive oil", "olive oil"],
+    "category": "oils",
+    "source": "PERSONAL",
+    "kcal_per_100g": 884,
+    "protein_g_per_100g": 0.0,
+    "carbs_g_per_100g": 0.0,
+    "fat_g_per_100g": 100.0
+  },
+  {
+    "id": "personal_seed_0018",
+    "name": "Avocado oil",
+    "aliases": ["refined avocado oil", "cooking avocado oil"],
+    "category": "oils",
+    "source": "PERSONAL",
+    "kcal_per_100g": 884,
+    "protein_g_per_100g": 0.0,
+    "carbs_g_per_100g": 0.0,
+    "fat_g_per_100g": 100.0
+  },
+  {
+    "id": "personal_seed_0019",
+    "name": "Cottage cheese, low-fat (2%)",
+    "aliases": ["2% cottage cheese", "low fat cottage cheese"],
+    "category": "dairy",
+    "source": "PERSONAL",
+    "kcal_per_100g": 84,
+    "protein_g_per_100g": 11.1,
+    "carbs_g_per_100g": 4.3,
+    "fat_g_per_100g": 2.3
+  },
+  {
+    "id": "personal_seed_0020",
+    "name": "Sourdough bread, local bakery",
+    "aliases": ["local sourdough bread", "bakery sourdough"],
+    "category": "bread",
+    "source": "PERSONAL",
+    "kcal_per_100g": 289,
+    "protein_g_per_100g": 9.1,
+    "carbs_g_per_100g": 56.0,
+    "fat_g_per_100g": 2.8
+  }
+]

@@ -8,7 +8,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "usda_seed.json"
+USDA_DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "usda_seed.json"
+PERSONAL_DATA_FILE = (
+    Path(__file__).resolve().parents[1] / "data" / "personal_seed.json"
+)
 
 
 class MacroEntry(BaseModel):
@@ -18,7 +21,7 @@ class MacroEntry(BaseModel):
     name: str = Field(..., min_length=1)
     aliases: tuple[str, ...] = Field(default_factory=tuple)
     category: str = Field(..., min_length=1)
-    source: Literal["USDA"]
+    source: Literal["USDA", "PERSONAL"]
     kcal_per_100g: float = Field(..., ge=0)
     protein_g_per_100g: float = Field(..., ge=0)
     carbs_g_per_100g: float = Field(..., ge=0)
@@ -26,14 +29,38 @@ class MacroEntry(BaseModel):
 
 
 @lru_cache(maxsize=1)
-def _load_seed_entries() -> tuple[MacroEntry, ...]:
-    payload = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+def _load_usda_seed_entries() -> tuple[MacroEntry, ...]:
+    return _load_seed_entries(
+        data_file=USDA_DATA_FILE,
+        source_label="USDA",
+        expected_source="USDA",
+    )
+
+
+@lru_cache(maxsize=1)
+def _load_personal_seed_entries() -> tuple[MacroEntry, ...]:
+    return _load_seed_entries(
+        data_file=PERSONAL_DATA_FILE,
+        source_label="PERSONAL",
+        expected_source="PERSONAL",
+    )
+
+
+def _load_seed_entries(
+    *, data_file: Path, source_label: str, expected_source: Literal["USDA", "PERSONAL"]
+) -> tuple[MacroEntry, ...]:
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
-        raise ValueError("USDA seed catalog must be a JSON list")
+        raise ValueError(f"{source_label} seed catalog must be a JSON list")
 
     entries = tuple(MacroEntry.model_validate(item) for item in payload)
     if len({entry.id for entry in entries}) != len(entries):
-        raise ValueError("USDA seed catalog contains duplicate ids")
+        raise ValueError(f"{source_label} seed catalog contains duplicate ids")
+
+    if any(entry.source != expected_source for entry in entries):
+        raise ValueError(
+            f"{source_label} seed catalog contains entries with invalid source values"
+        )
 
     return entries
 
@@ -41,7 +68,7 @@ def _load_seed_entries() -> tuple[MacroEntry, ...]:
 @lru_cache(maxsize=1)
 def _lookup_index() -> MappingProxyType[str, MacroEntry]:
     lookup: dict[str, MacroEntry] = {}
-    for entry in _load_seed_entries():
+    for entry in _load_usda_seed_entries():
         candidates = (entry.name, *entry.aliases)
         for candidate in candidates:
             key = _normalize_lookup_key(candidate)
@@ -56,7 +83,12 @@ def _normalize_lookup_key(value: str) -> str:
 
 def load_macro_entries() -> tuple[MacroEntry, ...]:
     """Load all USDA seed entries as immutable MacroEntry instances."""
-    return _load_seed_entries()
+    return _load_usda_seed_entries()
+
+
+def load_personal_macro_entries() -> tuple[MacroEntry, ...]:
+    """Load all personal seed entries as immutable MacroEntry instances."""
+    return _load_personal_seed_entries()
 
 
 def get_macro_entry(name_or_alias: str) -> MacroEntry | None:
@@ -79,9 +111,14 @@ def get_macro_entry_by_name(name_or_alias: str) -> MacroEntry | None:
     return get_macro_entry(name_or_alias)
 
 
+@lru_cache(maxsize=1)
+def _load_all_entries() -> tuple[MacroEntry, ...]:
+    return (*_load_usda_seed_entries(), *_load_personal_seed_entries())
+
+
 def load_all_macro_entries() -> tuple[MacroEntry, ...]:
-    """Compatibility alias for callers that prefer explicit load naming."""
-    return load_macro_entries()
+    """Load all available nutrition entries (USDA + personal seeds)."""
+    return _load_all_entries()
 
 
 __all__ = [
@@ -91,4 +128,5 @@ __all__ = [
     "get_macro_entry_by_name",
     "load_all_macro_entries",
     "load_macro_entries",
+    "load_personal_macro_entries",
 ]
