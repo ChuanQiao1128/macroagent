@@ -368,7 +368,11 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
 
 
 def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
-    """Export full ledger contents as a deterministic JSON-safe dictionary."""
+    """Export full ledger contents as a deterministic JSON-safe dictionary.
+
+    Backup support is intentionally export-only for now; there is no public
+    restore API until atomic restore semantics are defined and tested.
+    """
     with _connect(_normalize_database_path(database_path)) as connection:
         _apply_migrations(connection)
         schema_rows = connection.execute(
@@ -481,50 +485,6 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
         "meal_count": len(meals_payload),
         "meals": meals_payload,
     }
-
-
-def import_ledger_backup(database_path: str | Path, payload: dict[str, object]) -> dict[str, int]:
-    """Restore meals from an export_ledger_backup() payload."""
-    if payload.get("format") != _EXPORT_FORMAT:
-        raise ValueError("unsupported export format")
-
-    if payload.get("export_schema_version") != _EXPORT_SCHEMA_VERSION:
-        raise ValueError("unsupported export schema version")
-
-    meals_payload = payload.get("meals")
-    if not isinstance(meals_payload, list):
-        raise ValueError("payload['meals'] must be a list")
-
-    imported_meal_count = 0
-    for meal_payload in meals_payload:
-        if not isinstance(meal_payload, dict):
-            raise ValueError("each meal payload must be a dictionary")
-
-        meal_id_raw = meal_payload.get("meal_id")
-        local_date_raw = meal_payload.get("local_date")
-        created_at_raw = meal_payload.get("created_at")
-        meal_estimate_payload = meal_payload.get("meal_estimate")
-
-        if not isinstance(meal_id_raw, str) or not meal_id_raw:
-            raise ValueError("meal_id must be a non-empty string")
-        if not isinstance(local_date_raw, str) or not local_date_raw:
-            raise ValueError("local_date must be a non-empty string")
-        if not isinstance(created_at_raw, str) or not created_at_raw:
-            raise ValueError("created_at must be a non-empty string")
-        if not isinstance(meal_estimate_payload, dict):
-            raise ValueError("meal_estimate must be a dictionary")
-
-        meal_estimate = MealEstimate.model_validate(meal_estimate_payload)
-        insert_meal_estimate(
-            database_path,
-            meal_estimate=meal_estimate,
-            local_date=local_date_raw,
-            meal_id=meal_id_raw,
-            created_at=created_at_raw,
-        )
-        imported_meal_count += 1
-
-    return {"imported_meal_count": imported_meal_count}
 
 
 def _insert_component_row(
@@ -934,7 +894,6 @@ __all__ = [
     "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
-    "import_ledger_backup",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
 ]
