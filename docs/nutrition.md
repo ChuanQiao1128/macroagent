@@ -26,6 +26,22 @@ The public model is `MacroEntry`, a frozen Pydantic model with stable fields:
 
 `MacroEntry.source` accepts either `USDA` or `PERSONAL`.
 
+## Match Result Model
+
+The ranked matcher returns `MacroMatchCandidate`, a frozen Pydantic model with:
+
+- `entry`
+- `score`
+- `matched_on`
+- `match_type`
+
+`match_type` can be one of:
+
+- `exact_name`
+- `exact_alias`
+- `token_containment`
+- `fuzzy`
+
 ## Lookup API
 
 The module exports these helpers:
@@ -36,6 +52,8 @@ The module exports these helpers:
 - `get_macro_entry(name_or_alias)`
 - `get_macro_entry_by_name(name_or_alias)`
 - `find_macro_entry(name_or_alias)`
+- `match_food_name(query, limit=5, min_score=0.6)`
+- `find_macro_entry_candidates(query, limit=5, min_score=0.6)`
 
 Loader behavior:
 
@@ -43,7 +61,14 @@ Loader behavior:
 - `load_personal_macro_entries()` returns the personal seed catalog.
 - `load_all_macro_entries()` returns USDA and personal entries together.
 
-Lookup behavior is exact-match only:
+Ranked matcher behavior:
+
+- `match_food_name()` searches USDA and personal entries together.
+- It supports exact name matches, exact alias matches, token containment, and lightweight fuzzy matching.
+- Results are ranked by score, then personal entries are preferred over USDA entries when scores tie.
+- `find_macro_entry_candidates()` is an alias for `match_food_name()` for call-site readability.
+
+Exact lookup behavior remains exact-match only:
 
 - case-insensitive
 - whitespace-normalized
