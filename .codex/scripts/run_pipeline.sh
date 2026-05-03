@@ -79,15 +79,11 @@ run_role() {
   local output_file="${4:-}"
   local role_file=".codex/roles/${role}.md"
   local provider_mode="$CODEX_PROVIDER_MODE"
-  local output_args=()
+  local prompt_file
 
   if [[ ! -f "$role_file" ]]; then
     echo "Role file not found: $role_file" >&2
     exit 1
-  fi
-
-  if [[ -n "$output_file" ]]; then
-    output_args=(--output-last-message "$output_file")
   fi
 
   case "$provider_mode" in
@@ -107,36 +103,51 @@ run_role() {
       ;;
   esac
 
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/macroagent-${TASK_ID}-${role}.XXXXXX")"
+  {
+    printf '# Shared project context\n\n'
+    cat .codex/AGENTS.md
+    printf '\n\n# Role instructions: %s\n\n' "$role"
+    cat "$role_file"
+    printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
+    cat "$BRIEF"
+  } > "$prompt_file"
+
   if [[ "$provider_mode" == "helicone" ]]; then
-    {
-      printf '# Shared project context\n\n'
-      cat .codex/AGENTS.md
-      printf '\n\n# Role instructions: %s\n\n' "$role"
-      cat "$role_file"
-      printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
-      cat "$BRIEF"
-    } | codex exec \
-      --model "$model" \
-      --config 'model_provider="helicone"' \
-      --sandbox "$sandbox" \
-      --cd "$ROOT" \
-      "${output_args[@]}" \
-      -
+    if [[ -n "$output_file" ]]; then
+      codex exec \
+        --model "$model" \
+        --config 'model_provider="helicone"' \
+        --sandbox "$sandbox" \
+        --cd "$ROOT" \
+        --output-last-message "$output_file" \
+        - < "$prompt_file"
+    else
+      codex exec \
+        --model "$model" \
+        --config 'model_provider="helicone"' \
+        --sandbox "$sandbox" \
+        --cd "$ROOT" \
+        - < "$prompt_file"
+    fi
   else
-    {
-      printf '# Shared project context\n\n'
-      cat .codex/AGENTS.md
-      printf '\n\n# Role instructions: %s\n\n' "$role"
-      cat "$role_file"
-      printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
-      cat "$BRIEF"
-    } | codex exec \
-      --model "$model" \
-      --sandbox "$sandbox" \
-      --cd "$ROOT" \
-      "${output_args[@]}" \
-      -
+    if [[ -n "$output_file" ]]; then
+      codex exec \
+        --model "$model" \
+        --sandbox "$sandbox" \
+        --cd "$ROOT" \
+        --output-last-message "$output_file" \
+        - < "$prompt_file"
+    else
+      codex exec \
+        --model "$model" \
+        --sandbox "$sandbox" \
+        --cd "$ROOT" \
+        - < "$prompt_file"
+    fi
   fi
+
+  rm -f "$prompt_file"
 }
 
 echo "Pipeline starting for $TASK_ID"

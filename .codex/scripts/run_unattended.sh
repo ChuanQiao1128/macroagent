@@ -95,26 +95,6 @@ assert_no_protected_changes() {
   fi
 }
 
-codex_provider_args() {
-  case "$CODEX_PROVIDER_MODE" in
-    chatgpt|openai)
-      ;;
-    helicone)
-      if [[ -z "${OPENAI_API_KEY:-}" || -z "${HELICONE_API_KEY:-}" ]]; then
-        echo "Helicone mode requires OPENAI_API_KEY and HELICONE_API_KEY" >&2
-        return 1
-      fi
-      export HELICONE_AUTH_HEADER="Bearer ${HELICONE_API_KEY}"
-      printf "%s\n" "--config"
-      printf "%s\n" 'model_provider="helicone"'
-      ;;
-    *)
-      echo "Unsupported CODEX_PROVIDER_MODE: $CODEX_PROVIDER_MODE" >&2
-      return 1
-      ;;
-  esac
-}
-
 restore_generated_protected_changes() {
   local base="$1"
   local restored=0
@@ -145,15 +125,14 @@ run_repair() {
   local attempt="$4"
   local safe_task
   local repair_log
-  local provider_args=()
+  local prompt_file
 
   safe_task="$(safe_task_name "$task_id")"
   repair_log="$RUN_LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${safe_task}-repair-${attempt}.log"
 
-  mapfile -t provider_args < <(codex_provider_args)
-
   restore_generated_protected_changes "$base" || true
 
+  prompt_file="$(mktemp "${TMPDIR:-/tmp}/macroagent-${task_id}-repair-${attempt}.XXXXXX")"
   {
     printf '# Shared project context\n\n'
     cat .codex/AGENTS.md
@@ -169,12 +148,36 @@ run_repair() {
     printf 'After editing, run focused tests or lint that are relevant to your fix.\n'
     printf '\n\n# Failure log tail\n\n'
     tail -n "$REPAIR_LOG_LINES" "$failure_log"
-  } | codex exec \
-    --model "$REPAIR_MODEL" \
-    "${provider_args[@]}" \
-    --sandbox workspace-write \
-    --cd "$ROOT" \
-    - 2>&1 | tee "$repair_log"
+  } > "$prompt_file"
+
+  case "$CODEX_PROVIDER_MODE" in
+    chatgpt|openai)
+      codex exec \
+        --model "$REPAIR_MODEL" \
+        --sandbox workspace-write \
+        --cd "$ROOT" \
+        - < "$prompt_file" 2>&1 | tee "$repair_log"
+      ;;
+    helicone)
+      if [[ -z "${OPENAI_API_KEY:-}" || -z "${HELICONE_API_KEY:-}" ]]; then
+        echo "Helicone mode requires OPENAI_API_KEY and HELICONE_API_KEY" >&2
+        return 1
+      fi
+      export HELICONE_AUTH_HEADER="Bearer ${HELICONE_API_KEY}"
+      codex exec \
+        --model "$REPAIR_MODEL" \
+        --config 'model_provider="helicone"' \
+        --sandbox workspace-write \
+        --cd "$ROOT" \
+        - < "$prompt_file" 2>&1 | tee "$repair_log"
+      ;;
+    *)
+      echo "Unsupported CODEX_PROVIDER_MODE: $CODEX_PROVIDER_MODE" >&2
+      return 1
+      ;;
+  esac
+
+  rm -f "$prompt_file"
 
   restore_generated_protected_changes "$base" || true
 
