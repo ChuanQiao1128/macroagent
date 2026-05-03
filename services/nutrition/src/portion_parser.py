@@ -217,6 +217,7 @@ def _normalize_hint_text(value: str | None) -> str | None:
     if not text:
         return None
     text = re.sub(r"(?<=[a-z])[-–—]+(?=[a-z])", " ", text)
+    text = re.sub(r"(?<=\d)[-–—]+(?=[a-z])", " ", text)
     text = re.sub(r"(?<=\d)(?=[a-z])", " ", text)
     text = re.sub(r"(?<=[a-z])(?=\d)", " ", text)
     text = re.sub(r"[^a-z0-9./+\-\s]", " ", text)
@@ -362,7 +363,7 @@ def _build_fallback_result(
         source="fallback_default",
         reason=(
             f"{reason_detail}; component='{component_name}', "
-            f"portion_hint='{portion_hint if portion_hint else ''}'"
+            f"portion_hint={portion_hint!r}"
         ),
     )
 
