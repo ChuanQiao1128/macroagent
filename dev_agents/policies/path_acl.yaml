@@ -1,0 +1,66 @@
+roles:
+  developer:
+    allow:
+      - "services/**"
+      - "apps/**"
+      - "src/**"
+    deny:
+      - "tests/**"
+      - "evals/**"
+      - "prompts/**"
+      - "DESIGN_zh*.md"
+      - ".codex/**"
+      - ".github/**"
+      - "dev_agents/policies/**"
+      - "docs/adr/**"
+
+  bug_fixer:
+    allow:
+      - "services/**"
+      - "apps/**"
+      - "src/**"
+    deny:
+      - "tests/**"
+      - "evals/**"
+      - "prompts/**"
+      - "DESIGN_zh*.md"
+      - ".codex/**"
+      - ".github/**"
+      - "dev_agents/policies/**"
+      - "docs/adr/**"
+
+  tester:
+    allow:
+      - "tests/**"
+      - "evals/**"
+    deny:
+      - "services/**"
+      - "apps/**"
+      - "src/**"
+      - "prompts/**"
+      - "evals/golden_set/**"
+      - "DESIGN_zh*.md"
+      - ".codex/**"
+      - ".github/**"
+      - "dev_agents/policies/**"
+
+  reviewer:
+    allow: []
+    comment_only: true
+
+  doc:
+    allow:
+      - "README.md"
+      - "CHANGELOG.md"
+      - "docs/**"
+    deny:
+      - "src/**"
+      - "services/**"
+      - "apps/**"
+      - "tests/**"
+      - "evals/golden_set/**"
+      - "prompts/**"
+      - "DESIGN_zh*.md"
+      - ".codex/**"
+      - ".github/**"
+      - "dev_agents/policies/**"
