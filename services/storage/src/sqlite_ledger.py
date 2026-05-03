@@ -128,6 +128,9 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
     ),
 )
 
+_EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
+_EXPORT_SCHEMA_VERSION = 1
+
 
 def initialize_sqlite_ledger(database_path: str | Path) -> None:
     """Create or migrate the local SQLite ledger schema."""
@@ -364,6 +367,166 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
     return totals
 
 
+def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
+    """Export full ledger contents as a deterministic JSON-safe dictionary."""
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection)
+        schema_rows = connection.execute(
+            """
+            SELECT version, applied_at
+            FROM schema_migrations
+            ORDER BY version ASC
+            """
+        ).fetchall()
+        meal_rows = connection.execute(
+            """
+            SELECT
+                meal_id,
+                local_date,
+                created_at,
+                matched_component_count,
+                unmatched_component_count,
+                component_count,
+                kcal_min,
+                kcal_max,
+                protein_g_min,
+                protein_g_max,
+                carbs_g_min,
+                carbs_g_max,
+                fat_g_min,
+                fat_g_max,
+                best_kcal,
+                best_kcal_method,
+                best_protein_g,
+                best_protein_g_method,
+                best_carbs_g,
+                best_carbs_g_method,
+                best_fat_g,
+                best_fat_g_method,
+                source_traces_json,
+                meal_estimate_json
+            FROM meals
+            ORDER BY local_date ASC, created_at ASC, meal_id ASC
+            """
+        ).fetchall()
+        component_rows = connection.execute(
+            """
+            SELECT
+                meal_id,
+                component_index,
+                component_name,
+                component_confidence,
+                portion_hint,
+                status,
+                top_candidates_json,
+                selected_macro_entry_id,
+                selected_macro_entry_name,
+                selected_macro_entry_source,
+                selected_match_score,
+                portion_grams_min,
+                portion_grams_max,
+                portion_confidence,
+                portion_source,
+                portion_reason,
+                unmatched_reason,
+                kcal_min,
+                kcal_max,
+                protein_g_min,
+                protein_g_max,
+                carbs_g_min,
+                carbs_g_max,
+                fat_g_min,
+                fat_g_max,
+                best_kcal,
+                best_kcal_method,
+                best_protein_g,
+                best_protein_g_method,
+                best_carbs_g,
+                best_carbs_g_method,
+                best_fat_g,
+                best_fat_g_method,
+                source_trace_json,
+                component_estimate_json
+            FROM meal_component_estimates
+            ORDER BY meal_id ASC, component_index ASC
+            """
+        ).fetchall()
+
+    components_by_meal: dict[str, list[dict[str, object]]] = {}
+    for row in component_rows:
+        meal_id = str(row["meal_id"])
+        components_by_meal.setdefault(meal_id, []).append(_build_component_backup_row(row))
+
+    meals_payload: list[dict[str, object]] = []
+    for row in meal_rows:
+        meal_id = str(row["meal_id"])
+        meals_payload.append(
+            _build_meal_backup_row(
+                row=row,
+                components=components_by_meal.get(meal_id, []),
+            )
+        )
+
+    return {
+        "format": _EXPORT_FORMAT,
+        "export_schema_version": _EXPORT_SCHEMA_VERSION,
+        "ledger_schema_version": _MIGRATIONS[-1].version if _MIGRATIONS else 0,
+        "schema_migrations": [
+            {
+                "version": int(row["version"]),
+                "applied_at": str(row["applied_at"]),
+            }
+            for row in schema_rows
+        ],
+        "meal_count": len(meals_payload),
+        "meals": meals_payload,
+    }
+
+
+def import_ledger_backup(database_path: str | Path, payload: dict[str, object]) -> dict[str, int]:
+    """Restore meals from an export_ledger_backup() payload."""
+    if payload.get("format") != _EXPORT_FORMAT:
+        raise ValueError("unsupported export format")
+
+    if payload.get("export_schema_version") != _EXPORT_SCHEMA_VERSION:
+        raise ValueError("unsupported export schema version")
+
+    meals_payload = payload.get("meals")
+    if not isinstance(meals_payload, list):
+        raise ValueError("payload['meals'] must be a list")
+
+    imported_meal_count = 0
+    for meal_payload in meals_payload:
+        if not isinstance(meal_payload, dict):
+            raise ValueError("each meal payload must be a dictionary")
+
+        meal_id_raw = meal_payload.get("meal_id")
+        local_date_raw = meal_payload.get("local_date")
+        created_at_raw = meal_payload.get("created_at")
+        meal_estimate_payload = meal_payload.get("meal_estimate")
+
+        if not isinstance(meal_id_raw, str) or not meal_id_raw:
+            raise ValueError("meal_id must be a non-empty string")
+        if not isinstance(local_date_raw, str) or not local_date_raw:
+            raise ValueError("local_date must be a non-empty string")
+        if not isinstance(created_at_raw, str) or not created_at_raw:
+            raise ValueError("created_at must be a non-empty string")
+        if not isinstance(meal_estimate_payload, dict):
+            raise ValueError("meal_estimate must be a dictionary")
+
+        meal_estimate = MealEstimate.model_validate(meal_estimate_payload)
+        insert_meal_estimate(
+            database_path,
+            meal_estimate=meal_estimate,
+            local_date=local_date_raw,
+            meal_id=meal_id_raw,
+            created_at=created_at_raw,
+        )
+        imported_meal_count += 1
+
+    return {"imported_meal_count": imported_meal_count}
+
+
 def _insert_component_row(
     *,
     connection: sqlite3.Connection,
@@ -508,6 +671,144 @@ def _build_best_estimate_set_from_row(row: sqlite3.Row) -> MacroBestEstimateSet:
     )
 
 
+def _build_meal_backup_row(
+    *,
+    row: sqlite3.Row,
+    components: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "meal_id": str(row["meal_id"]),
+        "local_date": str(row["local_date"]),
+        "created_at": str(row["created_at"]),
+        "matched_component_count": int(row["matched_component_count"]),
+        "unmatched_component_count": int(row["unmatched_component_count"]),
+        "component_count": int(row["component_count"]),
+        "macro_ranges": {
+            "kcal": {
+                "min": float(row["kcal_min"]),
+                "max": float(row["kcal_max"]),
+            },
+            "protein_g": {
+                "min": float(row["protein_g_min"]),
+                "max": float(row["protein_g_max"]),
+            },
+            "carbs_g": {
+                "min": float(row["carbs_g_min"]),
+                "max": float(row["carbs_g_max"]),
+            },
+            "fat_g": {
+                "min": float(row["fat_g_min"]),
+                "max": float(row["fat_g_max"]),
+            },
+        },
+        "macro_best_estimate": {
+            "kcal": {
+                "value": float(row["best_kcal"]),
+                "method": str(row["best_kcal_method"]),
+            },
+            "protein_g": {
+                "value": float(row["best_protein_g"]),
+                "method": str(row["best_protein_g_method"]),
+            },
+            "carbs_g": {
+                "value": float(row["best_carbs_g"]),
+                "method": str(row["best_carbs_g_method"]),
+            },
+            "fat_g": {
+                "value": float(row["best_fat_g"]),
+                "method": str(row["best_fat_g_method"]),
+            },
+        },
+        "source_traces": _json_loads(str(row["source_traces_json"])),
+        "meal_estimate": _json_loads(str(row["meal_estimate_json"])),
+        "components": components,
+    }
+
+
+def _build_component_backup_row(row: sqlite3.Row) -> dict[str, object]:
+    selected_macro_entry: dict[str, object] | None
+    if row["selected_macro_entry_id"] is None:
+        selected_macro_entry = None
+    else:
+        selected_macro_entry = {
+            "id": str(row["selected_macro_entry_id"]),
+            "name": str(row["selected_macro_entry_name"]),
+            "source": str(row["selected_macro_entry_source"]),
+            "match_score": float(row["selected_match_score"]),
+        }
+
+    macro_ranges: dict[str, object] | None
+    macro_best_estimate: dict[str, object] | None
+    if row["kcal_min"] is None:
+        macro_ranges = None
+        macro_best_estimate = None
+    else:
+        macro_ranges = {
+            "kcal": {
+                "min": float(row["kcal_min"]),
+                "max": float(row["kcal_max"]),
+            },
+            "protein_g": {
+                "min": float(row["protein_g_min"]),
+                "max": float(row["protein_g_max"]),
+            },
+            "carbs_g": {
+                "min": float(row["carbs_g_min"]),
+                "max": float(row["carbs_g_max"]),
+            },
+            "fat_g": {
+                "min": float(row["fat_g_min"]),
+                "max": float(row["fat_g_max"]),
+            },
+        }
+        macro_best_estimate = {
+            "kcal": {
+                "value": float(row["best_kcal"]),
+                "method": str(row["best_kcal_method"]),
+            },
+            "protein_g": {
+                "value": float(row["best_protein_g"]),
+                "method": str(row["best_protein_g_method"]),
+            },
+            "carbs_g": {
+                "value": float(row["best_carbs_g"]),
+                "method": str(row["best_carbs_g_method"]),
+            },
+            "fat_g": {
+                "value": float(row["best_fat_g"]),
+                "method": str(row["best_fat_g_method"]),
+            },
+        }
+
+    return {
+        "component_index": int(row["component_index"]),
+        "component_name": str(row["component_name"]),
+        "component_confidence": float(row["component_confidence"]),
+        "portion_hint": str(row["portion_hint"]) if row["portion_hint"] is not None else None,
+        "status": str(row["status"]),
+        "top_candidates": _json_loads(str(row["top_candidates_json"])),
+        "selected_macro_entry": selected_macro_entry,
+        "portion_range": {
+            "grams_min": float(row["portion_grams_min"]),
+            "grams_max": float(row["portion_grams_max"]),
+            "confidence": float(row["portion_confidence"]),
+            "source": str(row["portion_source"]),
+            "reason": str(row["portion_reason"]),
+        },
+        "unmatched_reason": (
+            str(row["unmatched_reason"]) if row["unmatched_reason"] is not None else None
+        ),
+        "macro_ranges": macro_ranges,
+        "macro_best_estimate": macro_best_estimate,
+        "source_trace": (
+            _json_loads(str(row["source_trace_json"]))
+            if row["source_trace_json"] is not None
+            else None
+        ),
+        "component_estimate": _json_loads(str(row["component_estimate_json"])),
+    }
+
+
 def _normalize_database_path(database_path: str | Path) -> str:
     return str(database_path)
 
@@ -616,6 +917,10 @@ def _json_dumps(payload: object) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
+def _json_loads(payload: str) -> object:
+    return json.loads(payload)
+
+
 def _connect(database_path: str) -> sqlite3.Connection:
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
@@ -626,8 +931,10 @@ def _connect(database_path: str) -> sqlite3.Connection:
 __all__ = [
     "DailyLedgerTotals",
     "StoredMealEstimate",
+    "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
+    "import_ledger_backup",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
 ]

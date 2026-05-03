@@ -1,8 +1,10 @@
 from services.storage.src.sqlite_ledger import (
     DailyLedgerTotals,
     StoredMealEstimate,
+    export_ledger_backup,
     fetch_daily_totals,
     fetch_meal_by_id,
+    import_ledger_backup,
     initialize_sqlite_ledger,
     insert_meal_estimate,
 )
@@ -10,8 +12,10 @@ from services.storage.src.sqlite_ledger import (
 __all__ = [
     "DailyLedgerTotals",
     "StoredMealEstimate",
+    "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
+    "import_ledger_backup",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
 ]
