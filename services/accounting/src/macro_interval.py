@@ -72,6 +72,22 @@ class MealMacroInterval(BaseModel):
     fat_g: MacroRange
 
 
+class MacroBestEstimate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: float = Field(..., ge=0)
+    method: Literal["geometric_midpoint", "arithmetic_midpoint"]
+
+
+class MacroBestEstimateSet(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kcal: MacroBestEstimate
+    protein_g: MacroBestEstimate
+    carbs_g: MacroBestEstimate
+    fat_g: MacroBestEstimate
+
+
 def calculate_food_macro_interval(
     entry: MacroEntry,
     gram_range: PortionGramRange | PortionGramBounds,
@@ -156,6 +172,47 @@ def calculate_meal_macro_interval(
     return aggregate_meal_macro_interval(food_intervals)
 
 
+def calculate_macro_best_estimate(macro_range: MacroRange) -> MacroBestEstimate:
+    """Convert one macro range into a deterministic best estimate."""
+    min_value = Decimal(str(macro_range.min))
+    max_value = Decimal(str(macro_range.max))
+    if min_value > 0 and max_value > 0:
+        midpoint = (min_value * max_value).sqrt()
+        method: Literal["geometric_midpoint", "arithmetic_midpoint"] = "geometric_midpoint"
+    else:
+        midpoint = (min_value + max_value) / Decimal("2")
+        method = "arithmetic_midpoint"
+
+    return MacroBestEstimate(
+        value=_round_to_tenth(midpoint),
+        method=method,
+    )
+
+
+def calculate_food_macro_best_estimate(
+    food_interval: FoodMacroInterval,
+) -> MacroBestEstimateSet:
+    """Convert a per-food macro interval into per-macro best estimates."""
+    return MacroBestEstimateSet(
+        kcal=calculate_macro_best_estimate(food_interval.kcal),
+        protein_g=calculate_macro_best_estimate(food_interval.protein_g),
+        carbs_g=calculate_macro_best_estimate(food_interval.carbs_g),
+        fat_g=calculate_macro_best_estimate(food_interval.fat_g),
+    )
+
+
+def calculate_meal_macro_best_estimate(
+    meal_interval: MealMacroInterval,
+) -> MacroBestEstimateSet:
+    """Convert a meal macro interval into per-macro best estimates."""
+    return MacroBestEstimateSet(
+        kcal=calculate_macro_best_estimate(meal_interval.kcal),
+        protein_g=calculate_macro_best_estimate(meal_interval.protein_g),
+        carbs_g=calculate_macro_best_estimate(meal_interval.carbs_g),
+        fat_g=calculate_macro_best_estimate(meal_interval.fat_g),
+    )
+
+
 def _coerce_gram_bounds(
     gram_range: PortionGramRange | PortionGramBounds,
 ) -> PortionGramBounds:
@@ -189,12 +246,17 @@ def _round_to_tenth(value: float | Decimal) -> float:
 
 __all__ = [
     "FoodMacroInterval",
+    "MacroBestEstimate",
+    "MacroBestEstimateSet",
     "MacroRange",
     "MacroSourceTrace",
     "MealMacroInterval",
     "PortionGramBounds",
     "aggregate_meal_macro_interval",
+    "calculate_food_macro_best_estimate",
     "calculate_food_macro_interval",
+    "calculate_macro_best_estimate",
     "calculate_meal_macro_interval",
+    "calculate_meal_macro_best_estimate",
     "calculate_macro_interval",
 ]
