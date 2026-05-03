@@ -79,7 +79,39 @@ Exact lookup behavior remains exact-match only:
 
 The loader returns an immutable tuple of frozen `MacroEntry` instances, so callers cannot mutate the cached catalog.
 
+## Portion Parser
+
+`services.nutrition` also exports a deterministic portion parser for converting common portion hints into conservative gram ranges.
+
+Public API:
+
+- `PortionGramRange`
+- `parse_portion_range(component_name, portion_hint=None)`
+- `parse_component_portion_range(component_name, portion_hint=None)` as a compatibility alias
+
+Model fields:
+
+- `grams_min`
+- `grams_max`
+- `confidence`
+- `source`
+- `reason`
+
+Supported hint families:
+
+- weight units: `g`, `gram`, `kg`, `kilogram`
+- household units: `cup`, `bowl`, `plate`, `slice`, `piece`, `egg`, `scoop`, `tablespoon`, `teaspoon`
+- palm-sized hints
+
+Behavior:
+
+- Returns a frozen Pydantic model.
+- Enforces `grams_min <= grams_max` and non-negative bounds.
+- Uses a conservative fallback range when the hint is missing, invalid, or unrecognized.
+- Runs locally only; it does not call an LLM or any network service.
+
 ## Verification
 
+- `pytest tests/nutrition/test_portion_parser.py`
 - `pytest tests/nutrition/test_food_data.py`
 - `ruff check services/nutrition/`
