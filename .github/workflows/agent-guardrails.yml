@@ -1,0 +1,32 @@
+name: Agent Guardrails
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  acl-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Detect agent role from PR label
+        id: role
+        run: |
+          ROLE=$(jq -r '.pull_request.labels[].name | select(startswith("agent:")) | sub("agent:"; "")' < "$GITHUB_EVENT_PATH" | head -1)
+          echo "role=${ROLE:-developer}" >> "$GITHUB_OUTPUT"
+      - name: Path ACL check
+        run: |
+          python dev_agents/policies/check_acl.py \
+            --role "${{ steps.role.outputs.role }}" \
+            --base "origin/${{ github.base_ref }}" \
+            --head HEAD
