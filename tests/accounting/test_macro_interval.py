@@ -248,6 +248,31 @@ def test_invalid_gram_ranges_are_rejected() -> None:
         )
 
 
+def test_rounding_is_consistent_to_one_decimal_place() -> None:
+    entry = _build_entry(
+        entry_id="seed_rounding",
+        name="Rounding Fixture",
+        source="USDA",
+        kcal_per_100g=0.5,
+        protein_g_per_100g=2.5,
+        carbs_g_per_100g=5.0,
+        fat_g_per_100g=7.5,
+    )
+
+    interval = calculate_food_macro_interval(
+        entry=entry,
+        gram_range=PortionGramBounds(grams_min=10.0, grams_max=30.0),
+    )
+
+    assert interval.kcal.min == 0.1
+    assert interval.kcal.max == 0.2
+    assert interval.protein_g.min == 0.3
+    assert interval.protein_g.max == 0.8
+    assert interval.carbs_g.min == 0.5
+    assert interval.carbs_g.max == 1.5
+    assert interval.fat_g.min == 0.8
+    assert interval.fat_g.max == 2.3
+
 
 def test_interval_models_are_immutable() -> None:
     entry = _build_entry(
