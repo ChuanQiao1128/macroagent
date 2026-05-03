@@ -15,10 +15,9 @@ cd "$ROOT"
 
 BRIEF="dev_agents/briefs/${TASK_ID}.md"
 BASE_REF="${BASE_REF:-main}"
-
-if [[ -n "${HELICONE_API_KEY:-}" && -z "${HELICONE_AUTH_HEADER:-}" ]]; then
-  export HELICONE_AUTH_HEADER="Bearer ${HELICONE_API_KEY}"
-fi
+CODEX_PROVIDER_MODE="${CODEX_PROVIDER_MODE:-chatgpt}"
+REVIEWER_MODEL="${REVIEWER_MODEL:-gpt-5.5}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 if [[ ! -f "$BRIEF" ]]; then
   echo "Brief not found: $BRIEF" >&2
@@ -31,39 +30,78 @@ if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "Python interpreter not found: $PYTHON_BIN" >&2
+  exit 1
+fi
+
 run_role() {
   local role="$1"
   local model="$2"
   local sandbox="$3"
   local role_file=".codex/roles/${role}.md"
+  local provider_mode="$CODEX_PROVIDER_MODE"
 
   if [[ ! -f "$role_file" ]]; then
     echo "Role file not found: $role_file" >&2
     exit 1
   fi
 
-  {
-    printf '# Shared project context\n\n'
-    cat .codex/AGENTS.md
-    printf '\n\n# Role instructions: %s\n\n' "$role"
-    cat "$role_file"
-    printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
-    cat "$BRIEF"
-  } | codex exec \
-    --model "$model" \
-    --config 'model_provider="helicone"' \
-    --sandbox "$sandbox" \
-    --cd "$ROOT" \
-    -
+  case "$provider_mode" in
+    chatgpt|openai)
+      ;;
+    helicone)
+      if [[ -z "${OPENAI_API_KEY:-}" || -z "${HELICONE_API_KEY:-}" ]]; then
+        echo "Helicone mode requires OPENAI_API_KEY and HELICONE_API_KEY" >&2
+        exit 1
+      fi
+      export HELICONE_AUTH_HEADER="Bearer ${HELICONE_API_KEY}"
+      ;;
+    *)
+      echo "Unsupported CODEX_PROVIDER_MODE: $provider_mode" >&2
+      echo "Use chatgpt or helicone." >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "$provider_mode" == "helicone" ]]; then
+    {
+      printf '# Shared project context\n\n'
+      cat .codex/AGENTS.md
+      printf '\n\n# Role instructions: %s\n\n' "$role"
+      cat "$role_file"
+      printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
+      cat "$BRIEF"
+    } | codex exec \
+      --model "$model" \
+      --config 'model_provider="helicone"' \
+      --sandbox "$sandbox" \
+      --cd "$ROOT" \
+      -
+  else
+    {
+      printf '# Shared project context\n\n'
+      cat .codex/AGENTS.md
+      printf '\n\n# Role instructions: %s\n\n' "$role"
+      cat "$role_file"
+      printf '\n\n# Agent brief: %s\n\n' "$TASK_ID"
+      cat "$BRIEF"
+    } | codex exec \
+      --model "$model" \
+      --sandbox "$sandbox" \
+      --cd "$ROOT" \
+      -
+  fi
 }
 
 echo "Pipeline starting for $TASK_ID"
+echo "Provider mode: $CODEX_PROVIDER_MODE"
 
 echo "Step 1: Developer"
 run_role "developer" "gpt-5.3-codex" "workspace-write"
 
 echo "Step 2: Developer ACL check"
-python dev_agents/policies/check_acl.py \
+"$PYTHON_BIN" dev_agents/policies/check_acl.py \
   --role developer \
   --base "$BASE_REF" \
   --head WORKTREE
@@ -74,14 +112,19 @@ run_role "tester" "gpt-5.3-codex" "workspace-write"
 echo "Step 4: Tests and evals"
 RETRY=false
 if [[ -d tests ]]; then
-  pytest tests/ || RETRY=true
+  if command -v pytest >/dev/null 2>&1; then
+    pytest tests/ || RETRY=true
+  else
+    echo "pytest is not installed or not on PATH" >&2
+    RETRY=true
+  fi
 else
   echo "No tests/ directory exists after Tester step" >&2
   RETRY=true
 fi
 
 if [[ -f evals/run_eval.py ]]; then
-  python evals/run_eval.py --fail-on-regression || RETRY=true
+  "$PYTHON_BIN" evals/run_eval.py --fail-on-regression || RETRY=true
 else
   echo "No evals/run_eval.py found; skipping eval gate"
 fi
@@ -90,19 +133,24 @@ ATTEMPTS=0
 while [[ "$RETRY" == "true" && "$ATTEMPTS" -lt 3 ]]; do
   echo "Step 5: Bug Fixer attempt $((ATTEMPTS + 1))/3"
   run_role "bug_fixer" "gpt-5.3-codex" "workspace-write"
-  python dev_agents/policies/check_acl.py \
+  "$PYTHON_BIN" dev_agents/policies/check_acl.py \
     --role bug_fixer \
     --base "$BASE_REF" \
     --head WORKTREE
 
   RETRY=false
   if [[ -d tests ]]; then
-    pytest tests/ || RETRY=true
+    if command -v pytest >/dev/null 2>&1; then
+      pytest tests/ || RETRY=true
+    else
+      echo "pytest is not installed or not on PATH" >&2
+      RETRY=true
+    fi
   else
     RETRY=true
   fi
   if [[ -f evals/run_eval.py ]]; then
-    python evals/run_eval.py --fail-on-regression || RETRY=true
+    "$PYTHON_BIN" evals/run_eval.py --fail-on-regression || RETRY=true
   fi
   ATTEMPTS=$((ATTEMPTS + 1))
 done
@@ -113,7 +161,7 @@ if [[ "$RETRY" == "true" ]]; then
 fi
 
 echo "Step 6: Reviewer"
-run_role "reviewer" "o3" "read-only"
+run_role "reviewer" "$REVIEWER_MODEL" "read-only"
 
 echo "Step 7: Doc"
 run_role "doc" "gpt-5.4-mini" "workspace-write"

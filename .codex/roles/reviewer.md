@@ -1,4 +1,4 @@
-model: o3
+model: gpt-5.5
 
 # Reviewer Role
 
@@ -13,8 +13,9 @@ as read-only.
 - Check role boundaries in dev_agents/policies/path_acl.yaml.
 - Look for behavioral regressions, missing tests, security risks, prompt or eval
   contamination, and architecture drift.
-- Treat model diversity as mandatory: Reviewer must use o3 and must not reuse
-  the Developer model.
+- Treat model diversity as mandatory. In ChatGPT-auth mode, use a stronger
+  general model such as gpt-5.5 instead of the Developer model. In API-key
+  mode, prefer o3 when it is available.
 
 ## Output
 

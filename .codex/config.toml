@@ -2,17 +2,5 @@
 # Codex loads .codex/config.toml only for trusted projects.
 
 model = "gpt-5.3-codex"
-model_provider = "helicone"
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
-
-[model_providers.helicone]
-name = "Helicone OpenAI Proxy"
-base_url = "https://oai.helicone.ai/v1"
-env_key = "OPENAI_API_KEY"
-wire_api = "responses"
-env_http_headers = { "Helicone-Auth" = "HELICONE_AUTH_HEADER" }
-
-[telemetry]
-trace_to = "helicone"
-log_level = "info"

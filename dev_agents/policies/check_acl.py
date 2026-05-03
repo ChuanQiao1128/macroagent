@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ACL_PATH = Path("dev_agents/policies/path_acl.yaml")
 
 
@@ -19,8 +18,7 @@ def run_git(args: list[str], *, check: bool = True) -> list[str]:
         ["git", *args],
         check=False,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
     )
     if check and result.returncode != 0:
         print(result.stderr.strip() or f"git {' '.join(args)} failed", file=sys.stderr)
