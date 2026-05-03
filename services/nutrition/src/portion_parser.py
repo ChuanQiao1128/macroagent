@@ -261,16 +261,25 @@ def _extract_quantity(tokens: list[str], *, unit_index: int) -> tuple[float | No
     if filtered in (["a"], ["an"]):
         return (1.0, False)
 
-    for start in range(len(filtered)):
-        quantity = _parse_quantity_text(" ".join(filtered[start:]))
-        if quantity is not None:
-            return (quantity, True)
+    quantity = _parse_quantity_window(filtered)
+    if quantity is not None:
+        return (quantity, True)
 
     if any(any(char.isdigit() for char in token) for token in filtered):
         return (None, False)
 
     # Treat adjective-only hints like "medium bowl" as an implicit single unit.
     return (1.0, False)
+
+
+def _parse_quantity_window(tokens: list[str]) -> float | None:
+    for start in range(len(tokens)):
+        for end in range(len(tokens), start, -1):
+            quantity = _parse_quantity_text(" ".join(tokens[start:end]))
+            if quantity is not None:
+                return quantity
+    return None
+
 
 def _parse_quantity_text(quantity_text: str) -> float | None:
     normalized = " ".join(quantity_text.split())
