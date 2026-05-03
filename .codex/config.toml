@@ -1,0 +1,18 @@
+# Project-local Codex defaults for MacroAgent.
+# Codex CLI 0.128.0 reads ~/.codex/config.toml by default; the scripts in
+# this repo pass critical runtime flags explicitly so this file remains a
+# reviewable project policy document.
+
+model = "gpt-5-codex"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+max_cost_per_run_usd = 5
+
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://api.helicone.ai/v1"
+helicone_auth_env = "HELICONE_API_KEY"
+
+[telemetry]
+trace_to = "helicone"
+log_level = "info"
