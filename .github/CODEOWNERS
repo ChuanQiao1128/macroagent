@@ -1,0 +1,13 @@
+# Keep all security-sensitive ownership valid from day zero.
+# Replace or add agent/team owners only after those GitHub users or teams exist.
+
+/DESIGN_zh*.md              @ChuanQiao1128
+/prompts/**                 @ChuanQiao1128
+/evals/golden_set/**        @ChuanQiao1128
+/tests/**                   @ChuanQiao1128
+/services/**                @ChuanQiao1128
+/apps/**                    @ChuanQiao1128
+/docs/adr/**                @ChuanQiao1128
+/.codex/**                  @ChuanQiao1128
+/dev_agents/policies/**     @ChuanQiao1128
+/.github/**                 @ChuanQiao1128
