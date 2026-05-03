@@ -16,6 +16,10 @@ cd "$ROOT"
 BRIEF="dev_agents/briefs/${TASK_ID}.md"
 BASE_REF="${BASE_REF:-main}"
 
+if [[ -n "${HELICONE_API_KEY:-}" && -z "${HELICONE_AUTH_HEADER:-}" ]]; then
+  export HELICONE_AUTH_HEADER="Bearer ${HELICONE_API_KEY}"
+fi
+
 if [[ ! -f "$BRIEF" ]]; then
   echo "Brief not found: $BRIEF" >&2
   exit 1
@@ -47,8 +51,8 @@ run_role() {
     cat "$BRIEF"
   } | codex exec \
     --model "$model" \
+    --config 'model_provider="helicone"' \
     --sandbox "$sandbox" \
-    --ask-for-approval never \
     --cd "$ROOT" \
     -
 }
@@ -56,7 +60,7 @@ run_role() {
 echo "Pipeline starting for $TASK_ID"
 
 echo "Step 1: Developer"
-run_role "developer" "gpt-5-codex" "workspace-write"
+run_role "developer" "gpt-5.3-codex" "workspace-write"
 
 echo "Step 2: Developer ACL check"
 python dev_agents/policies/check_acl.py \
@@ -65,7 +69,7 @@ python dev_agents/policies/check_acl.py \
   --head WORKTREE
 
 echo "Step 3: Tester"
-run_role "tester" "gpt-5-codex" "workspace-write"
+run_role "tester" "gpt-5.3-codex" "workspace-write"
 
 echo "Step 4: Tests and evals"
 RETRY=false
@@ -85,7 +89,7 @@ fi
 ATTEMPTS=0
 while [[ "$RETRY" == "true" && "$ATTEMPTS" -lt 3 ]]; do
   echo "Step 5: Bug Fixer attempt $((ATTEMPTS + 1))/3"
-  run_role "bug_fixer" "gpt-5-codex" "workspace-write"
+  run_role "bug_fixer" "gpt-5.3-codex" "workspace-write"
   python dev_agents/policies/check_acl.py \
     --role bug_fixer \
     --base "$BASE_REF" \
@@ -112,6 +116,6 @@ echo "Step 6: Reviewer"
 run_role "reviewer" "o3" "read-only"
 
 echo "Step 7: Doc"
-run_role "doc" "gpt-5-mini" "workspace-write"
+run_role "doc" "gpt-5.4-mini" "workspace-write"
 
 echo "Pipeline complete for $TASK_ID"

@@ -1,4 +1,4 @@
-model: gpt-5-mini
+model: gpt-5.4-mini
 
 # Doc Role
 

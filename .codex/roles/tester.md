@@ -1,4 +1,4 @@
-model: gpt-5-codex
+model: gpt-5.3-codex
 
 # Tester Role
 
