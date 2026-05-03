@@ -13,6 +13,7 @@ from services.accounting import (
 )
 from services.meal import MealEstimate, analyze_meal_components
 from services.storage import (
+    export_ledger_backup,
     fetch_daily_totals,
     fetch_meal_by_id,
     initialize_sqlite_ledger,
@@ -319,3 +320,186 @@ def test_fetch_meal_by_id_returns_none_when_meal_does_not_exist(tmp_path: Path) 
     stored = fetch_meal_by_id(db_path, "missing-meal-id")
 
     assert stored is None
+
+
+def test_export_ledger_backup_empty_db_has_metadata_and_no_meals(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    payload = export_ledger_backup(db_path)
+
+    assert payload["format"] == "macroagent.sqlite_ledger_backup"
+    assert payload["export_schema_version"] == 1
+    assert payload["ledger_schema_version"] == 1
+    assert payload["meal_count"] == 0
+    assert payload["meals"] == []
+    assert payload["schema_migrations"] == [
+        {"version": 1, "applied_at": payload["schema_migrations"][0]["applied_at"]}
+    ]
+
+
+def test_export_ledger_backup_populated_includes_meals_components_and_traces(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    meal_estimate = _build_meal_estimate(
+        [
+            FoodComponent(name="white rice", confidence=0.91, portion_hint="100 g"),
+            FoodComponent(name="mystery foam", confidence=0.50, portion_hint="some amount"),
+        ]
+    )
+    meal_best = calculate_meal_macro_best_estimate(meal_estimate.macro_interval)
+
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_estimate,
+        meal_id="meal-export-001",
+        local_date="2026-05-04",
+        created_at="2026-05-04T08:30:00+12:00",
+    )
+
+    payload = export_ledger_backup(db_path)
+
+    assert payload["meal_count"] == 1
+    meals = payload["meals"]
+    assert isinstance(meals, list)
+    assert len(meals) == 1
+
+    meal = meals[0]
+    assert meal["meal_id"] == "meal-export-001"
+    assert meal["local_date"] == "2026-05-04"
+    assert meal["created_at"] == "2026-05-04T08:30:00+12:00"
+    assert meal["matched_component_count"] == meal_estimate.matched_component_count
+    assert meal["unmatched_component_count"] == meal_estimate.unmatched_component_count
+    assert meal["component_count"] == len(meal_estimate.component_estimates)
+    assert meal["meal_estimate"] == meal_estimate.model_dump(mode="json")
+    assert len(meal["source_traces"]) == len(meal_estimate.macro_interval.source_traces)
+
+    assert meal["macro_ranges"]["kcal"]["min"] == pytest.approx(
+        meal_estimate.macro_interval.kcal.min
+    )
+    assert meal["macro_ranges"]["kcal"]["max"] == pytest.approx(
+        meal_estimate.macro_interval.kcal.max
+    )
+    assert meal["macro_ranges"]["protein_g"]["min"] == pytest.approx(
+        meal_estimate.macro_interval.protein_g.min
+    )
+    assert meal["macro_ranges"]["protein_g"]["max"] == pytest.approx(
+        meal_estimate.macro_interval.protein_g.max
+    )
+    assert meal["macro_ranges"]["carbs_g"]["min"] == pytest.approx(
+        meal_estimate.macro_interval.carbs_g.min
+    )
+    assert meal["macro_ranges"]["carbs_g"]["max"] == pytest.approx(
+        meal_estimate.macro_interval.carbs_g.max
+    )
+    assert meal["macro_ranges"]["fat_g"]["min"] == pytest.approx(
+        meal_estimate.macro_interval.fat_g.min
+    )
+    assert meal["macro_ranges"]["fat_g"]["max"] == pytest.approx(
+        meal_estimate.macro_interval.fat_g.max
+    )
+
+    assert meal["macro_best_estimate"]["kcal"]["value"] == pytest.approx(meal_best.kcal.value)
+    assert meal["macro_best_estimate"]["kcal"]["method"] == meal_best.kcal.method
+    assert meal["macro_best_estimate"]["protein_g"]["value"] == pytest.approx(
+        meal_best.protein_g.value
+    )
+    assert meal["macro_best_estimate"]["protein_g"]["method"] == meal_best.protein_g.method
+    assert meal["macro_best_estimate"]["carbs_g"]["value"] == pytest.approx(meal_best.carbs_g.value)
+    assert meal["macro_best_estimate"]["carbs_g"]["method"] == meal_best.carbs_g.method
+    assert meal["macro_best_estimate"]["fat_g"]["value"] == pytest.approx(meal_best.fat_g.value)
+    assert meal["macro_best_estimate"]["fat_g"]["method"] == meal_best.fat_g.method
+
+    components = meal["components"]
+    assert isinstance(components, list)
+    assert len(components) == len(meal_estimate.component_estimates)
+    assert [component["component_index"] for component in components] == [0, 1]
+    assert all("component_estimate" in component for component in components)
+    assert all("top_candidates" in component for component in components)
+
+    matched_component = next(
+        component for component in components if component["status"] == "matched"
+    )
+    assert matched_component["macro_ranges"] is not None
+    assert matched_component["macro_best_estimate"] is not None
+    assert matched_component["source_trace"] is not None
+    assert matched_component["selected_macro_entry"] is not None
+
+    unmatched_component = next(
+        component for component in components if component["status"] == "unmatched"
+    )
+    assert unmatched_component["macro_ranges"] is None
+    assert unmatched_component["macro_best_estimate"] is None
+    assert unmatched_component["source_trace"] is None
+    assert unmatched_component["selected_macro_entry"] is None
+
+
+def test_export_ledger_backup_is_deterministic_and_sorted(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    meal_a = _build_meal_estimate(
+        [FoodComponent(name="banana", confidence=0.95, portion_hint="half cup")]
+    )
+    meal_b = _build_meal_estimate(
+        [FoodComponent(name="white rice", confidence=0.90, portion_hint="100 g")]
+    )
+    meal_c = _build_meal_estimate(
+        [FoodComponent(name="banana", confidence=0.94, portion_hint="1 cup")]
+    )
+
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_b,
+        meal_id="meal-b",
+        local_date="2026-05-04",
+        created_at="2026-05-04T11:00:00+12:00",
+    )
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_c,
+        meal_id="meal-c",
+        local_date="2026-05-05",
+        created_at="2026-05-05T09:00:00+12:00",
+    )
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_a,
+        meal_id="meal-a",
+        local_date="2026-05-04",
+        created_at="2026-05-04T11:00:00+12:00",
+    )
+
+    first_export = export_ledger_backup(db_path)
+    second_export = export_ledger_backup(db_path)
+
+    assert first_export == second_export
+    assert [meal["meal_id"] for meal in first_export["meals"]] == [
+        "meal-a",
+        "meal-b",
+        "meal-c",
+    ]
+
+
+def test_export_ledger_backup_payload_is_json_serializable(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+    meal_estimate = _build_meal_estimate(
+        [FoodComponent(name="white rice", confidence=0.90, portion_hint="100 g")]
+    )
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_estimate,
+        meal_id="meal-json",
+        local_date="2026-05-04",
+        created_at="2026-05-04T12:00:00+12:00",
+    )
+
+    payload = export_ledger_backup(db_path)
+    encoded = json.dumps(payload, sort_keys=True)
+    decoded = json.loads(encoded)
+
+    assert decoded == payload
