@@ -231,3 +231,91 @@ def test_fetch_daily_totals_empty_day_returns_zero_ranges_and_arithmetic_midpoin
     assert totals.macro_best_estimate.protein_g.method == "arithmetic_midpoint"
     assert totals.macro_best_estimate.carbs_g.method == "arithmetic_midpoint"
     assert totals.macro_best_estimate.fat_g.method == "arithmetic_midpoint"
+
+
+def test_insert_meal_estimate_repeated_same_payload_is_idempotent(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    meal_estimate = _build_meal_estimate(
+        [
+            FoodComponent(name="white rice", confidence=0.90, portion_hint="100 g"),
+        ]
+    )
+
+    first_meal_id = insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_estimate,
+        local_date="2026-05-04",
+        meal_id="meal-duplicate-safe",
+        created_at="2026-05-04T12:00:00+12:00",
+    )
+    second_meal_id = insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_estimate,
+        local_date="2026-05-04",
+        meal_id="meal-duplicate-safe",
+        created_at="2026-05-04T12:00:00+12:00",
+    )
+
+    assert first_meal_id == "meal-duplicate-safe"
+    assert second_meal_id == "meal-duplicate-safe"
+
+    with sqlite3.connect(db_path) as conn:
+        meal_row_count = conn.execute(
+            "SELECT COUNT(*) FROM meals WHERE meal_id = ?",
+            ("meal-duplicate-safe",),
+        ).fetchone()
+        component_row_count = conn.execute(
+            "SELECT COUNT(*) FROM meal_component_estimates WHERE meal_id = ?",
+            ("meal-duplicate-safe",),
+        ).fetchone()
+
+    assert meal_row_count is not None
+    assert component_row_count is not None
+    assert meal_row_count[0] == 1
+    assert component_row_count[0] == len(meal_estimate.component_estimates)
+
+
+def test_insert_meal_estimate_duplicate_id_with_different_payload_raises_value_error(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    first_meal = _build_meal_estimate(
+        [
+            FoodComponent(name="white rice", confidence=0.90, portion_hint="100 g"),
+        ]
+    )
+    second_meal = _build_meal_estimate(
+        [
+            FoodComponent(name="banana", confidence=0.95, portion_hint="half cup"),
+        ]
+    )
+
+    insert_meal_estimate(
+        db_path,
+        meal_estimate=first_meal,
+        local_date="2026-05-04",
+        meal_id="meal-conflict",
+        created_at="2026-05-04T12:00:00+12:00",
+    )
+
+    with pytest.raises(ValueError, match="meal_id already exists: meal-conflict"):
+        insert_meal_estimate(
+            db_path,
+            meal_estimate=second_meal,
+            local_date="2026-05-04",
+            meal_id="meal-conflict",
+            created_at="2026-05-04T12:00:00+12:00",
+        )
+
+
+def test_fetch_meal_by_id_returns_none_when_meal_does_not_exist(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    stored = fetch_meal_by_id(db_path, "missing-meal-id")
+
+    assert stored is None
