@@ -116,7 +116,7 @@ Behavior:
 
 ## Persistence
 
-`services.storage` persists meal estimates and daily totals in a local SQLite ledger. See [docs/storage.md](storage.md).
+`services.storage` persists meal estimates and daily totals in a local SQLite ledger and exposes a JSON backup export API for inspection and backup. See [docs/storage.md](storage.md).
 
 ## Verification
 

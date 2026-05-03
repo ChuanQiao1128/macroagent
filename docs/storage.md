@@ -8,8 +8,42 @@
 - `insert_meal_estimate(database_path, meal_estimate, local_date=None, meal_id=None, created_at=None)`
 - `fetch_meal_by_id(database_path, meal_id)`
 - `fetch_daily_totals(database_path, local_date)`
+- `export_ledger_backup(database_path)`
 - `StoredMealEstimate`
 - `DailyLedgerTotals`
+
+## Backup Export
+
+`export_ledger_backup(database_path)` returns a deterministic, JSON-safe dictionary that can be serialized directly for local backup or inspection.
+
+Top-level fields:
+
+- `format`: `macroagent.sqlite_ledger_backup`
+- `export_schema_version`: the backup schema version
+- `ledger_schema_version`: the SQLite ledger schema version currently exported
+- `schema_migrations`: applied migration versions and timestamps
+- `meal_count`: number of exported meals
+- `meals`: meal records sorted by `local_date`, `created_at`, then `meal_id`
+
+Each exported meal includes:
+
+- meal identifiers and timestamps
+- component counts
+- macro ranges
+- macro best estimates
+- source traces
+- the serialized meal estimate payload
+- component rows sorted by `component_index`
+
+Each exported component includes:
+
+- component metadata and status
+- top candidate data
+- the selected macro entry when matched
+- portion range details
+- macro ranges and best estimates when available
+- source trace data when available
+- the serialized component estimate payload
 
 ## Behavior
 
@@ -25,6 +59,7 @@
 - Raises `ValueError` when a duplicate `meal_id` is reused with a different payload.
 - Returns `None` from `fetch_meal_by_id()` when a meal id is not present.
 - Returns zero ranges and arithmetic-midpoint best estimates for empty-day totals.
+- Exposes export-only backup behavior for now; there is no public restore/import API yet.
 
 ## Verification
 
