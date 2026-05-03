@@ -110,6 +110,10 @@ Behavior:
 - Uses a conservative fallback range when the hint is missing, invalid, or unrecognized.
 - Runs locally only; it does not call an LLM or any network service.
 
+## Meal Analysis
+
+`services.meal` builds on this catalog and parser to map `FoodComponent` objects into component estimates and meal-level macro intervals. See [docs/meal.md](meal.md).
+
 ## Verification
 
 - `pytest tests/nutrition/test_portion_parser.py`
