@@ -11,6 +11,7 @@ from services.nutrition import (
     load_all_macro_entries,
     load_macro_entries,
     load_personal_macro_entries,
+    match_food_name,
 )
 
 REQUIRED_CATEGORIES = {
@@ -164,3 +165,52 @@ def test_loaded_entries_are_immutable() -> None:
 
     with pytest.raises(ValidationError):
         entries[0].name = "Mutated"
+
+
+def test_match_food_name_supports_exact_usda_name_match() -> None:
+    matches = match_food_name("White rice, cooked", limit=3)
+
+    assert matches
+    assert matches[0].entry.id == "usda_seed_0001"
+    assert matches[0].entry.source == "USDA"
+    assert matches[0].match_type == "exact_name"
+    assert matches[0].matched_on == "White rice, cooked"
+    assert matches[0].score == pytest.approx(1.0)
+
+
+def test_match_food_name_supports_exact_personal_alias_match() -> None:
+    matches = match_food_name("gold standard whey", limit=3)
+
+    assert matches
+    assert matches[0].entry.id == "personal_seed_0002"
+    assert matches[0].entry.source == "PERSONAL"
+    assert matches[0].match_type == "exact_alias"
+    assert matches[0].matched_on == "gold standard whey"
+    assert matches[0].score == pytest.approx(0.99)
+
+
+def test_match_food_name_prefers_personal_entry_when_scores_tie() -> None:
+    matches = match_food_name("bananna", limit=2, min_score=0.6)
+
+    assert len(matches) == 2
+    assert matches[0].score == pytest.approx(matches[1].score)
+    assert matches[0].entry.source == "PERSONAL"
+    assert matches[1].entry.source == "USDA"
+    assert matches[0].entry.id == "personal_seed_0012"
+    assert matches[1].entry.id == "usda_seed_0043"
+
+
+def test_match_food_name_supports_fuzzy_typo_match() -> None:
+    matches = match_food_name("brocoli", limit=3)
+
+    assert matches
+    assert matches[0].entry.id == "usda_seed_0048"
+    assert matches[0].entry.source == "USDA"
+    assert matches[0].match_type == "fuzzy"
+    assert matches[0].matched_on == "broccoli"
+    assert matches[0].score == pytest.approx(0.7467, abs=1e-4)
+
+
+def test_match_food_name_applies_min_score_threshold() -> None:
+    assert match_food_name("brocoli", min_score=0.7, limit=3)
+    assert match_food_name("brocoli", min_score=0.8, limit=3) == ()
