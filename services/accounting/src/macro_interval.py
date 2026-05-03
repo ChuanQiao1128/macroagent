@@ -78,8 +78,6 @@ def calculate_food_macro_interval(
 ) -> FoodMacroInterval:
     """Compute deterministic macro ranges for one food entry and gram range."""
     normalized_range = _coerce_gram_bounds(gram_range)
-    gram_factor_min = normalized_range.grams_min / 100.0
-    gram_factor_max = normalized_range.grams_max / 100.0
 
     return FoodMacroInterval(
         source_trace=MacroSourceTrace(
@@ -89,18 +87,26 @@ def calculate_food_macro_interval(
             grams_min=normalized_range.grams_min,
             grams_max=normalized_range.grams_max,
         ),
-        kcal=_build_macro_range(entry.kcal_per_100g, gram_factor_min, gram_factor_max),
+        kcal=_build_macro_range(
+            entry.kcal_per_100g,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
+        ),
         protein_g=_build_macro_range(
             entry.protein_g_per_100g,
-            gram_factor_min,
-            gram_factor_max,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
         ),
         carbs_g=_build_macro_range(
             entry.carbs_g_per_100g,
-            gram_factor_min,
-            gram_factor_max,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
         ),
-        fat_g=_build_macro_range(entry.fat_g_per_100g, gram_factor_min, gram_factor_max),
+        fat_g=_build_macro_range(
+            entry.fat_g_per_100g,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
+        ),
     )
 
 
@@ -143,11 +149,64 @@ def calculate_meal_macro_interval(
     items: Sequence[tuple[MacroEntry, PortionGramRange | PortionGramBounds]],
 ) -> MealMacroInterval:
     """Compute and aggregate macro intervals for a meal."""
-    food_intervals = tuple(
-        calculate_food_macro_interval(entry=entry, gram_range=gram_range)
-        for entry, gram_range in items
+    food_intervals: list[FoodMacroInterval] = []
+    kcal_min_total = Decimal("0")
+    kcal_max_total = Decimal("0")
+    protein_min_total = Decimal("0")
+    protein_max_total = Decimal("0")
+    carbs_min_total = Decimal("0")
+    carbs_max_total = Decimal("0")
+    fat_min_total = Decimal("0")
+    fat_max_total = Decimal("0")
+
+    for entry, gram_range in items:
+        normalized_range = _coerce_gram_bounds(gram_range)
+        food_intervals.append(
+            calculate_food_macro_interval(entry=entry, gram_range=normalized_range)
+        )
+
+        kcal_min_total += _calculate_macro_value(entry.kcal_per_100g, normalized_range.grams_min)
+        kcal_max_total += _calculate_macro_value(entry.kcal_per_100g, normalized_range.grams_max)
+        protein_min_total += _calculate_macro_value(
+            entry.protein_g_per_100g,
+            normalized_range.grams_min,
+        )
+        protein_max_total += _calculate_macro_value(
+            entry.protein_g_per_100g,
+            normalized_range.grams_max,
+        )
+        carbs_min_total += _calculate_macro_value(
+            entry.carbs_g_per_100g,
+            normalized_range.grams_min,
+        )
+        carbs_max_total += _calculate_macro_value(
+            entry.carbs_g_per_100g,
+            normalized_range.grams_max,
+        )
+        fat_min_total += _calculate_macro_value(entry.fat_g_per_100g, normalized_range.grams_min)
+        fat_max_total += _calculate_macro_value(entry.fat_g_per_100g, normalized_range.grams_max)
+
+    items_tuple = tuple(food_intervals)
+    return MealMacroInterval(
+        items=items_tuple,
+        source_traces=tuple(item.source_trace for item in items_tuple),
+        kcal=MacroRange(
+            min=_round_to_tenth(kcal_min_total),
+            max=_round_to_tenth(kcal_max_total),
+        ),
+        protein_g=MacroRange(
+            min=_round_to_tenth(protein_min_total),
+            max=_round_to_tenth(protein_max_total),
+        ),
+        carbs_g=MacroRange(
+            min=_round_to_tenth(carbs_min_total),
+            max=_round_to_tenth(carbs_max_total),
+        ),
+        fat_g=MacroRange(
+            min=_round_to_tenth(fat_min_total),
+            max=_round_to_tenth(fat_max_total),
+        ),
     )
-    return aggregate_meal_macro_interval(food_intervals)
 
 
 def _coerce_gram_bounds(
@@ -163,14 +222,17 @@ def _coerce_gram_bounds(
 
 def _build_macro_range(
     per_100g_value: float,
-    gram_factor_min: float,
-    gram_factor_max: float,
+    grams_min: float,
+    grams_max: float,
 ) -> MacroRange:
-    per_100g = Decimal(str(per_100g_value))
     return MacroRange(
-        min=_round_to_tenth(per_100g * Decimal(str(gram_factor_min))),
-        max=_round_to_tenth(per_100g * Decimal(str(gram_factor_max))),
+        min=_round_to_tenth(_calculate_macro_value(per_100g_value, grams_min)),
+        max=_round_to_tenth(_calculate_macro_value(per_100g_value, grams_max)),
     )
+
+
+def _calculate_macro_value(per_100g_value: float, grams: float) -> Decimal:
+    return (Decimal(str(per_100g_value)) * Decimal(str(grams))) / Decimal("100")
 
 
 def _round_to_tenth(value: float | Decimal) -> float:
