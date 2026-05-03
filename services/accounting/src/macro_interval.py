@@ -166,14 +166,16 @@ def _build_macro_range(
     gram_factor_min: float,
     gram_factor_max: float,
 ) -> MacroRange:
+    per_100g = Decimal(str(per_100g_value))
     return MacroRange(
-        min=_round_to_tenth(per_100g_value * gram_factor_min),
-        max=_round_to_tenth(per_100g_value * gram_factor_max),
+        min=_round_to_tenth(per_100g * Decimal(str(gram_factor_min))),
+        max=_round_to_tenth(per_100g * Decimal(str(gram_factor_max))),
     )
 
 
-def _round_to_tenth(value: float) -> float:
-    return float(Decimal(str(value)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+def _round_to_tenth(value: float | Decimal) -> float:
+    decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+    return float(decimal_value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
 __all__ = [
