@@ -61,6 +61,7 @@ Each `ComponentMatchCandidate` records:
 
 - The local matcher prefers `PERSONAL` entries over `USDA` entries when scores are tied.
 - The pipeline is deterministic and local; it does not call Claude, OpenAI, or any network service.
+- For an end-to-end local demo that includes vision analysis and SQLite persistence, see [docs/cli.md](cli.md).
 
 ## Verification
 
