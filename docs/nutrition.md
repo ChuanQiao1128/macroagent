@@ -114,6 +114,10 @@ Behavior:
 
 `services.meal` builds on this catalog and parser to map `FoodComponent` objects into component estimates and meal-level macro intervals. See [docs/meal.md](meal.md).
 
+## Persistence
+
+`services.storage` persists meal estimates and daily totals in a local SQLite ledger. See [docs/storage.md](storage.md).
+
 ## Verification
 
 - `pytest tests/nutrition/test_portion_parser.py`
