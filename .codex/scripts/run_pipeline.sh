@@ -13,6 +13,10 @@ fi
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+if [[ -d "$ROOT/.venv/bin" ]]; then
+  export PATH="$ROOT/.venv/bin:$PATH"
+fi
+
 BRIEF="dev_agents/briefs/${TASK_ID}.md"
 BASE_REF="${BASE_REF:-main}"
 CODEX_PROVIDER_MODE="${CODEX_PROVIDER_MODE:-chatgpt}"
