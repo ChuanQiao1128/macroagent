@@ -13,6 +13,7 @@ from services.accounting import (
     MacroBestEstimate,
     MacroBestEstimateSet,
     MacroRange,
+    MealMacroInterval,
     calculate_food_macro_best_estimate,
     calculate_macro_best_estimate,
     calculate_meal_macro_best_estimate,
@@ -158,6 +159,10 @@ def insert_meal_estimate(
 
     meal_macro_best = calculate_meal_macro_best_estimate(meal_estimate.macro_interval)
     macro_interval = meal_estimate.macro_interval
+    source_traces_json = _json_dumps(
+        [trace.model_dump(mode="json") for trace in macro_interval.source_traces]
+    )
+    meal_estimate_json = _json_dumps(meal_estimate.model_dump(mode="json"))
 
     with _connect(_normalize_database_path(database_path)) as connection:
         _apply_migrations(connection)
@@ -214,13 +219,25 @@ def insert_meal_estimate(
                     meal_macro_best.carbs_g.method,
                     meal_macro_best.fat_g.value,
                     meal_macro_best.fat_g.method,
-                    _json_dumps(
-                        [trace.model_dump(mode="json") for trace in macro_interval.source_traces]
-                    ),
-                    _json_dumps(meal_estimate.model_dump(mode="json")),
+                    source_traces_json,
+                    meal_estimate_json,
                 ),
             )
         except sqlite3.IntegrityError as exc:
+            if _is_existing_meal_idempotent(
+                connection=connection,
+                meal_id=resolved_meal_id,
+                local_date=resolved_local_date,
+                created_at=created_at_iso,
+                matched_component_count=meal_estimate.matched_component_count,
+                unmatched_component_count=meal_estimate.unmatched_component_count,
+                component_count=len(meal_estimate.component_estimates),
+                macro_interval=macro_interval,
+                meal_macro_best=meal_macro_best,
+                source_traces_json=source_traces_json,
+                meal_estimate_json=meal_estimate_json,
+            ):
+                return resolved_meal_id
             raise ValueError(f"meal_id already exists: {resolved_meal_id}") from exc
 
         for component_index, component in enumerate(meal_estimate.component_estimates):
@@ -509,7 +526,82 @@ def _coerce_created_at(value: str | datetime | None) -> datetime:
 
     if dt_value.tzinfo is None:
         return dt_value.astimezone()
-    return dt_value.astimezone()
+    return dt_value
+
+
+def _is_existing_meal_idempotent(
+    *,
+    connection: sqlite3.Connection,
+    meal_id: str,
+    local_date: str,
+    created_at: str,
+    matched_component_count: int,
+    unmatched_component_count: int,
+    component_count: int,
+    macro_interval: MealMacroInterval,
+    meal_macro_best: MacroBestEstimateSet,
+    source_traces_json: str,
+    meal_estimate_json: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT
+            local_date,
+            created_at,
+            matched_component_count,
+            unmatched_component_count,
+            component_count,
+            kcal_min,
+            kcal_max,
+            protein_g_min,
+            protein_g_max,
+            carbs_g_min,
+            carbs_g_max,
+            fat_g_min,
+            fat_g_max,
+            best_kcal,
+            best_kcal_method,
+            best_protein_g,
+            best_protein_g_method,
+            best_carbs_g,
+            best_carbs_g_method,
+            best_fat_g,
+            best_fat_g_method,
+            source_traces_json,
+            meal_estimate_json
+        FROM meals
+        WHERE meal_id = ?
+        """,
+        (meal_id,),
+    ).fetchone()
+    if row is None:
+        return False
+
+    return (
+        str(row["local_date"]) == local_date
+        and str(row["created_at"]) == created_at
+        and int(row["matched_component_count"]) == matched_component_count
+        and int(row["unmatched_component_count"]) == unmatched_component_count
+        and int(row["component_count"]) == component_count
+        and float(row["kcal_min"]) == macro_interval.kcal.min
+        and float(row["kcal_max"]) == macro_interval.kcal.max
+        and float(row["protein_g_min"]) == macro_interval.protein_g.min
+        and float(row["protein_g_max"]) == macro_interval.protein_g.max
+        and float(row["carbs_g_min"]) == macro_interval.carbs_g.min
+        and float(row["carbs_g_max"]) == macro_interval.carbs_g.max
+        and float(row["fat_g_min"]) == macro_interval.fat_g.min
+        and float(row["fat_g_max"]) == macro_interval.fat_g.max
+        and float(row["best_kcal"]) == meal_macro_best.kcal.value
+        and str(row["best_kcal_method"]) == meal_macro_best.kcal.method
+        and float(row["best_protein_g"]) == meal_macro_best.protein_g.value
+        and str(row["best_protein_g_method"]) == meal_macro_best.protein_g.method
+        and float(row["best_carbs_g"]) == meal_macro_best.carbs_g.value
+        and str(row["best_carbs_g_method"]) == meal_macro_best.carbs_g.method
+        and float(row["best_fat_g"]) == meal_macro_best.fat_g.value
+        and str(row["best_fat_g_method"]) == meal_macro_best.fat_g.method
+        and str(row["source_traces_json"]) == source_traces_json
+        and str(row["meal_estimate_json"]) == meal_estimate_json
+    )
 
 
 def _validate_local_date(local_date_value: str) -> str:
