@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from typing import Any
 
 from PIL import Image, ImageOps
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from services.vision.src.cache import VisionResultCache
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_PROMPT = (
@@ -51,10 +54,12 @@ class ClaudeVisionClient:
         client: Any | None = None,
         model: str | None = None,
         max_long_side: int = 1024,
+        cache: VisionResultCache | None = None,
     ) -> None:
         self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
         self.max_long_side = max_long_side
         self._client = client or self._build_default_client()
+        self._cache = cache
 
     def analyze_meal_photo(
         self,
@@ -63,6 +68,15 @@ class ClaudeVisionClient:
         prompt: str = DEFAULT_PROMPT,
     ) -> list[FoodComponent]:
         prepared = self._prepare_image(image)
+        image_hash = self._image_hash(prepared.data)
+        cache_key = self._cache_key(image_hash=image_hash, model=self.model, prompt=prompt)
+        if self._cache is not None:
+            cached_components = self._cache.get(cache_key)
+            if cached_components is not None:
+                return FoodComponentsResponse.model_validate(
+                    {"components": cached_components}
+                ).components
+
         encoded_image = base64.b64encode(prepared.data).decode("ascii")
         last_error: Exception | None = None
 
@@ -92,7 +106,13 @@ class ClaudeVisionClient:
             )
 
             try:
-                return self._parse_response(response)
+                components = self._parse_response(response)
+                if self._cache is not None:
+                    self._cache.set(
+                        cache_key,
+                        [component.model_dump(mode="json") for component in components],
+                    )
+                return components
             except (ValidationError, VisionParseError, TypeError, ValueError) as exc:
                 last_error = exc
 
@@ -123,6 +143,22 @@ class ClaudeVisionClient:
         return (
             f"{prompt}\n\nThe previous response failed schema validation. "
             "Call the tool again with only valid schema fields."
+        )
+
+    @staticmethod
+    def _image_hash(normalized_jpeg_bytes: bytes) -> str:
+        return hashlib.sha256(normalized_jpeg_bytes).hexdigest()
+
+    @staticmethod
+    def _cache_key(*, image_hash: str, model: str, prompt: str) -> str:
+        return json.dumps(
+            {
+                "image_hash": image_hash,
+                "model": model,
+                "prompt": prompt,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
         )
 
     def _prepare_image(self, image: str | Path | bytes | bytearray) -> PreparedImage:
@@ -193,5 +229,6 @@ def analyze_meal_photo(
     *,
     client: Any | None = None,
     model: str | None = None,
+    cache: VisionResultCache | None = None,
 ) -> list[FoodComponent]:
-    return ClaudeVisionClient(client=client, model=model).analyze_meal_photo(image)
+    return ClaudeVisionClient(client=client, model=model, cache=cache).analyze_meal_photo(image)
