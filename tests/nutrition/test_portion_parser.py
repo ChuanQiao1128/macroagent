@@ -93,6 +93,30 @@ def test_parse_portion_range_non_positive_quantity_uses_fallback() -> None:
     assert "non-positive" in result.reason
 
 
+@pytest.mark.parametrize(
+    ("portion_hint", "expected_min", "expected_max"),
+    [
+        ("1/2 cup", 60.0, 130.0),
+        ("1 1/2 cups", 180.0, 390.0),
+        ("three quarters cup", 90.0, 195.0),
+        ("about one and a half cups", 180.0, 390.0),
+    ],
+)
+def test_parse_portion_range_parses_fractional_and_mixed_household_quantities(
+    portion_hint: str,
+    expected_min: float,
+    expected_max: float,
+) -> None:
+    result = parse_portion_range(component_name="lentils", portion_hint=portion_hint)
+
+    assert result.grams_min == expected_min
+    assert result.grams_max == expected_max
+    assert result.confidence == pytest.approx(0.68)
+    assert result.source == "portion_hint_household_unit"
+    assert "parsed" in result.reason
+    assert "component 'lentils'" in result.reason
+
+
 def test_parse_component_portion_range_alias_matches_primary_api() -> None:
     primary = parse_portion_range(component_name="tofu", portion_hint="1 cup")
     alias = parse_component_portion_range(component_name="tofu", portion_hint="1 cup")
