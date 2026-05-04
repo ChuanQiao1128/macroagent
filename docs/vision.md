@@ -1,6 +1,6 @@
 # Claude Vision Meal Component Wrapper
 
-`services.vision` exposes a small wrapper around Anthropic Claude Sonnet for meal-photo understanding.
+`services.vision` wraps Anthropic Claude Sonnet for meal-photo understanding and exposes both a structured uncertainty API and a compatibility view for the existing meal pipeline.
 
 ## What It Does
 
@@ -13,18 +13,53 @@
 - Computes a stable SHA-256 hash from the normalized JPEG bytes.
 - Optionally checks a cache before calling Anthropic.
 - Sends the image to Claude Sonnet through the Anthropic API on cache miss.
-- Enforces a JSON-schema-shaped tool response for `FoodComponent[]`.
-- Retries once if the first response fails schema validation.
+- Constrains Claude with a Pydantic-generated tool schema for `VisionAnalysisResponse`.
+- Requests uncertainty-aware perception only:
+  - image quality and usability issues
+  - meal-level uncertainty flags
+  - per-component ids, visible names, top-k food candidates, portion estimates, state hints, and hidden ingredient risks
+- Does not ask for kcal, protein, carbs, fat, or meal totals.
+- Retries once if the first structured response fails validation.
+- Accepts legacy `FoodComponent[]` responses and lifts them into the structured schema for compatibility.
 - Ships with a simple JSON-file cache for local Track A usage.
 
 ## Public API
 
 - `ClaudeVisionClient`
 - `analyze_meal_photo(image, client=None, model=None, cache=None)`
+- `analyze_meal_photo_structured(image, client=None, model=None, cache=None)`
+- `FoodCandidate`
 - `FoodComponent`
+- `HiddenIngredientRisk`
+- `ImageQualityIssue`
 - `JsonFileVisionCache`
+- `PortionEstimate`
+- `StateHint`
+- `StructuredFoodComponent`
+- `VisionAnalysisResponse`
 - `VisionParseError`
 - `VisionResultCache`
+
+## Output Shapes
+
+`analyze_meal_photo()` returns the backward-compatible `FoodComponent[]` list that the existing meal-analysis code expects.
+
+`analyze_meal_photo_structured()` returns `VisionAnalysisResponse` with:
+
+- `image_quality_issues`
+- `meal_uncertainty_flags`
+- `components`
+
+Each `StructuredFoodComponent` contains:
+
+- `component_id`
+- `visible_name`
+- `candidates`: up to 5 food candidates, each with `name`, `confidence`, and `visual_evidence`
+- `portion`: `description`, `confidence`, and `visual_basis`
+- `state_hints`: optional cooked/raw/fried/grilled/plain/sauced signals when visible
+- `hidden_ingredient_risks`: optional ingredient risks with `likelihood`, `macro_impact`, and optional `rationale`
+
+Legacy simple payloads such as `{"components": [{"name": "...", "confidence": ..., "portion_hint": "..."}]}` are still accepted. They are converted into the structured response with `meal_uncertainty_flags=["legacy_simple_response"]`.
 
 ## Caching
 
@@ -35,21 +70,12 @@ Cache keys include:
 - model name
 - prompt text
 
-On a cache hit, the client returns validated `FoodComponent[]` without making an Anthropic call.
-On a cache miss, it calls Anthropic once and stores the validated result.
-
-`JsonFileVisionCache` stores component payloads in a local JSON file and does not persist raw images.
+Structured and legacy-compatible payloads are cached separately so either API can reuse the same analysis.
+`JsonFileVisionCache` stores serialized payloads in a local JSON file and does not persist raw images.
 Writes use a temporary file plus `os.replace()` so local single-user updates are atomic enough for this use case.
-
-## Output Shape
-
-Each detected food component includes:
-
-- `name`
-- `confidence`
-- `portion_hint`
 
 ## Verification
 
 - `pytest tests/vision/test_claude_vision.py`
-- `ruff check services/vision/`
+- `pytest tests/`
+- `ruff check services/vision/ tests/vision/`

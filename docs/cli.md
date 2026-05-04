@@ -27,6 +27,8 @@ Optional flags:
 
 - Uses the Claude vision wrapper to analyze the image when no injected vision result is provided.
 - Passes the resulting `FoodComponent` objects through `services.meal`.
+- The CLI stays on the backward-compatible `analyze_meal_photo()` path, so the downstream meal pipeline still receives the legacy `FoodComponent` list.
+- Call `services.vision.analyze_meal_photo_structured()` directly if you need the richer uncertainty payload before meal estimation.
 - Computes meal-level macro ranges and best estimates with `services.accounting`.
 - Persists the meal to SQLite through `services.storage` unless `--dry-run` is set.
 - Prints a JSON object to stdout with the meal id, component estimates, macro ranges, and best estimates.
