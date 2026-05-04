@@ -313,3 +313,247 @@ def test_json_file_cache_set_uses_atomic_replace(
     assert temp_path.suffix == ".tmp"
     assert cache_path.exists()
     assert not any(cache_path.parent.glob(f"{cache_path.name}.*.tmp"))
+
+
+def test_analyze_meal_photo_structured_parses_full_uncertainty_response() -> None:
+    payload = {
+        "image_quality_issues": [
+            {
+                "issue": "motion blur near plate edge",
+                "severity": "medium",
+                "impact": "shape ambiguity",
+            }
+        ],
+        "meal_uncertainty_flags": ["mixed_dish", "partial_occlusion"],
+        "components": [
+            {
+                "component_id": "component_1",
+                "visible_name": "sauced chicken pieces",
+                "candidates": [
+                    {
+                        "name": "teriyaki chicken",
+                        "confidence": 0.63,
+                        "visual_evidence": ["brown glossy coating", "cubed chicken texture"],
+                    },
+                    {
+                        "name": "orange chicken",
+                        "confidence": 0.24,
+                        "visual_evidence": ["thick sticky sauce"],
+                    },
+                ],
+                "portion": {
+                    "description": "about one cup",
+                    "confidence": 0.72,
+                    "visual_basis": ["relative to fork size"],
+                },
+                "state_hints": [
+                    {"state": "sauced", "confidence": 0.94, "visual_evidence": ["surface sheen"]},
+                    {"state": "cooked", "confidence": 0.88, "visual_evidence": ["opaque protein"]},
+                ],
+                "hidden_ingredient_risks": [
+                    {
+                        "ingredient": "added sugar in sauce",
+                        "likelihood": 0.83,
+                        "macro_impact": "high",
+                        "rationale": "thick sweet glaze suggests sugar-heavy sauce",
+                    }
+                ],
+            }
+        ],
+    }
+    fake = FakeAnthropicClient([payload])
+
+    structured = ClaudeVisionClient(client=fake).analyze_meal_photo_structured(png_bytes(640, 360))
+
+    assert structured.meal_uncertainty_flags == ["mixed_dish", "partial_occlusion"]
+    assert structured.image_quality_issues[0].issue == "motion blur near plate edge"
+    component = structured.components[0]
+    assert component.component_id == "component_1"
+    assert component.visible_name == "sauced chicken pieces"
+    assert component.candidates[0].name == "teriyaki chicken"
+    assert component.portion.description == "about one cup"
+    assert component.state_hints[0].state == "sauced"
+    assert component.hidden_ingredient_risks[0].ingredient == "added sugar in sauce"
+
+
+def test_default_analyzer_maps_structured_response_to_legacy_food_components() -> None:
+    fake = FakeAnthropicClient(
+        [
+            {
+                "components": [
+                    {
+                        "component_id": "component_1",
+                        "visible_name": "grain bowl base",
+                        "candidates": [
+                            {
+                                "name": "brown rice",
+                                "confidence": 0.77,
+                                "visual_evidence": ["small whole grains"],
+                            },
+                            {
+                                "name": "quinoa",
+                                "confidence": 0.18,
+                                "visual_evidence": ["speckled seeds"],
+                            },
+                        ],
+                        "portion": {
+                            "description": "around three quarters cup",
+                            "confidence": 0.7,
+                            "visual_basis": ["fills base of bowl"],
+                        },
+                        "state_hints": [
+                            {"state": "cooked", "confidence": 0.9, "visual_evidence": []}
+                        ],
+                        "hidden_ingredient_risks": [],
+                    }
+                ]
+            }
+        ]
+    )
+
+    components = ClaudeVisionClient(client=fake).analyze_meal_photo(png_bytes(500, 500))
+
+    assert components == [
+        FoodComponent(
+            name="brown rice",
+            confidence=0.77,
+            portion_hint="around three quarters cup",
+        )
+    ]
+
+
+def test_analyze_meal_photo_structured_accepts_legacy_simple_component_response() -> None:
+    fake = FakeAnthropicClient(
+        [
+            {
+                "components": [
+                    {"name": "grilled salmon", "confidence": 0.81, "portion_hint": "one fillet"}
+                ]
+            }
+        ]
+    )
+
+    structured = ClaudeVisionClient(client=fake).analyze_meal_photo_structured(png_bytes(300, 300))
+
+    assert structured.meal_uncertainty_flags == ["legacy_simple_response"]
+    assert structured.image_quality_issues == []
+    component = structured.components[0]
+    assert component.component_id == "component_1"
+    assert component.visible_name == "grilled salmon"
+    assert component.candidates[0].name == "grilled salmon"
+    assert component.portion.description == "one fillet"
+    assert component.hidden_ingredient_risks == []
+
+
+def test_analyze_meal_photo_structured_retries_on_invalid_structured_payload() -> None:
+    fake = FakeAnthropicClient(
+        [
+            {
+                "components": [
+                    {
+                        "component_id": "component_1",
+                        "visible_name": "chicken",
+                        "candidates": [{"name": "chicken breast", "confidence": 1.3}],
+                        "portion": {
+                            "description": "one piece",
+                            "confidence": 0.6,
+                            "visual_basis": [],
+                        },
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "component_id": "component_1",
+                        "visible_name": "chicken",
+                        "candidates": [{"name": "chicken breast", "confidence": 0.86}],
+                        "portion": {
+                            "description": "one piece",
+                            "confidence": 0.6,
+                            "visual_basis": [],
+                        },
+                        "state_hints": [],
+                        "hidden_ingredient_risks": [],
+                    }
+                ]
+            },
+        ]
+    )
+
+    structured = ClaudeVisionClient(client=fake).analyze_meal_photo_structured(png_bytes(256, 256))
+
+    assert len(fake.messages.calls) == 2
+    first_prompt = fake.messages.calls[0]["messages"][0]["content"][1]["text"]
+    second_prompt = fake.messages.calls[1]["messages"][0]["content"][1]["text"]
+    assert first_prompt == second_prompt.split("\n\n", maxsplit=1)[0]
+    assert "previous response failed schema validation" in second_prompt
+    assert structured.components[0].candidates[0].confidence == 0.86
+
+
+def test_hidden_ingredient_risk_alias_fields_are_parsed() -> None:
+    fake = FakeAnthropicClient(
+        [
+            {
+                "components": [
+                    {
+                        "id": "component_1",
+                        "name": "fries with dip",
+                        "top_k_candidates": [
+                            {
+                                "food_name": "french fries",
+                                "confidence": 0.9,
+                                "evidence": ["thin fried strips"],
+                            }
+                        ],
+                        "portion_estimate": {
+                            "portion_description": "small side basket",
+                            "portion_confidence": 0.68,
+                            "visual_evidence": ["fits beside sandwich"],
+                        },
+                        "state": [
+                            {
+                                "state": "fried",
+                                "confidence": 0.95,
+                                "visual_evidence": ["golden crisp surface"],
+                            }
+                        ],
+                        "hidden_risks": [
+                            {
+                                "ingredient": "frying oil absorption",
+                                "likelihood": 0.79,
+                                "macro_impact": "medium",
+                                "rationale": "visible sheen and porous texture",
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    )
+
+    structured = ClaudeVisionClient(client=fake).analyze_meal_photo_structured(png_bytes(420, 320))
+
+    risk = structured.components[0].hidden_ingredient_risks[0]
+    assert risk.ingredient == "frying oil absorption"
+    assert risk.likelihood == 0.79
+    assert risk.macro_impact == "medium"
+    assert risk.rationale == "visible sheen and porous texture"
+
+
+def test_tool_schema_excludes_nutrition_number_fields() -> None:
+    schema = ClaudeVisionClient._tool_schema()
+    schema_text = json.dumps(schema).lower()
+
+    forbidden_fields = [
+        "kcal",
+        "calorie",
+        "calories",
+        "protein",
+        "carb",
+        "carbs",
+        "fat",
+        "meal_total",
+    ]
+    for field in forbidden_fields:
+        assert field not in schema_text
