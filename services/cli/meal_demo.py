@@ -97,12 +97,18 @@ def run_meal_demo(
         "meal_id": meal_id,
         "persisted": persisted,
         "dry_run": dry_run,
+        "estimate_status": meal_estimate.estimate_status,
+        "macro_range_label": meal_estimate.macro_range_label,
         "component_estimates": [
             component.model_dump(mode="json")
             for component in meal_estimate.component_estimates
         ],
         "macro_ranges": meal_estimate.macro_interval.model_dump(mode="json"),
         "best_estimates": best_estimates.model_dump(mode="json"),
+        "uncertainty_signals": [
+            signal.model_dump(mode="json") for signal in meal_estimate.uncertainty_signals
+        ],
+        "recommended_user_question": meal_estimate.recommended_user_question,
     }
 
 

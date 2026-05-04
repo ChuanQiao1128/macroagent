@@ -80,19 +80,14 @@ HIGH_IMPACT_CATEGORIES = (
         ),
     ),
     _HighImpactCategory(
-        key="oil_or_butter",
-        phrases=("oil", "butter", "ghee", "margarine"),
-        kcal_per_100g=884.0,
-        fat_g_per_100g=100.0,
-        unmatched_question_template=(
-            "Was extra oil or butter used for {component_name}? About how much was used?"
-        ),
-    ),
-    _HighImpactCategory(
         key="nuts_or_nut_butter",
         phrases=(
             "nut",
             "nuts",
+            "walnut",
+            "walnuts",
+            "almond",
+            "almonds",
             "nut butter",
             "peanut butter",
             "almond butter",
@@ -104,6 +99,15 @@ HIGH_IMPACT_CATEGORIES = (
         fat_g_per_100g=50.0,
         unmatched_question_template=(
             "Did {component_name} include nuts or nut butter? About how much was included?"
+        ),
+    ),
+    _HighImpactCategory(
+        key="oil_or_butter",
+        phrases=("oil", "butter", "buttered", "ghee", "margarine"),
+        kcal_per_100g=884.0,
+        fat_g_per_100g=100.0,
+        unmatched_question_template=(
+            "Was extra oil or butter used for {component_name}? About how much was used?"
         ),
     ),
     _HighImpactCategory(
@@ -128,6 +132,9 @@ HIGH_IMPACT_CATEGORIES = (
             "donut",
             "soda",
             "cola",
+            "sugary drink",
+            "sweetened beverage",
+            "sweetened drink",
             "sweet tea",
             "juice",
             "boba",
