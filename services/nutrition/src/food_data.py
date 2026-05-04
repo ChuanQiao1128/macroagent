@@ -383,7 +383,6 @@ def _parse_confidence(value: object, *, fallback: float) -> float:
 def _normalize_state_signals(
     *,
     state_hints: Sequence[StateSignalInput],
-    query_candidates: Sequence[_QueryCandidate],
 ) -> tuple[frozenset[StateLabel], str]:
     signals: dict[StateLabel, float] = {}
 
@@ -393,18 +392,37 @@ def _normalize_state_signals(
             continue
         signals[hint_state] = max(signals.get(hint_state, 0.0), hint_confidence)
 
-    for query_candidate in query_candidates:
-        derived_states = _extract_states_from_text(query_candidate.normalized)
-        derived_confidence = max(
-            QUERY_DERIVED_STATE_FLOOR,
-            query_candidate.confidence * 0.75,
-        )
-        for state in derived_states:
-            signals[state] = max(signals.get(state, 0.0), derived_confidence)
-
     observed_states = frozenset(
         state for state, confidence in signals.items() if confidence >= STATE_SIGNAL_THRESHOLD
     )
+    if not observed_states:
+        return observed_states, "no strong state hints present"
+    state_text = ", ".join(sorted(observed_states))
+    return observed_states, f"state hints observed: {state_text}"
+
+
+def _derived_candidate_state_signals(
+    query_candidate: _QueryCandidate,
+) -> frozenset[StateLabel]:
+    derived_states = _extract_states_from_text(query_candidate.normalized)
+    if not derived_states:
+        return frozenset()
+
+    derived_confidence = max(
+        QUERY_DERIVED_STATE_FLOOR,
+        query_candidate.confidence * 0.75,
+    )
+    if derived_confidence < STATE_SIGNAL_THRESHOLD:
+        return frozenset()
+    return derived_states
+
+
+def _merge_observed_states(
+    *,
+    state_hints: frozenset[StateLabel],
+    candidate_states: frozenset[StateLabel],
+) -> tuple[frozenset[StateLabel], str]:
+    observed_states = state_hints | candidate_states
     if not observed_states:
         return observed_states, "no strong state hints present"
     state_text = ", ".join(sorted(observed_states))
@@ -477,6 +495,12 @@ def _extract_entry_states(entry: MacroEntry) -> frozenset[StateLabel]:
     return frozenset(states)
 
 
+def _expand_cooked_state_family(states: frozenset[StateLabel]) -> frozenset[StateLabel]:
+    if states & METHOD_STATES and "cooked" not in states:
+        return frozenset((*states, "cooked"))
+    return states
+
+
 def _evaluate_state_alignment(
     *,
     observed_states: frozenset[StateLabel],
@@ -488,23 +512,26 @@ def _evaluate_state_alignment(
         observed_text = ", ".join(sorted(observed_states))
         return 0.0, f"entry has no explicit state tags; observed {observed_text}", False
 
+    normalized_observed_states = _expand_cooked_state_family(observed_states)
+    normalized_entry_states = _expand_cooked_state_family(entry_states)
+
     conflicts: list[str] = []
-    if "raw" in observed_states and "cooked" in entry_states:
+    if "raw" in normalized_observed_states and "cooked" in normalized_entry_states:
         conflicts.append("observed raw vs entry cooked")
-    if "cooked" in observed_states and "raw" in entry_states:
+    if "cooked" in normalized_observed_states and "raw" in normalized_entry_states:
         conflicts.append("observed cooked vs entry raw")
 
-    observed_methods = observed_states & METHOD_STATES
-    entry_methods = entry_states & METHOD_STATES
+    observed_methods = normalized_observed_states & METHOD_STATES
+    entry_methods = normalized_entry_states & METHOD_STATES
     if observed_methods and entry_methods and observed_methods.isdisjoint(entry_methods):
         conflicts.append(
             "observed prep "
             f"{'/'.join(sorted(observed_methods))} vs entry prep {'/'.join(sorted(entry_methods))}"
         )
 
-    if "plain" in observed_states and "sauced" in entry_states:
+    if "plain" in normalized_observed_states and "sauced" in normalized_entry_states:
         conflicts.append("observed plain vs entry sauced")
-    if "sauced" in observed_states and "plain" in entry_states:
+    if "sauced" in normalized_observed_states and "plain" in normalized_entry_states:
         conflicts.append("observed sauced vs entry plain")
 
     if conflicts:
@@ -514,18 +541,18 @@ def _evaluate_state_alignment(
             True,
         )
 
-    aligned_states = observed_states & entry_states
+    aligned_states = normalized_observed_states & normalized_entry_states
     if aligned_states:
         aligned_text = ", ".join(sorted(aligned_states))
         return STATE_ALIGNMENT_BONUS, f"state aligned on {aligned_text}", False
 
-    if ("cooked" in observed_states and entry_methods) or (
-        "cooked" in entry_states and observed_methods
+    if ("cooked" in normalized_observed_states and entry_methods) or (
+        "cooked" in normalized_entry_states and observed_methods
     ):
         return STATE_ALIGNMENT_BONUS, "state aligned on cooked-preparation family", False
 
-    observed_text = ", ".join(sorted(observed_states))
-    entry_text = ", ".join(sorted(entry_states))
+    observed_text = ", ".join(sorted(normalized_observed_states))
+    entry_text = ", ".join(sorted(normalized_entry_states))
     return (
         0.0,
         f"state hints ({observed_text}) differ from entry tags ({entry_text}); no state adjustment",
@@ -561,17 +588,21 @@ def match_food_candidates(
     if not normalized_candidates:
         return ()
 
-    observed_states, state_signal_reason = _normalize_state_signals(
+    hinted_states, _ = _normalize_state_signals(
         state_hints=state_hints,
-        query_candidates=normalized_candidates,
     )
 
     ranked_matches: list[tuple[float, MacroMatchCandidate]] = []
     for entry in _load_all_entries():
+        entry_states = _extract_entry_states(entry)
         best_text_match: MacroMatchCandidate | None = None
         best_query_text = ""
         best_query_confidence = 0.0
         best_query_metric = -1.0
+        best_state_adjustment = 0.0
+        best_state_reason = "no state adjustment applied"
+        best_state_conflict = False
+        best_state_signal_reason = "no strong state hints present"
 
         for query_candidate in normalized_candidates:
             text_match = _score_entry_match(
@@ -582,22 +613,33 @@ def match_food_candidates(
             if text_match is None or text_match.score < min_score:
                 continue
 
-            query_metric = text_match.score + (0.02 * query_candidate.confidence)
+            candidate_states = _derived_candidate_state_signals(query_candidate)
+            observed_states, state_signal_reason = _merge_observed_states(
+                state_hints=hinted_states,
+                candidate_states=candidate_states,
+            )
+            state_adjustment, state_reason, state_conflict = _evaluate_state_alignment(
+                observed_states=observed_states,
+                entry_states=entry_states,
+            )
+            query_metric = (
+                text_match.score + state_adjustment + (0.02 * query_candidate.confidence)
+            )
             if query_metric <= best_query_metric:
                 continue
             best_query_metric = query_metric
             best_text_match = text_match
             best_query_text = query_candidate.text
             best_query_confidence = query_candidate.confidence
+            best_state_adjustment = state_adjustment
+            best_state_reason = state_reason
+            best_state_conflict = state_conflict
+            best_state_signal_reason = state_signal_reason
 
         if best_text_match is None:
             continue
 
-        state_adjustment, state_reason, state_conflict = _evaluate_state_alignment(
-            observed_states=observed_states,
-            entry_states=_extract_entry_states(entry),
-        )
-        final_score = _clamp_score(best_text_match.score + state_adjustment)
+        final_score = _clamp_score(best_text_match.score + best_state_adjustment)
         ranking_score = final_score
 
         reason_parts = [
@@ -606,8 +648,8 @@ def match_food_candidates(
                 "matched via vision candidate "
                 f"'{best_query_text}' (confidence={best_query_confidence:.2f})"
             ),
-            state_signal_reason,
-            state_reason,
+            best_state_signal_reason,
+            best_state_reason,
         ]
 
         if entry.source == "PERSONAL":
@@ -623,7 +665,7 @@ def match_food_candidates(
                         f"below {PERSONAL_PRIORITY_MIN_SCORE:.2f})"
                     )
                 )
-            elif state_conflict:
+            elif best_state_conflict:
                 reason_parts.append("personal priority bonus skipped (state conflict)")
             else:
                 ranking_score = _clamp_score(ranking_score + PERSONAL_PRIORITY_BONUS)
