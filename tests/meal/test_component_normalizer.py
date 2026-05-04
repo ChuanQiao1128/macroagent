@@ -179,6 +179,44 @@ def test_normalize_meal_components_preserves_top_k_candidates_and_visual_evidenc
     assert component.top_food_candidates[2].visual_evidence == ("shredded cabbage",)
 
 
+def test_normalize_meal_components_preserves_top_k_candidate_order_with_tied_confidence() -> None:
+    response = VisionAnalysisResponse(
+        components=[
+            StructuredFoodComponent(
+                component_id="veg-1",
+                visible_name="vegetable mix",
+                candidates=[
+                    FoodCandidate(
+                        name="zucchini strips",
+                        confidence=0.70,
+                        visual_evidence=["green skin"],
+                    ),
+                    FoodCandidate(
+                        name="eggplant strips",
+                        confidence=0.70,
+                        visual_evidence=["purple edge"],
+                    ),
+                ],
+                portion=PortionEstimate(
+                    description="1 bowl",
+                    confidence=0.63,
+                    visual_basis=["bowl size"],
+                ),
+            )
+        ]
+    )
+
+    normalized = normalize_meal_components(response)
+    component = normalized.components[0]
+
+    assert [candidate.name for candidate in component.top_food_candidates] == [
+        "zucchini strips",
+        "eggplant strips",
+    ]
+    assert component.top_food_candidates[0].visual_evidence == ("green skin",)
+    assert component.top_food_candidates[1].visual_evidence == ("purple edge",)
+
+
 def test_normalize_meal_components_preserves_hidden_risk_flags_after_duplicate_merge() -> None:
     response = VisionAnalysisResponse(
         components=[
