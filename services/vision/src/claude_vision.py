@@ -12,20 +12,19 @@ from typing import Any, Literal
 from PIL import Image, ImageOps
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
+from services.trace import (
+    VISION_MODEL_NAME,
+    VISION_PROMPT_TEXT,
+    VISION_SCHEMA_VERSION,
+    TraceVersionMetadata,
+    build_trace_version_metadata,
+)
 from services.vision.src.cache import VisionResultCache
 
-DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
-DEFAULT_PROMPT = (
-    "Analyze this meal photo as uncertain visual evidence only. "
-    "Return image-quality issues, meal uncertainty flags, and for each visible component include "
-    "a component id, visible name, top food candidates with confidence and visual evidence, "
-    "portion estimate with confidence and visual basis, visible state hints, and hidden ingredient "
-    "risks with likelihood and macro impact. Do not provide kcal, protein, carbs, fat, "
-    "or meal totals. "
-    "Use the tool schema only."
-)
+DEFAULT_MODEL = VISION_MODEL_NAME
+DEFAULT_PROMPT = VISION_PROMPT_TEXT
 TOOL_NAME = "extract_food_components"
-STRUCTURED_CACHE_FORMAT = "vision_analysis_response_v1"
+STRUCTURED_CACHE_FORMAT = VISION_SCHEMA_VERSION
 
 
 class VisionParseError(ValueError):
@@ -150,6 +149,7 @@ class VisionAnalysisResponse(BaseModel):
         validation_alias=AliasChoices("meal_uncertainty_flags", "uncertainty_flags"),
     )
     components: list[StructuredFoodComponent]
+    trace_versions: TraceVersionMetadata = Field(default_factory=build_trace_version_metadata)
 
     def to_food_components(self) -> list[FoodComponent]:
         results: list[FoodComponent] = []
@@ -209,9 +209,15 @@ class ClaudeVisionClient:
                 self._cache.get(structured_cache_key)
             )
             if cached_structured is not None:
-                return cached_structured.to_food_components()
+                return self._with_trace_versions(
+                    cached_structured,
+                    prompt=prompt,
+                ).to_food_components()
 
-        structured = self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
+        structured = self._with_trace_versions(
+            self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt),
+            prompt=prompt,
+        )
         components = structured.to_food_components()
 
         if self._cache is not None:
@@ -244,9 +250,12 @@ class ClaudeVisionClient:
                 self._cache.get(structured_cache_key)
             )
             if cached_structured is not None:
-                return cached_structured
+                return self._with_trace_versions(cached_structured, prompt=prompt)
 
-        structured = self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
+        structured = self._with_trace_versions(
+            self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt),
+            prompt=prompt,
+        )
 
         if self._cache is not None:
             self._cache.set(
@@ -262,6 +271,21 @@ class ClaudeVisionClient:
             )
 
         return structured
+
+    def _with_trace_versions(
+        self,
+        structured: VisionAnalysisResponse,
+        *,
+        prompt: str,
+    ) -> VisionAnalysisResponse:
+        return structured.model_copy(
+            update={
+                "trace_versions": build_trace_version_metadata(
+                    vision_model_name=self.model,
+                    vision_prompt_text=prompt,
+                )
+            }
+        )
 
     @staticmethod
     def _build_default_client() -> Any:

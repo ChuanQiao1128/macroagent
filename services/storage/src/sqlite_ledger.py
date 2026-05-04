@@ -29,6 +29,7 @@ from services.meal import (
     PortionCorrectionPrior as MealPortionCorrectionPrior,
 )
 from services.nutrition import parse_portion_range
+from services.trace import LEDGER_SCHEMA_VERSION
 
 
 class StoredMealEstimate(BaseModel):
@@ -231,7 +232,7 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
-_EXPORT_SCHEMA_VERSION = 2
+_EXPORT_SCHEMA_VERSION = LEDGER_SCHEMA_VERSION
 _BASE_SCHEMA_VERSION = _MIGRATIONS[0].version if _MIGRATIONS else 0
 _LATEST_SCHEMA_VERSION = _MIGRATIONS[-1].version if _MIGRATIONS else 0
 
@@ -1026,6 +1027,11 @@ def _build_meal_backup_row(
     row: sqlite3.Row,
     components: list[dict[str, object]],
 ) -> dict[str, object]:
+    meal_estimate_payload = _json_loads(str(row["meal_estimate_json"]))
+    trace_versions_payload: object | None = None
+    if isinstance(meal_estimate_payload, dict):
+        trace_versions_payload = meal_estimate_payload.get("trace_versions")
+
     return {
         "meal_id": str(row["meal_id"]),
         "local_date": str(row["local_date"]),
@@ -1070,7 +1076,8 @@ def _build_meal_backup_row(
             },
         },
         "source_traces": _json_loads(str(row["source_traces_json"])),
-        "meal_estimate": _json_loads(str(row["meal_estimate_json"])),
+        "meal_estimate": meal_estimate_payload,
+        "trace_versions": trace_versions_payload,
         "components": components,
     }
 

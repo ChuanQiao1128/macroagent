@@ -1,5 +1,8 @@
 from services.vision.src.cache import JsonFileVisionCache, VisionResultCache
 from services.vision.src.claude_vision import (
+    DEFAULT_MODEL,
+    DEFAULT_PROMPT,
+    STRUCTURED_CACHE_FORMAT,
     ClaudeVisionClient,
     FoodCandidate,
     FoodComponent,
@@ -16,12 +19,15 @@ from services.vision.src.claude_vision import (
 
 __all__ = [
     "ClaudeVisionClient",
+    "DEFAULT_MODEL",
+    "DEFAULT_PROMPT",
     "FoodCandidate",
     "FoodComponent",
     "HiddenIngredientRisk",
     "ImageQualityIssue",
     "JsonFileVisionCache",
     "PortionEstimate",
+    "STRUCTURED_CACHE_FORMAT",
     "StateHint",
     "StructuredFoodComponent",
     "VisionAnalysisResponse",

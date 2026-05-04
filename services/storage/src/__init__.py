@@ -14,6 +14,7 @@ from services.storage.src.sqlite_ledger import (
     insert_meal_estimate,
     insert_portion_correction,
 )
+from services.trace import LEDGER_SCHEMA_VERSION
 
 __all__ = [
     "DailyLedgerTotals",
@@ -21,6 +22,7 @@ __all__ = [
     "PortionCorrectionPriors",
     "PortionCorrectionRecord",
     "StoredMealEstimate",
+    "LEDGER_SCHEMA_VERSION",
     "build_portion_correction_prior_resolver",
     "export_ledger_backup",
     "fetch_daily_totals",

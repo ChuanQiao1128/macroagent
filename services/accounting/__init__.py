@@ -14,9 +14,11 @@ from services.accounting.src.macro_interval import (
     calculate_meal_macro_best_estimate,
     calculate_meal_macro_interval,
 )
+from services.trace import MACRO_CALCULATOR_VERSION
 
 __all__ = [
     "FoodMacroInterval",
+    "MACRO_CALCULATOR_VERSION",
     "MacroBestEstimate",
     "MacroBestEstimateSet",
     "MacroRange",

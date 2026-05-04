@@ -16,11 +16,15 @@ from services.nutrition.src.portion_parser import (
     parse_component_portion_range,
     parse_portion_range,
 )
+from services.trace import MATCHER_VERSION, NUTRITION_CATALOG_VERSION, PORTION_ENGINE_VERSION
 
 __all__ = [
     "MacroEntry",
     "MacroMatchCandidate",
+    "MATCHER_VERSION",
+    "NUTRITION_CATALOG_VERSION",
     "PortionGramRange",
+    "PORTION_ENGINE_VERSION",
     "find_macro_entry",
     "find_macro_entry_candidates",
     "get_macro_entry",

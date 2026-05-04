@@ -99,6 +99,7 @@ def run_meal_demo(
         "dry_run": dry_run,
         "estimate_status": meal_estimate.estimate_status,
         "macro_range_label": meal_estimate.macro_range_label,
+        "trace_versions": meal_estimate.trace_versions.model_dump(mode="json"),
         "component_estimates": [
             component.model_dump(mode="json")
             for component in meal_estimate.component_estimates

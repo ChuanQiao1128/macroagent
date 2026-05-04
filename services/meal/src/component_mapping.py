@@ -24,6 +24,7 @@ from services.nutrition import (
     match_food_candidates,
     parse_portion_range,
 )
+from services.trace import TraceVersionMetadata, build_trace_version_metadata
 from services.vision import FoodComponent, VisionAnalysisResponse
 
 DEFAULT_CANDIDATE_LIMIT = 3
@@ -256,6 +257,7 @@ class MealEstimate(BaseModel):
     macro_interval: MealMacroInterval
     uncertainty_signals: tuple[MealUncertaintySignal, ...] = Field(default_factory=tuple)
     recommended_user_question: str | None = None
+    trace_versions: TraceVersionMetadata = Field(default_factory=build_trace_version_metadata)
 
     @model_validator(mode="after")
     def _validate_counts(self) -> MealEstimate:
@@ -289,6 +291,11 @@ def analyze_meal_components(
     if correction_prior_minimum_samples <= 0:
         raise ValueError("correction_prior_minimum_samples must be greater than 0")
 
+    trace_versions = (
+        components.trace_versions
+        if isinstance(components, VisionAnalysisResponse)
+        else build_trace_version_metadata()
+    )
     normalized_components = normalize_meal_components(components)
 
     component_estimates: list[MealComponentEstimate] = []
@@ -419,6 +426,7 @@ def analyze_meal_components(
         macro_interval=meal_interval,
         uncertainty_signals=tuple(uncertainty_signals),
         recommended_user_question=_select_recommended_user_question(uncertainty_signals),
+        trace_versions=trace_versions,
     )
 
 
