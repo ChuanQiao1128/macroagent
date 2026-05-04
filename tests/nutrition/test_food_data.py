@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 from services.nutrition import (
     MacroEntry,
     NutritionEntry,
+    build_fdc_local_database,
     find_macro_entry,
     get_macro_entry,
     get_macro_entry_by_name,
@@ -554,6 +556,7 @@ def test_match_food_candidates_uses_fdc_when_local_catalog_misses(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_LOCAL_LOOKUP_ENABLED", "0")
     monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
     monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
 
@@ -585,11 +588,51 @@ def test_match_food_candidates_uses_fdc_when_local_catalog_misses(
     assert "matched via FDC query 'spicy tuna maki roll'" in matches[0].reason
 
 
+def test_match_food_candidates_uses_local_fdc_database_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "fdc.json"
+    db_path = tmp_path / "nutrition.db"
+    source_path.write_text(
+        json.dumps({"SurveyFoods": _fdc_sushi_payload()["foods"]}),
+        encoding="utf-8",
+    )
+    build_fdc_local_database([source_path], db_path=db_path)
+    monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_LOCAL_DB_PATH", str(db_path))
+    monkeypatch.delenv("FDC_API_KEY", raising=False)
+
+    def fail_fetch_fdc_search_payload(*, query: str, api_key: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected FDC API lookup for {query} with {api_key}")
+
+    monkeypatch.setattr(
+        food_data_module,
+        "_fetch_fdc_search_payload",
+        fail_fetch_fdc_search_payload,
+    )
+
+    matches = match_food_candidates(
+        [("spicy tuna maki roll", 0.68)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert matches
+    assert matches[0].entry.id == "fdc:234567"
+    assert matches[0].entry.name == "Sushi roll, tuna"
+    assert matches[0].entry.sugar_g_per_100g == pytest.approx(3.4)
+    assert matches[0].entry.sodium_mg_per_100g == pytest.approx(315.0)
+    assert matches[0].entry.fiber_g_per_100g == pytest.approx(1.2)
+    assert "matched via FDC query 'sushi roll tuna'" in matches[0].reason
+
+
 def test_match_food_candidates_cleans_fdc_query_for_sugar_packet(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_LOCAL_LOOKUP_ENABLED", "0")
     monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
     monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
     seen_queries: list[str] = []
@@ -626,6 +669,7 @@ def test_match_food_candidates_does_not_search_fdc_when_local_match_is_confident
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_LOCAL_LOOKUP_ENABLED", "0")
     monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
     monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
 
@@ -654,6 +698,7 @@ def test_load_fdc_macro_entries_for_query_uses_persistent_cache(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_LOCAL_LOOKUP_ENABLED", "0")
     monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
     monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
     calls = {"count": 0}

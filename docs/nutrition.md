@@ -9,6 +9,7 @@
 - Both catalogs are JSON-backed and inspectable in source control.
 - The USDA seed set covers the broad generic catalog used for exact lookup.
 - The personal seed set contains 20 commonly used foods, including branded milk, protein powder, yogurt, eggs, coffee, oats, rice, chicken, tuna, tofu, fruit, nuts, and cooking oil.
+- Downloaded FoodData Central JSON snapshots can be imported into a local SQLite database at `local_outputs/fdc_local/nutrition.db` for broad offline matching without waiting on the FDC API.
 
 ## Entry Model
 
@@ -53,6 +54,7 @@ The module exports these helpers:
 - `load_macro_entries()`
 - `load_personal_macro_entries()`
 - `load_fdc_macro_entries_for_query(query)`
+- `load_fdc_local_entries_for_query(query)`
 - `load_all_macro_entries()`
 - `get_macro_entry(name_or_alias)`
 - `get_macro_entry_by_name(name_or_alias)`
@@ -72,11 +74,27 @@ Ranked matcher behavior:
 - It supports exact name matches, exact alias matches, token containment, and lightweight fuzzy matching.
 - Results are ranked by score, then personal entries are preferred over USDA entries when scores tie.
 - `find_macro_entry_candidates()` is an alias for `match_food_name()` for call-site readability.
-- If `FDC_API_KEY` is set and local matching misses or is low confidence, the matcher searches FoodData Central and maps results into the same `NutritionEntry` shape with `source="USDA"` and ids like `fdc:171831`.
+- If the local FDC SQLite database exists and local seed matching misses or is low confidence, the matcher searches that database first and maps results into the same `NutritionEntry` shape with `source="USDA"` and ids like `fdc:171831`.
+- If no local FDC database result is available and `FDC_API_KEY` is set, the matcher falls back to the FoodData Central API.
 - Confident local matches are not replaced by FDC results; FDC is a fallback/expansion path, not a blanket override.
 - FDC extraction supports the seven core output metrics: `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`.
 - FDC responses are cached in `local_outputs/fdc_search_cache.json` by default. Override with `FDC_CACHE_PATH`; disable lookup with `FDC_LOOKUP_ENABLED=0`.
+- Local FDC lookup defaults to `local_outputs/fdc_local/nutrition.db`. Override with `FDC_LOCAL_DB_PATH`; disable only the local SQLite path with `FDC_LOCAL_LOOKUP_ENABLED=0`.
 - FDC query cleaning removes package/weight noise such as `stick`, `packet`, and `~4 g` so visible items like sugar packets can resolve to nutrition entries.
+
+## Local FDC Import
+
+The local importer builds a small query database from official USDA/FDC JSON downloads:
+
+```bash
+python -m services.nutrition.src.fdc_local \
+  --db-path local_outputs/fdc_local/nutrition.db \
+  local_outputs/fdc_downloads/extracted/foundation/FoodData_Central_foundation_food_json_2026-04-30.json \
+  local_outputs/fdc_downloads/extracted/sr_legacy/FoodData_Central_sr_legacy_food_json_2018-04.json \
+  local_outputs/fdc_downloads/extracted/fndds/surveyDownload.json
+```
+
+The current local snapshot imports Foundation, SR Legacy, and Survey/FNDDS foods. Branded Foods is intentionally separate because the latest JSON snapshot is several gigabytes after extraction.
 
 Exact lookup behavior remains exact-match only:
 

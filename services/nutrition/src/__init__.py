@@ -24,19 +24,38 @@ from services.nutrition.src.version_metadata import (
     PORTION_ENGINE_VERSION,
 )
 
+_FDC_LOCAL_EXPORTS = frozenset(
+    {
+        "FDC_LOCAL_DB_PATH_ENV",
+        "FDC_LOCAL_DEFAULT_DB_PATH",
+        "FDC_LOCAL_LOOKUP_ENABLED_ENV",
+        "FdcLocalImportResult",
+        "build_fdc_local_database",
+        "fdc_local_database_available",
+        "load_fdc_local_entries_for_query",
+    }
+)
+
 __all__ = [
     "MacroEntry",
     "MacroMatchCandidate",
+    "FDC_LOCAL_DB_PATH_ENV",
+    "FDC_LOCAL_DEFAULT_DB_PATH",
+    "FDC_LOCAL_LOOKUP_ENABLED_ENV",
+    "FdcLocalImportResult",
     "MATCHER_VERSION",
     "NUTRITION_CATALOG_VERSION",
     "NutritionEntry",
     "PortionGramRange",
     "PORTION_ENGINE_VERSION",
+    "build_fdc_local_database",
+    "fdc_local_database_available",
     "find_macro_entry",
     "find_macro_entry_candidates",
     "get_macro_entry",
     "get_macro_entry_by_name",
     "load_all_macro_entries",
+    "load_fdc_local_entries_for_query",
     "load_fdc_macro_entries_for_query",
     "load_macro_entries",
     "load_personal_macro_entries",
@@ -45,3 +64,11 @@ __all__ = [
     "parse_component_portion_range",
     "parse_portion_range",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name in _FDC_LOCAL_EXPORTS:
+        from services.nutrition.src import fdc_local
+
+        return getattr(fdc_local, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

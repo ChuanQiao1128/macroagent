@@ -28,7 +28,8 @@ Optional flags:
 - Uses the Claude vision wrapper to analyze the image when no injected vision result is provided.
 - The default vision provider is Claude Code subscription auth (`VISION_PROVIDER=claude_cli`), not the Anthropic API key path.
 - Set `VISION_PROVIDER=anthropic` only when you intentionally want the Anthropic SDK/API provider.
-- If `FDC_API_KEY` is present, nutrition matching can use FoodData Central as a cached fallback when the local catalog misses.
+- Nutrition matching checks the local FDC SQLite database at `local_outputs/fdc_local/nutrition.db` before using the remote FoodData Central API. Set `FDC_LOCAL_DB_PATH` to override it.
+- If `FDC_API_KEY` is present, nutrition matching can use FoodData Central as a cached remote fallback when the seed catalog and local FDC database miss.
 - Passes the resulting `FoodComponent` objects through `services.meal`.
 - The CLI stays on the backward-compatible `analyze_meal_photo()` path, so the downstream meal pipeline still receives the legacy `FoodComponent` list.
 - Call `services.vision.analyze_meal_photo_structured()` directly if you need the richer uncertainty payload before meal estimation.

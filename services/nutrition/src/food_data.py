@@ -32,6 +32,8 @@ FDC_REQUEST_TIMEOUT_SECONDS = 10
 FDC_MATCH_CONFIDENT_FLOOR = 0.70
 FDC_RANK_FALLBACK_BASE_SCORE = 0.74
 FDC_QUERY_CONFIDENCE_RANKING_WEIGHT = 0.15
+FDC_QUERY_VARIANT_RANKING_WEIGHT = 0.002
+FDC_RESULT_RANKING_WEIGHT = 0.0001
 MIN_QUERY_CANDIDATE_CONFIDENCE = 0.15
 FDC_QUERY_STOPWORDS = frozenset(
     {
@@ -50,6 +52,18 @@ FDC_QUERY_STOPWORDS = frozenset(
         "g",
         "gram",
         "grams",
+    }
+)
+FDC_SUSHI_FILLING_TOKENS = frozenset(
+    {
+        "avocado",
+        "california",
+        "crab",
+        "cucumber",
+        "eel",
+        "salmon",
+        "shrimp",
+        "tuna",
     }
 )
 
@@ -820,6 +834,10 @@ def load_fdc_macro_entries_for_query(query: str) -> tuple[MacroEntry, ...]:
     if not normalized_query or not _fdc_lookup_enabled():
         return ()
 
+    local_entries = _load_fdc_local_entries_for_query(normalized_query)
+    if local_entries:
+        return local_entries
+
     cached = _read_fdc_cache_entry(normalized_query)
     if cached is not None:
         return cached
@@ -856,7 +874,23 @@ def _fdc_lookup_enabled() -> bool:
         return configured.strip().casefold() not in {"0", "false", "no", "off"}
     if "PYTEST_CURRENT_TEST" in os.environ:
         return False
-    return bool(os.getenv(FDC_API_KEY_ENV))
+    return bool(os.getenv(FDC_API_KEY_ENV)) or _fdc_local_database_available()
+
+
+def _fdc_local_database_available() -> bool:
+    try:
+        from services.nutrition.src.fdc_local import fdc_local_database_available
+    except ImportError:
+        return False
+    return fdc_local_database_available()
+
+
+def _load_fdc_local_entries_for_query(query: str) -> tuple[MacroEntry, ...]:
+    try:
+        from services.nutrition.src.fdc_local import load_fdc_local_entries_for_query
+    except ImportError:
+        return ()
+    return load_fdc_local_entries_for_query(query)
 
 
 def _rank_fdc_matches_for_query(
@@ -866,7 +900,9 @@ def _rank_fdc_matches_for_query(
     min_score: float,
 ) -> tuple[tuple[float, float, MacroMatchCandidate], ...]:
     ranked: list[tuple[float, float, MacroMatchCandidate]] = []
-    for search_query in _fdc_query_variants(query_candidate.text):
+    query_variants = _fdc_query_variants(query_candidate.text)
+    variant_count = len(query_variants)
+    for variant_index, search_query in enumerate(query_variants):
         search_candidate = _parse_query_candidate((search_query, query_candidate.confidence))
         if search_candidate is None:
             continue
@@ -904,7 +940,12 @@ def _rank_fdc_matches_for_query(
             ranked.append(
                 (
                     final_score
-                    + (FDC_QUERY_CONFIDENCE_RANKING_WEIGHT * query_candidate.confidence),
+                    + (FDC_QUERY_CONFIDENCE_RANKING_WEIGHT * query_candidate.confidence)
+                    + (
+                        FDC_QUERY_VARIANT_RANKING_WEIGHT
+                        * max(variant_count - variant_index, 0)
+                    )
+                    + (FDC_RESULT_RANKING_WEIGHT * max(FDC_PAGE_SIZE - rank, 0)),
                     query_candidate.confidence,
                     MacroMatchCandidate(
                         entry=entry,
@@ -940,8 +981,13 @@ def _fdc_query_variants(query: str) -> tuple[str, ...]:
     if "sugar" in token_set or "sugars" in token_set:
         if "granulated" in token_set:
             add("granulated sugar")
-        add("sugar")
+        else:
+            add("sugar")
     if token_set & {"maki", "sushi"} and "roll" in token_set:
+        for token in tokens:
+            if token in FDC_SUSHI_FILLING_TOKENS:
+                add(f"{token} sushi roll")
+                add(f"sushi roll {token}")
         add("sushi roll")
     if token_set & {"americano", "espresso", "coffee"}:
         add("coffee")
