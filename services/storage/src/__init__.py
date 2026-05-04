@@ -1,3 +1,4 @@
+from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
 from services.storage.src.sqlite_ledger import (
     DailyLedgerTotals,
     PortionCorrectionPrior,
@@ -14,7 +15,6 @@ from services.storage.src.sqlite_ledger import (
     insert_meal_estimate,
     insert_portion_correction,
 )
-from services.trace import LEDGER_SCHEMA_VERSION
 
 __all__ = [
     "DailyLedgerTotals",

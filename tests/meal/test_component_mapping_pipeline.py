@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from services.meal import analyze_meal_components, estimate_meal_from_components
-from services.trace import build_trace_version_metadata
+from services.nutrition.src.version_metadata import build_trace_version_metadata
 from services.vision import (
     FoodCandidate,
     FoodComponent,

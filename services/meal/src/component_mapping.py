@@ -24,7 +24,10 @@ from services.nutrition import (
     match_food_candidates,
     parse_portion_range,
 )
-from services.trace import TraceVersionMetadata, build_trace_version_metadata
+from services.nutrition.src.version_metadata import (
+    TraceVersionMetadata,
+    build_trace_version_metadata,
+)
 from services.vision import FoodComponent, VisionAnalysisResponse
 
 DEFAULT_CANDIDATE_LIMIT = 3

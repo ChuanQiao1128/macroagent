@@ -9,8 +9,8 @@ import pytest
 
 from services.cli import meal_demo as meal_demo_module
 from services.cli.meal_demo import main, parse_args, run_meal_demo
+from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
 from services.storage import fetch_meal_by_id
-from services.trace import LEDGER_SCHEMA_VERSION
 from services.vision import FoodComponent, VisionAnalysisResponse
 
 

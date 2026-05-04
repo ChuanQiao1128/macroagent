@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from services.trace import (
+from services.nutrition.src.version_metadata import (
     LEDGER_SCHEMA_VERSION,
     MACRO_CALCULATOR_VERSION,
     MATCHER_VERSION,

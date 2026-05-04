@@ -29,7 +29,7 @@ from services.meal import (
     PortionCorrectionPrior as MealPortionCorrectionPrior,
 )
 from services.nutrition import parse_portion_range
-from services.trace import LEDGER_SCHEMA_VERSION
+from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
 
 
 class StoredMealEstimate(BaseModel):

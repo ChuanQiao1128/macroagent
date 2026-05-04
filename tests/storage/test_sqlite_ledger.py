@@ -12,6 +12,7 @@ from services.accounting import (
     calculate_meal_macro_best_estimate,
 )
 from services.meal import MealEstimate, PortionCorrectionPrior, analyze_meal_components
+from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
 from services.storage import (
     export_ledger_backup,
     fetch_daily_totals,
@@ -20,7 +21,6 @@ from services.storage import (
     insert_meal_estimate,
     insert_portion_correction,
 )
-from services.trace import LEDGER_SCHEMA_VERSION
 from services.vision import FoodComponent
 
 

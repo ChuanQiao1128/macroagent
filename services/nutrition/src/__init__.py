@@ -16,7 +16,11 @@ from services.nutrition.src.portion_parser import (
     parse_component_portion_range,
     parse_portion_range,
 )
-from services.trace import MATCHER_VERSION, NUTRITION_CATALOG_VERSION, PORTION_ENGINE_VERSION
+from services.nutrition.src.version_metadata import (
+    MATCHER_VERSION,
+    NUTRITION_CATALOG_VERSION,
+    PORTION_ENGINE_VERSION,
+)
 
 __all__ = [
     "MacroEntry",

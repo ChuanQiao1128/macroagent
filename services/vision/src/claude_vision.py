@@ -12,7 +12,7 @@ from typing import Any, Literal
 from PIL import Image, ImageOps
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
-from services.trace import (
+from services.nutrition.src.version_metadata import (
     VISION_MODEL_NAME,
     VISION_PROMPT_TEXT,
     VISION_SCHEMA_VERSION,

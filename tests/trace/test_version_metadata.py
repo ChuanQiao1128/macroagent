@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.trace import (
+from services.nutrition.src.version_metadata import (
     LEDGER_SCHEMA_VERSION,
     MACRO_CALCULATOR_VERSION,
     MATCHER_VERSION,
