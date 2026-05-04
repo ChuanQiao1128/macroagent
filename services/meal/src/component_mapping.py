@@ -11,11 +11,14 @@ from services.accounting import (
     aggregate_meal_macro_interval,
     calculate_food_macro_interval,
 )
-from services.meal.src.component_normalizer import normalize_meal_components
+from services.meal.src.component_normalizer import (
+    NormalizedFoodCandidate,
+    normalize_meal_components,
+)
 from services.nutrition import (
     MacroMatchCandidate,
     PortionGramRange,
-    match_food_name,
+    match_food_candidates,
     parse_portion_range,
 )
 from services.vision import FoodComponent, VisionAnalysisResponse
@@ -39,6 +42,7 @@ class ComponentMatchCandidate(BaseModel):
         "token_containment",
         "fuzzy",
     ]
+    reason: str = Field(..., min_length=1)
 
 
 class MealComponentEstimate(BaseModel):
@@ -133,8 +137,14 @@ def analyze_meal_components(
             component_name=component.name,
             portion_hint=component.portion_hint,
         )
-        raw_candidates = match_food_name(
-            component.name,
+        raw_candidates = match_food_candidates(
+            _extract_query_candidates(
+                component_name=component.name,
+                component_candidates=component.top_food_candidates,
+            ),
+            state_hints=tuple(
+                (state_hint.state, state_hint.confidence) for state_hint in component.state_hints
+            ),
             limit=candidate_limit,
             min_score=min_match_score,
         )
@@ -220,7 +230,46 @@ def _to_component_candidate(candidate: MacroMatchCandidate) -> ComponentMatchCan
         score=candidate.score,
         matched_on=candidate.matched_on,
         match_type=candidate.match_type,
+        reason=candidate.reason,
     )
+
+
+def _extract_query_candidates(
+    *,
+    component_name: str,
+    component_candidates: Sequence[NormalizedFoodCandidate],
+) -> tuple[tuple[str, float], ...]:
+    normalized_candidates: dict[str, tuple[str, float]] = {}
+
+    for candidate in component_candidates:
+        candidate_name = getattr(candidate, "name", None)
+        candidate_confidence = getattr(candidate, "confidence", None)
+        if not isinstance(candidate_name, str):
+            continue
+        normalized_name = " ".join(candidate_name.casefold().split())
+        if not normalized_name:
+            continue
+        confidence = _clamp_confidence(candidate_confidence, fallback=1.0)
+
+        existing = normalized_candidates.get(normalized_name)
+        if existing is None or confidence > existing[1]:
+            normalized_candidates[normalized_name] = (candidate_name, confidence)
+
+    if normalized_candidates:
+        return tuple(normalized_candidates.values())
+
+    fallback_name = " ".join(component_name.split())
+    if not fallback_name:
+        return ()
+    return ((fallback_name, 1.0),)
+
+
+def _clamp_confidence(value: object, *, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(0.0, min(1.0, parsed))
 
 
 __all__ = [

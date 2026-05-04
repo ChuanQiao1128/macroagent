@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
@@ -14,6 +16,81 @@ USDA_DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "usda_seed.json"
 PERSONAL_DATA_FILE = (
     Path(__file__).resolve().parents[1] / "data" / "personal_seed.json"
 )
+
+MatchType = Literal["exact_name", "exact_alias", "token_containment", "fuzzy"]
+StateLabel = Literal["cooked", "raw", "fried", "grilled", "boiled", "plain", "sauced"]
+MatchInputCandidate = tuple[str, float] | str
+StateSignalInput = tuple[str, float] | str
+
+MATCH_TYPE_PRIORITY: MappingProxyType[MatchType, int] = MappingProxyType(
+    {
+        "exact_name": 0,
+        "exact_alias": 1,
+        "token_containment": 2,
+        "fuzzy": 3,
+    }
+)
+PERSONAL_PRIORITY_BONUS = 0.015
+PERSONAL_PRIORITY_MIN_SCORE = 0.86
+STATE_ALIGNMENT_BONUS = 0.04
+STATE_CONFLICT_PENALTY = 0.18
+STATE_SIGNAL_THRESHOLD = 0.45
+QUERY_DERIVED_STATE_FLOOR = 0.40
+
+LOW_CONFIDENCE_MARKERS = (
+    "low confidence",
+    "uncertain",
+    "estimated",
+    "estimate",
+    "approx",
+)
+STALE_MARKERS = (
+    "stale",
+    "deprecated",
+    "archived",
+    "obsolete",
+    "old entry",
+)
+KNOWN_STATES = frozenset({"cooked", "raw", "fried", "grilled", "boiled", "plain", "sauced"})
+
+COOKED_TEXT_MARKERS = frozenset(
+    {
+        "cooked",
+        "roasted",
+        "baked",
+        "braised",
+        "seared",
+        "steamed",
+        "sauteed",
+        "simmered",
+        "poached",
+    }
+)
+FRIED_TEXT_MARKERS = frozenset({"fried"})
+GRILLED_TEXT_MARKERS = frozenset({"grilled", "barbecued", "chargrilled", "bbq"})
+BOILED_TEXT_MARKERS = frozenset({"boiled"})
+RAW_TEXT_MARKERS = frozenset({"raw", "fresh"})
+PLAIN_TEXT_MARKERS = frozenset({"plain", "unsauced"})
+SAUCED_TEXT_MARKERS = frozenset(
+    {
+        "sauce",
+        "sauced",
+        "glaze",
+        "glazed",
+        "gravy",
+        "dressing",
+        "curry",
+    }
+)
+METHOD_STATES = frozenset({"fried", "grilled", "boiled"})
+
+
+@dataclass(frozen=True)
+class _QueryCandidate:
+    text: str
+    normalized: str
+    tokens: tuple[str, ...]
+    confidence: float
 
 
 class MacroEntry(BaseModel):
@@ -36,12 +113,8 @@ class MacroMatchCandidate(BaseModel):
     entry: MacroEntry
     score: float = Field(..., ge=0, le=1)
     matched_on: str = Field(..., min_length=1)
-    match_type: Literal[
-        "exact_name",
-        "exact_alias",
-        "token_containment",
-        "fuzzy",
-    ]
+    match_type: MatchType
+    reason: str = Field(..., min_length=1)
 
 
 @lru_cache(maxsize=1)
@@ -157,7 +230,7 @@ def _score_candidate_term(
     query_tokens: tuple[str, ...],
     candidate_text: str,
     candidate_is_name: bool,
-) -> tuple[float, str, Literal["exact_name", "exact_alias", "token_containment", "fuzzy"]] | None:
+) -> tuple[float, str, MatchType] | None:
     candidate_normalized = _normalize_lookup_key(candidate_text)
     if not candidate_normalized:
         return None
@@ -201,7 +274,7 @@ def _score_entry_match(
     best_match: tuple[
         float,
         str,
-        Literal["exact_name", "exact_alias", "token_containment", "fuzzy"],
+        MatchType,
     ] | None = _score_candidate_term(
         query_normalized=query_normalized,
         query_tokens=query_tokens,
@@ -229,7 +302,359 @@ def _score_entry_match(
         score=best_match[0],
         matched_on=best_match[1],
         match_type=best_match[2],
+        reason=_build_text_match_reason(match_type=best_match[2], matched_on=best_match[1]),
     )
+
+
+def _build_text_match_reason(*, match_type: MatchType, matched_on: str) -> str:
+    prefix = {
+        "exact_name": "exact name match",
+        "exact_alias": "exact alias match",
+        "token_containment": "token containment match",
+        "fuzzy": "fuzzy match",
+    }[match_type]
+    return f"{prefix} on '{matched_on}'"
+
+
+def _legacy_match_sort_key(candidate: MacroMatchCandidate) -> tuple[float, int, int, str]:
+    # Legacy behavior intentionally prioritizes personal entries when scores tie.
+    return (
+        -candidate.score,
+        0 if candidate.entry.source == "PERSONAL" else 1,
+        MATCH_TYPE_PRIORITY[candidate.match_type],
+        candidate.entry.id,
+    )
+
+
+def _clamp_score(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _normalize_query_candidates(
+    query_candidates: Sequence[MatchInputCandidate],
+) -> tuple[_QueryCandidate, ...]:
+    deduped: dict[str, _QueryCandidate] = {}
+    for raw_candidate in query_candidates:
+        candidate = _parse_query_candidate(raw_candidate)
+        if candidate is None:
+            continue
+        existing = deduped.get(candidate.normalized)
+        if existing is None or candidate.confidence > existing.confidence:
+            deduped[candidate.normalized] = candidate
+    return tuple(deduped.values())
+
+
+def _parse_query_candidate(raw_candidate: MatchInputCandidate) -> _QueryCandidate | None:
+    if isinstance(raw_candidate, str):
+        text = raw_candidate
+        confidence = 1.0
+    elif (
+        isinstance(raw_candidate, tuple)
+        and len(raw_candidate) == 2
+        and isinstance(raw_candidate[0], str)
+    ):
+        text = raw_candidate[0]
+        confidence = _parse_confidence(raw_candidate[1], fallback=1.0)
+    else:
+        return None
+
+    normalized = _normalize_lookup_key(text)
+    if not normalized:
+        return None
+    tokens = _tokenize(normalized)
+    if not tokens:
+        return None
+    return _QueryCandidate(
+        text=normalized,
+        normalized=normalized,
+        tokens=tokens,
+        confidence=confidence,
+    )
+
+
+def _parse_confidence(value: object, *, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return _clamp_score(parsed)
+
+
+def _normalize_state_signals(
+    *,
+    state_hints: Sequence[StateSignalInput],
+    query_candidates: Sequence[_QueryCandidate],
+) -> tuple[frozenset[StateLabel], str]:
+    signals: dict[StateLabel, float] = {}
+
+    for raw_hint in state_hints:
+        hint_state, hint_confidence = _parse_state_signal(raw_hint)
+        if hint_state is None:
+            continue
+        signals[hint_state] = max(signals.get(hint_state, 0.0), hint_confidence)
+
+    for query_candidate in query_candidates:
+        derived_states = _extract_states_from_text(query_candidate.normalized)
+        derived_confidence = max(
+            QUERY_DERIVED_STATE_FLOOR,
+            query_candidate.confidence * 0.75,
+        )
+        for state in derived_states:
+            signals[state] = max(signals.get(state, 0.0), derived_confidence)
+
+    observed_states = frozenset(
+        state for state, confidence in signals.items() if confidence >= STATE_SIGNAL_THRESHOLD
+    )
+    if not observed_states:
+        return observed_states, "no strong state hints present"
+    state_text = ", ".join(sorted(observed_states))
+    return observed_states, f"state hints observed: {state_text}"
+
+
+def _parse_state_signal(raw_hint: StateSignalInput) -> tuple[StateLabel | None, float]:
+    if isinstance(raw_hint, str):
+        normalized_state = _normalize_state_label(raw_hint)
+        return normalized_state, 1.0 if normalized_state is not None else 0.0
+
+    if (
+        isinstance(raw_hint, tuple)
+        and len(raw_hint) == 2
+        and isinstance(raw_hint[0], str)
+    ):
+        normalized_state = _normalize_state_label(raw_hint[0])
+        return normalized_state, _parse_confidence(raw_hint[1], fallback=1.0)
+
+    return None, 0.0
+
+
+def _normalize_state_label(value: str) -> StateLabel | None:
+    normalized = _normalize_lookup_key(value)
+    if normalized in KNOWN_STATES:
+        return normalized
+    return None
+
+
+def _extract_states_from_text(value: str) -> frozenset[StateLabel]:
+    normalized = _normalize_lookup_key(value)
+    if not normalized:
+        return frozenset()
+    tokens = frozenset(_tokenize(normalized))
+    states: set[StateLabel] = set()
+
+    if tokens & RAW_TEXT_MARKERS:
+        states.add("raw")
+
+    if tokens & COOKED_TEXT_MARKERS:
+        states.add("cooked")
+
+    if tokens & FRIED_TEXT_MARKERS:
+        states.add("fried")
+        states.add("cooked")
+
+    if tokens & GRILLED_TEXT_MARKERS:
+        states.add("grilled")
+        states.add("cooked")
+
+    if tokens & BOILED_TEXT_MARKERS:
+        states.add("boiled")
+        states.add("cooked")
+
+    if tokens & PLAIN_TEXT_MARKERS:
+        states.add("plain")
+    if {"no", "sauce"} <= tokens:
+        states.add("plain")
+
+    if tokens & SAUCED_TEXT_MARKERS:
+        states.add("sauced")
+
+    return frozenset(states)
+
+
+def _extract_entry_states(entry: MacroEntry) -> frozenset[StateLabel]:
+    states = set(_extract_states_from_text(entry.name))
+    for alias in entry.aliases:
+        states.update(_extract_states_from_text(alias))
+    return frozenset(states)
+
+
+def _evaluate_state_alignment(
+    *,
+    observed_states: frozenset[StateLabel],
+    entry_states: frozenset[StateLabel],
+) -> tuple[float, str, bool]:
+    if not observed_states:
+        return 0.0, "no state adjustment applied", False
+    if not entry_states:
+        observed_text = ", ".join(sorted(observed_states))
+        return 0.0, f"entry has no explicit state tags; observed {observed_text}", False
+
+    conflicts: list[str] = []
+    if "raw" in observed_states and "cooked" in entry_states:
+        conflicts.append("observed raw vs entry cooked")
+    if "cooked" in observed_states and "raw" in entry_states:
+        conflicts.append("observed cooked vs entry raw")
+
+    observed_methods = observed_states & METHOD_STATES
+    entry_methods = entry_states & METHOD_STATES
+    if observed_methods and entry_methods and observed_methods.isdisjoint(entry_methods):
+        conflicts.append(
+            "observed prep "
+            f"{'/'.join(sorted(observed_methods))} vs entry prep {'/'.join(sorted(entry_methods))}"
+        )
+
+    if "plain" in observed_states and "sauced" in entry_states:
+        conflicts.append("observed plain vs entry sauced")
+    if "sauced" in observed_states and "plain" in entry_states:
+        conflicts.append("observed sauced vs entry plain")
+
+    if conflicts:
+        return (
+            -STATE_CONFLICT_PENALTY,
+            "state conflict: " + "; ".join(conflicts),
+            True,
+        )
+
+    aligned_states = observed_states & entry_states
+    if aligned_states:
+        aligned_text = ", ".join(sorted(aligned_states))
+        return STATE_ALIGNMENT_BONUS, f"state aligned on {aligned_text}", False
+
+    if ("cooked" in observed_states and entry_methods) or (
+        "cooked" in entry_states and observed_methods
+    ):
+        return STATE_ALIGNMENT_BONUS, "state aligned on cooked-preparation family", False
+
+    observed_text = ", ".join(sorted(observed_states))
+    entry_text = ", ".join(sorted(entry_states))
+    return (
+        0.0,
+        f"state hints ({observed_text}) differ from entry tags ({entry_text}); no state adjustment",
+        False,
+    )
+
+
+def _entry_marked_low_confidence_or_stale(entry: MacroEntry) -> bool:
+    searchable_text = " ".join((entry.name, *entry.aliases)).casefold()
+    return any(marker in searchable_text for marker in LOW_CONFIDENCE_MARKERS) or any(
+        marker in searchable_text for marker in STALE_MARKERS
+    )
+
+
+def match_food_candidates(
+    query_candidates: Sequence[MatchInputCandidate],
+    *,
+    state_hints: Sequence[StateSignalInput] = (),
+    limit: int = 5,
+    min_score: float = 0.6,
+) -> tuple[MacroMatchCandidate, ...]:
+    """
+    Match nutrition entries from multiple vision candidates with optional state-aware reranking.
+
+    This is the state-aware counterpart to ``match_food_name`` for structured vision flows.
+    """
+    if limit <= 0:
+        return ()
+    if not 0 <= min_score <= 1:
+        raise ValueError("min_score must be within [0, 1]")
+
+    normalized_candidates = _normalize_query_candidates(query_candidates)
+    if not normalized_candidates:
+        return ()
+
+    observed_states, state_signal_reason = _normalize_state_signals(
+        state_hints=state_hints,
+        query_candidates=normalized_candidates,
+    )
+
+    ranked_matches: list[tuple[float, MacroMatchCandidate]] = []
+    for entry in _load_all_entries():
+        best_text_match: MacroMatchCandidate | None = None
+        best_query_text = ""
+        best_query_confidence = 0.0
+        best_query_metric = -1.0
+
+        for query_candidate in normalized_candidates:
+            text_match = _score_entry_match(
+                query_normalized=query_candidate.normalized,
+                query_tokens=query_candidate.tokens,
+                entry=entry,
+            )
+            if text_match is None or text_match.score < min_score:
+                continue
+
+            query_metric = text_match.score + (0.02 * query_candidate.confidence)
+            if query_metric <= best_query_metric:
+                continue
+            best_query_metric = query_metric
+            best_text_match = text_match
+            best_query_text = query_candidate.text
+            best_query_confidence = query_candidate.confidence
+
+        if best_text_match is None:
+            continue
+
+        state_adjustment, state_reason, state_conflict = _evaluate_state_alignment(
+            observed_states=observed_states,
+            entry_states=_extract_entry_states(entry),
+        )
+        final_score = _clamp_score(best_text_match.score + state_adjustment)
+        ranking_score = final_score
+
+        reason_parts = [
+            best_text_match.reason,
+            (
+                "matched via vision candidate "
+                f"'{best_query_text}' (confidence={best_query_confidence:.2f})"
+            ),
+            state_signal_reason,
+            state_reason,
+        ]
+
+        if entry.source == "PERSONAL":
+            if _entry_marked_low_confidence_or_stale(entry):
+                reason_parts.append(
+                    "personal priority bonus skipped (entry marked low confidence or stale)"
+                )
+            elif best_text_match.score < PERSONAL_PRIORITY_MIN_SCORE:
+                reason_parts.append(
+                    "personal priority bonus skipped "
+                    + (
+                        f"(text score {best_text_match.score:.3f} "
+                        f"below {PERSONAL_PRIORITY_MIN_SCORE:.2f})"
+                    )
+                )
+            elif state_conflict:
+                reason_parts.append("personal priority bonus skipped (state conflict)")
+            else:
+                ranking_score = _clamp_score(ranking_score + PERSONAL_PRIORITY_BONUS)
+                reason_parts.append(
+                    f"personal priority bonus +{PERSONAL_PRIORITY_BONUS:.3f} applied"
+                )
+
+        if final_score < min_score:
+            continue
+
+        ranked_matches.append(
+            (
+                ranking_score,
+                MacroMatchCandidate(
+                    entry=entry,
+                    score=final_score,
+                    matched_on=best_text_match.matched_on,
+                    match_type=best_text_match.match_type,
+                    reason="; ".join(part for part in reason_parts if part),
+                ),
+            )
+        )
+
+    ranked_matches.sort(
+        key=lambda item: (
+            -item[0],
+            MATCH_TYPE_PRIORITY[item[1].match_type],
+            item[1].entry.id,
+        )
+    )
+    return tuple(candidate for _, candidate in ranked_matches[:limit])
 
 
 def match_food_name(
@@ -253,13 +678,6 @@ def match_food_name(
     if not query_tokens:
         return ()
 
-    match_type_priority = {
-        "exact_name": 0,
-        "exact_alias": 1,
-        "token_containment": 2,
-        "fuzzy": 3,
-    }
-
     matches: list[MacroMatchCandidate] = []
     for entry in _load_all_entries():
         candidate = _score_entry_match(
@@ -271,14 +689,7 @@ def match_food_name(
             continue
         matches.append(candidate)
 
-    matches.sort(
-        key=lambda candidate: (
-            -candidate.score,
-            0 if candidate.entry.source == "PERSONAL" else 1,
-            match_type_priority[candidate.match_type],
-            candidate.entry.id,
-        )
-    )
+    matches.sort(key=_legacy_match_sort_key)
     return tuple(matches[:limit])
 
 
@@ -342,5 +753,6 @@ __all__ = [
     "load_all_macro_entries",
     "load_macro_entries",
     "load_personal_macro_entries",
+    "match_food_candidates",
     "match_food_name",
 ]

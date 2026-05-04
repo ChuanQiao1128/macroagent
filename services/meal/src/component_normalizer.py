@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.vision import FoodComponent, VisionAnalysisResponse
 
-ComponentState = Literal["cooked", "raw", "fried", "grilled", "plain", "sauced"]
+ComponentState = Literal["cooked", "raw", "fried", "grilled", "boiled", "plain", "sauced"]
 HiddenRiskImpact = Literal["low", "medium", "high", "unknown"]
 
 

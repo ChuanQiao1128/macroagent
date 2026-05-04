@@ -8,6 +8,7 @@ from services.nutrition.src.food_data import (
     load_all_macro_entries,
     load_macro_entries,
     load_personal_macro_entries,
+    match_food_candidates,
     match_food_name,
 )
 from services.nutrition.src.portion_parser import (
@@ -27,6 +28,7 @@ __all__ = [
     "load_all_macro_entries",
     "load_macro_entries",
     "load_personal_macro_entries",
+    "match_food_candidates",
     "match_food_name",
     "parse_component_portion_range",
     "parse_portion_range",
