@@ -239,7 +239,7 @@ def _merge_components(
     merged: dict[str, _ComponentAccumulator] = {}
 
     for component in extracted_components:
-        merge_key = _normalize_name(component.source_name) or component.name
+        merge_key = component.name
         accumulator = merged.get(merge_key)
         if accumulator is None:
             accumulator = _ComponentAccumulator(
