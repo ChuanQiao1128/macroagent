@@ -11,13 +11,14 @@ from services.accounting import (
     aggregate_meal_macro_interval,
     calculate_food_macro_interval,
 )
+from services.meal.src.component_normalizer import normalize_meal_components
 from services.nutrition import (
     MacroMatchCandidate,
     PortionGramRange,
     match_food_name,
     parse_portion_range,
 )
-from services.vision import FoodComponent
+from services.vision import FoodComponent, VisionAnalysisResponse
 
 DEFAULT_CANDIDATE_LIMIT = 3
 DEFAULT_MIN_MATCH_SCORE = 0.60
@@ -108,7 +109,7 @@ class MealEstimate(BaseModel):
 
 
 def analyze_meal_components(
-    components: Sequence[FoodComponent],
+    components: Sequence[FoodComponent] | VisionAnalysisResponse,
     *,
     candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
     min_match_score: float = DEFAULT_MIN_MATCH_SCORE,
@@ -122,10 +123,12 @@ def analyze_meal_components(
     if not 0 <= confident_match_score <= 1:
         raise ValueError("confident_match_score must be within [0, 1]")
 
+    normalized_components = normalize_meal_components(components)
+
     component_estimates: list[MealComponentEstimate] = []
     matched_intervals: list[FoodMacroInterval] = []
 
-    for component in components:
+    for component in normalized_components.components:
         portion_range = parse_portion_range(
             component_name=component.name,
             portion_hint=component.portion_hint,
@@ -193,7 +196,7 @@ def analyze_meal_components(
 
 
 def estimate_meal_from_components(
-    components: Sequence[FoodComponent],
+    components: Sequence[FoodComponent] | VisionAnalysisResponse,
     *,
     candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
     min_match_score: float = DEFAULT_MIN_MATCH_SCORE,

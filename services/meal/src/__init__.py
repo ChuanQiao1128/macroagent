@@ -8,6 +8,14 @@ from services.meal.src.component_mapping import (
     analyze_meal_components,
     estimate_meal_from_components,
 )
+from services.meal.src.component_normalizer import (
+    NormalizedFoodCandidate,
+    NormalizedHiddenIngredientRisk,
+    NormalizedMealComponent,
+    NormalizedMealComponents,
+    NormalizedStateHint,
+    normalize_meal_components,
+)
 
 __all__ = [
     "ComponentMatchCandidate",
@@ -16,6 +24,12 @@ __all__ = [
     "DEFAULT_MIN_MATCH_SCORE",
     "MealComponentEstimate",
     "MealEstimate",
+    "NormalizedFoodCandidate",
+    "NormalizedHiddenIngredientRisk",
+    "NormalizedMealComponent",
+    "NormalizedMealComponents",
+    "NormalizedStateHint",
     "analyze_meal_components",
     "estimate_meal_from_components",
+    "normalize_meal_components",
 ]
