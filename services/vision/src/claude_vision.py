@@ -25,6 +25,7 @@ DEFAULT_PROMPT = (
     "Use the tool schema only."
 )
 TOOL_NAME = "extract_food_components"
+STRUCTURED_CACHE_FORMAT = "vision_analysis_response_v1"
 
 
 class VisionParseError(ValueError):
@@ -220,16 +221,24 @@ class ClaudeVisionClient:
         prepared = self._prepare_image(image)
         image_hash = self._image_hash(prepared.data)
         cache_key = self._cache_key(image_hash=image_hash, model=self.model, prompt=prompt)
+        structured_cache_key = self._structured_cache_key(
+            image_hash=image_hash, model=self.model, prompt=prompt
+        )
 
         if self._cache is not None:
-            cached_components = self._cache.get(cache_key)
-            if cached_components is not None:
-                legacy = FoodComponentsResponse.model_validate({"components": cached_components})
-                return self._legacy_components_to_structured(legacy.components)
+            cached_structured = self._deserialize_structured_cache_payload(
+                self._cache.get(structured_cache_key)
+            )
+            if cached_structured is not None:
+                return cached_structured
 
         structured = self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
 
         if self._cache is not None:
+            self._cache.set(
+                structured_cache_key,
+                self._serialize_structured_cache_payload(structured),
+            )
             self._cache.set(
                 cache_key,
                 [
@@ -280,6 +289,46 @@ class ClaudeVisionClient:
             sort_keys=True,
             separators=(",", ":"),
         )
+
+    @staticmethod
+    def _structured_cache_key(*, image_hash: str, model: str, prompt: str) -> str:
+        return json.dumps(
+            {
+                "image_hash": image_hash,
+                "model": model,
+                "prompt": prompt,
+                "response_format": STRUCTURED_CACHE_FORMAT,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _serialize_structured_cache_payload(
+        structured: VisionAnalysisResponse,
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "_cache_format": STRUCTURED_CACHE_FORMAT,
+                "payload": structured.model_dump(mode="json"),
+            }
+        ]
+
+    @staticmethod
+    def _deserialize_structured_cache_payload(
+        payload: list[dict[str, Any]] | None,
+    ) -> VisionAnalysisResponse | None:
+        if not isinstance(payload, list) or len(payload) != 1:
+            return None
+        record = payload[0]
+        if not isinstance(record, dict):
+            return None
+        if record.get("_cache_format") != STRUCTURED_CACHE_FORMAT:
+            return None
+        try:
+            return VisionAnalysisResponse.model_validate(record.get("payload"))
+        except ValidationError:
+            return None
 
     def _prepare_image(self, image: str | Path | bytes | bytearray) -> PreparedImage:
         raw = self._read_image_bytes(image)
@@ -385,12 +434,9 @@ class ClaudeVisionClient:
         try:
             return VisionAnalysisResponse.model_validate(payload)
         except ValidationError:
-            normalized_payload = cls._normalize_structured_payload(payload)
-            if normalized_payload is not payload:
-                try:
-                    return VisionAnalysisResponse.model_validate(normalized_payload)
-                except ValidationError:
-                    pass
+            structured_legacy = cls._structured_payload_to_legacy_components(payload)
+            if structured_legacy is not None:
+                return cls._legacy_components_to_structured(structured_legacy)
             legacy = FoodComponentsResponse.model_validate(payload)
             return cls._legacy_components_to_structured(legacy.components)
         except TypeError:
@@ -398,65 +444,65 @@ class ClaudeVisionClient:
             return cls._legacy_components_to_structured(legacy.components)
 
     @staticmethod
-    def _normalize_structured_payload(payload: Any) -> Any:
+    def _structured_payload_to_legacy_components(payload: Any) -> list[FoodComponent] | None:
         if not isinstance(payload, dict):
-            return payload
-
+            return None
         raw_components = payload.get("components")
         if not isinstance(raw_components, list):
-            return payload
+            return None
 
-        changed = False
-        normalized_components: list[Any] = []
-
+        components: list[FoodComponent] = []
         for raw_component in raw_components:
             if not isinstance(raw_component, dict):
-                normalized_components.append(raw_component)
+                return None
+
+            try:
+                components.append(FoodComponent.model_validate(raw_component))
                 continue
+            except ValidationError:
+                pass
 
-            component = dict(raw_component)
-            component_changed = False
+            raw_candidates = (
+                raw_component.get("candidates")
+                or raw_component.get("top_candidates")
+                or raw_component.get("top_k_candidates")
+            )
+            if not isinstance(raw_candidates, list) or len(raw_candidates) == 0:
+                return None
+            top_candidate = raw_candidates[0]
+            if not isinstance(top_candidate, dict):
+                return None
 
-            for key in ("candidates", "top_candidates", "top_k_candidates"):
-                raw_candidates = component.get(key)
-                if not isinstance(raw_candidates, list):
-                    continue
-                normalized_candidates: list[Any] = []
-                for raw_candidate in raw_candidates:
-                    if not isinstance(raw_candidate, dict):
-                        normalized_candidates.append(raw_candidate)
-                        continue
-                    candidate = dict(raw_candidate)
-                    evidence = candidate.get("visual_evidence") or candidate.get("evidence")
-                    if not isinstance(evidence, list) or len(evidence) == 0:
-                        candidate["visual_evidence"] = [
-                            "not_provided_in_model_response",
-                        ]
-                        component_changed = True
-                    normalized_candidates.append(candidate)
-                component[key] = normalized_candidates
+            candidate_name = (
+                top_candidate.get("name")
+                or top_candidate.get("food_name")
+                or raw_component.get("visible_name")
+                or raw_component.get("name")
+            )
+            candidate_confidence = top_candidate.get("confidence")
+            portion = raw_component.get("portion") or raw_component.get("portion_estimate")
+            portion_hint: str | None = None
+            if isinstance(portion, dict):
+                raw_portion_hint = portion.get("description") or portion.get("portion_description")
+                if isinstance(raw_portion_hint, str):
+                    portion_hint = raw_portion_hint
 
-            for key in ("portion", "portion_estimate"):
-                raw_portion = component.get(key)
-                if not isinstance(raw_portion, dict):
-                    continue
-                portion = dict(raw_portion)
-                visual_basis = portion.get("visual_basis") or portion.get("visual_evidence")
-                if not isinstance(visual_basis, list) or len(visual_basis) == 0:
-                    portion["visual_basis"] = ["not_provided_in_model_response"]
-                    component_changed = True
-                component[key] = portion
+            if not isinstance(candidate_name, str) or len(candidate_name.strip()) == 0:
+                return None
+            if not isinstance(candidate_confidence, int | float):
+                return None
 
-            if component_changed:
-                changed = True
-            normalized_components.append(component)
-
-        if not changed:
-            return payload
-
-        normalized_payload = dict(payload)
-        normalized_payload["components"] = normalized_components
-        return normalized_payload
+            try:
+                components.append(
+                    FoodComponent(
+                        name=candidate_name,
+                        confidence=float(candidate_confidence),
+                        portion_hint=portion_hint,
+                    )
+                )
+            except ValidationError:
+                return None
+        return components
 
     @staticmethod
     def _legacy_components_to_structured(
