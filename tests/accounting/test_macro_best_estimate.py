@@ -70,12 +70,31 @@ def test_calculate_macro_best_estimate_equal_positive_bounds_are_deterministic()
     assert estimate.method == "geometric_midpoint"
 
 
+def test_calculate_macro_best_estimate_uses_p50_when_percentiles_are_available() -> None:
+    estimate = calculate_macro_best_estimate(
+        MacroRange(
+            min=10.0,
+            max=30.0,
+            p10=10.0,
+            p50=12.3,
+            p90=30.0,
+            percentiles_available=True,
+        )
+    )
+
+    assert estimate.value == 12.3
+    assert estimate.method == "percentile_p50"
+
+
 def test_calculate_macro_best_estimate_rejects_invalid_ranges() -> None:
     with pytest.raises(ValidationError):
         MacroRange(min=9.1, max=9.0)
 
     with pytest.raises(ValidationError):
         MacroRange(min=-0.1, max=3.0)
+
+    with pytest.raises(ValidationError):
+        MacroRange(min=5.0, max=10.0, p10=5.0, p50=11.0, p90=10.0)
 
 
 def test_calculate_food_macro_best_estimate_preserves_all_macro_fields() -> None:
@@ -103,6 +122,38 @@ def test_calculate_food_macro_best_estimate_preserves_all_macro_fields() -> None
     assert estimate.carbs_g.method == "arithmetic_midpoint"
     assert estimate.fat_g.value == 3.5
     assert estimate.fat_g.method == "geometric_midpoint"
+
+
+def test_calculate_food_macro_best_estimate_uses_p50_when_source_interval_has_percentiles() -> None:
+    tofu = _build_entry(
+        entry_id="seed_tofu",
+        name="Tofu",
+        source="PERSONAL",
+        kcal_per_100g=100.0,
+        protein_g_per_100g=20.0,
+        carbs_g_per_100g=30.0,
+        fat_g_per_100g=40.0,
+    )
+    interval = calculate_food_macro_interval(
+        entry=tofu,
+        gram_range=PortionGramBounds(
+            grams_p10=50.0,
+            grams_p50=70.0,
+            grams_p90=110.0,
+            percentiles_available=True,
+        ),
+    )
+
+    estimate = calculate_food_macro_best_estimate(interval)
+
+    assert estimate.kcal.value == 70.0
+    assert estimate.kcal.method == "percentile_p50"
+    assert estimate.protein_g.value == 14.0
+    assert estimate.protein_g.method == "percentile_p50"
+    assert estimate.carbs_g.value == 21.0
+    assert estimate.carbs_g.method == "percentile_p50"
+    assert estimate.fat_g.value == 28.0
+    assert estimate.fat_g.method == "percentile_p50"
 
 
 def test_calculate_meal_macro_best_estimate_from_aggregate_interval() -> None:

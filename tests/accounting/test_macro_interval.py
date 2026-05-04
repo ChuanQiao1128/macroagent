@@ -239,6 +239,9 @@ def test_invalid_gram_ranges_are_rejected() -> None:
         PortionGramBounds(grams_min=-0.1, grams_max=10.0)
 
     with pytest.raises(ValidationError):
+        PortionGramBounds(grams_p10=90.0, grams_p50=80.0, grams_p90=100.0)
+
+    with pytest.raises(ValidationError):
         PortionGramRange(
             grams_min=20.0,
             grams_max=10.0,
