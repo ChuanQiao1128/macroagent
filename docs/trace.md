@@ -34,6 +34,7 @@
 - `VisionAnalysisResponse.trace_versions`
 - `MealEstimate.trace_versions`
 - `services.cli.meal_demo` JSON output
+- `services.cli.meal_demo` `result_explanation`
 - `meal_estimate_json` stored in SQLite
 - JSON backup exports from `export_ledger_backup()`
 
