@@ -207,13 +207,11 @@ def _extract_structured_components(
                 ingredient=_normalize_name(risk.ingredient) or "unknown ingredient",
                 likelihood=risk.likelihood,
                 macro_impact=risk.macro_impact,
-                rationales=tuple(
-                    _dedupe_preserving_order(
-                        _normalize_free_text(risk.rationale),
-                    )
-                )
-                if risk.rationale
-                else (),
+                rationales=(
+                    (normalized_rationale,)
+                    if (normalized_rationale := _normalize_optional_text(risk.rationale))
+                    else ()
+                ),
             )
             for risk in component.hidden_ingredient_risks
         )
