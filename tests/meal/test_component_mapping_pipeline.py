@@ -7,6 +7,7 @@ from services.meal import analyze_meal_components, estimate_meal_from_components
 from services.vision import (
     FoodCandidate,
     FoodComponent,
+    HiddenIngredientRisk,
     PortionEstimate,
     StructuredFoodComponent,
     VisionAnalysisResponse,
@@ -205,3 +206,144 @@ def test_analyze_meal_components_uses_top_k_vision_candidate_fallback_with_reaso
         }
         assert candidate.matched_on
         assert candidate.reason
+
+
+def test_analyze_meal_components_flags_low_impact_unmatched_vegetable() -> None:
+    meal = analyze_meal_components(
+        [FoodComponent(name="brocoli", confidence=0.80, portion_hint="1 cup")],
+        confident_match_score=0.80,
+    )
+
+    assert meal.estimate_status == "incomplete_low_impact"
+    assert meal.macro_range_label == "known_components_only"
+    assert meal.unmatched_component_count == 1
+    assert meal.recommended_user_question is None
+
+    signal = meal.uncertainty_signals[0]
+    assert signal.source == "unmatched_component"
+    assert signal.impact == "low"
+    assert signal.estimated_kcal_delta == 0.0
+    assert signal.estimated_fat_g_delta == 0.0
+    assert signal.recommended_question is None
+
+    component = meal.component_estimates[0]
+    assert component.status == "unmatched"
+    assert "below confident_match_score=0.80" in (component.unmatched_reason or "")
+
+
+def test_analyze_meal_components_flags_high_impact_unmatched_sauce() -> None:
+    meal = analyze_meal_components(
+        [
+            FoodComponent(
+                name="mystery creamy sauce drizzle",
+                confidence=0.65,
+                portion_hint="1 cup",
+            )
+        ],
+        confident_match_score=1.0,
+    )
+
+    assert meal.estimate_status == "incomplete_high_impact"
+    assert meal.macro_range_label == "known_components_only"
+    assert meal.unmatched_component_count == 1
+
+    signal = meal.uncertainty_signals[0]
+    assert signal.source == "unmatched_component"
+    assert signal.impact == "high"
+    assert "potential high-impact category detected: creamy_or_oily_sauce" in signal.reason
+    assert signal.estimated_kcal_delta >= 40.0
+    assert signal.estimated_fat_g_delta >= 4.0
+    assert signal.recommended_question is not None
+    assert "creamy or oily sauce" in signal.recommended_question
+    assert meal.recommended_user_question == signal.recommended_question
+
+
+def test_analyze_meal_components_flags_hidden_oil_risk_as_high_impact() -> None:
+    response = VisionAnalysisResponse(
+        components=[
+            StructuredFoodComponent(
+                component_id="comp-1",
+                visible_name="White Rice",
+                candidates=[
+                    FoodCandidate(
+                        name="white rice",
+                        confidence=0.94,
+                        visual_evidence=["rice grains"],
+                    )
+                ],
+                portion=PortionEstimate(
+                    description="100 g",
+                    confidence=0.82,
+                    visual_basis=["plate scale"],
+                ),
+                hidden_ingredient_risks=[
+                    HiddenIngredientRisk(
+                        ingredient="oil",
+                        likelihood=0.78,
+                        macro_impact="high",
+                        rationale="oily sheen",
+                    )
+                ],
+            )
+        ]
+    )
+
+    meal = analyze_meal_components(response)
+
+    assert meal.matched_component_count == 1
+    assert meal.unmatched_component_count == 0
+    assert meal.estimate_status == "incomplete_high_impact"
+    assert meal.macro_range_label == "known_components_only"
+
+    signal = meal.uncertainty_signals[0]
+    assert signal.source == "hidden_ingredient_risk"
+    assert signal.impact == "high"
+    assert "hidden ingredient risk detected: oil" in signal.reason
+    assert "evidence: oily sheen" in signal.reason
+    assert signal.recommended_question == (
+        "For white rice, was there hidden oil? About how much was used?"
+    )
+    assert meal.recommended_user_question == signal.recommended_question
+
+
+def test_analyze_meal_components_labels_known_components_only_when_uncertainty_exists() -> None:
+    complete = analyze_meal_components(
+        [FoodComponent(name="white rice", confidence=0.91, portion_hint="100 g")]
+    )
+    assert complete.estimate_status == "complete"
+    assert complete.macro_range_label == "full_meal"
+
+    incomplete = analyze_meal_components(
+        [
+            FoodComponent(name="banana", confidence=0.93, portion_hint="half cup"),
+            FoodComponent(name="mystery foam", confidence=0.55, portion_hint="some amount"),
+        ]
+    )
+    assert incomplete.estimate_status == "incomplete_low_impact"
+    assert incomplete.macro_range_label == "known_components_only"
+    assert len(incomplete.macro_interval.items) == 1
+    assert incomplete.macro_interval.items[0].source_trace.macro_entry_id == "personal_seed_0012"
+
+
+def test_analyze_meal_components_selects_recommended_question_for_dominant_uncertainty() -> None:
+    meal = analyze_meal_components(
+        [
+            FoodComponent(name="mystery oil drizzle", confidence=0.25, portion_hint="1 cup"),
+            FoodComponent(name="mystery cheese topping", confidence=0.95, portion_hint="1 cup"),
+        ],
+        confident_match_score=1.0,
+    )
+
+    high_impact_signals = sorted(
+        [signal for signal in meal.uncertainty_signals if signal.impact == "high"],
+        key=lambda signal: signal.impact_score,
+        reverse=True,
+    )
+
+    assert meal.estimate_status == "incomplete_high_impact"
+    assert len(high_impact_signals) >= 2
+    assert high_impact_signals[0].component_name == "mystery oil drizzle"
+    assert high_impact_signals[0].impact_score >= high_impact_signals[1].impact_score * 1.35
+    assert meal.recommended_user_question == high_impact_signals[0].recommended_question
+    assert meal.recommended_user_question is not None
+    assert "oil or butter" in meal.recommended_user_question
