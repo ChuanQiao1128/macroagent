@@ -136,6 +136,10 @@ class PortionGramRange(BaseModel):
             return value
 
         payload = dict(value)
+        explicit_percentiles = any(
+            key in payload and payload.get(key) is not None
+            for key in ("grams_p10", "grams_p50", "grams_p90")
+        )
         grams_min = payload.get("grams_min")
         grams_max = payload.get("grams_max")
         grams_p10 = payload.get("grams_p10")
@@ -155,6 +159,8 @@ class PortionGramRange(BaseModel):
         grams_p90 = payload.get("grams_p90")
         if grams_p50 is None and grams_p10 is not None and grams_p90 is not None:
             payload["grams_p50"] = _round_grams((float(grams_p10) + float(grams_p90)) / 2.0)
+        if "percentiles_available" not in payload:
+            payload["percentiles_available"] = explicit_percentiles
 
         return payload
 
