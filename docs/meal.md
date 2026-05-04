@@ -1,18 +1,30 @@
 # Meal Component Mapping
 
-`services.meal` turns vision `FoodComponent` objects into deterministic local meal estimates.
+`services.meal` turns vision output into deterministic local meal estimates.
 
 ## Public API
 
 - `analyze_meal_components(components, candidate_limit=3, min_match_score=0.60, confident_match_score=0.70)`
 - `estimate_meal_from_components(...)` as a compatibility alias
+- `normalize_meal_components(...)`
+- `NormalizedMealComponent`
+- `NormalizedMealComponents`
+- `NormalizedFoodCandidate`
+- `NormalizedStateHint`
+- `NormalizedHiddenIngredientRisk`
 - `ComponentMatchCandidate`
 - `MealComponentEstimate`
 - `MealEstimate`
 
 ## Pipeline
 
-- The input is a sequence of `services.vision.FoodComponent` objects.
+- The input can be legacy `services.vision.FoodComponent` objects or a structured `services.vision.VisionAnalysisResponse`.
+- `normalize_meal_components()` performs deterministic cleanup before nutrition matching:
+  - trims whitespace
+  - normalizes case for matching
+  - merges obvious duplicate components
+  - preserves source component ids and names
+  - preserves top-k candidates, visual evidence, state hints, hidden ingredient risks, and meal uncertainty flags
 - For each component, `parse_portion_range()` converts `portion_hint` into a conservative `PortionGramRange`.
 - `match_food_name()` ranks local USDA and personal catalog entries.
 - The top `candidate_limit` matches are retained in `top_candidates`.
@@ -65,6 +77,6 @@ Each `ComponentMatchCandidate` records:
 
 ## Verification
 
-- `pytest tests/meal/test_component_mapping_pipeline.py`
+- `pytest tests/meal/`
 - `pytest tests/`
-- `ruff check services/`
+- `ruff check services/meal/ tests/meal/`
