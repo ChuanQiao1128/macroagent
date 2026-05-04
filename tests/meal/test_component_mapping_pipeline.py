@@ -258,6 +258,47 @@ def test_analyze_meal_components_flags_high_impact_unmatched_sauce() -> None:
     assert meal.recommended_user_question == signal.recommended_question
 
 
+def test_analyze_meal_components_flags_high_impact_unmatched_nut_butter() -> None:
+    meal = analyze_meal_components(
+        [FoodComponent(name="mystery peanut butter swirl", confidence=0.62, portion_hint="100 g")],
+        confident_match_score=1.0,
+    )
+
+    assert meal.estimate_status == "incomplete_high_impact"
+    assert meal.macro_range_label == "known_components_only"
+    assert meal.unmatched_component_count == 1
+
+    signal = meal.uncertainty_signals[0]
+    assert signal.source == "unmatched_component"
+    assert signal.impact == "high"
+    assert "potential high-impact category detected: nuts_or_nut_butter" in signal.reason
+    assert signal.estimated_kcal_delta >= 40.0
+    assert signal.estimated_fat_g_delta >= 4.0
+    assert signal.recommended_question is not None
+    assert "nuts or nut butter" in signal.recommended_question
+    assert meal.recommended_user_question == signal.recommended_question
+
+
+def test_analyze_meal_components_flags_high_impact_unmatched_sugary_drink_or_dessert() -> None:
+    meal = analyze_meal_components(
+        [FoodComponent(name="mystery sweet tea", confidence=0.68, portion_hint="100 g")],
+        confident_match_score=1.0,
+    )
+
+    assert meal.estimate_status == "incomplete_high_impact"
+    assert meal.macro_range_label == "known_components_only"
+    assert meal.unmatched_component_count == 1
+
+    signal = meal.uncertainty_signals[0]
+    assert signal.source == "unmatched_component"
+    assert signal.impact == "high"
+    assert "potential high-impact category detected: sugary_drink_or_dessert" in signal.reason
+    assert signal.estimated_kcal_delta >= 40.0
+    assert signal.recommended_question is not None
+    assert "sugary drink or dessert" in signal.recommended_question
+    assert meal.recommended_user_question == signal.recommended_question
+
+
 def test_analyze_meal_components_flags_hidden_oil_risk_as_high_impact() -> None:
     response = VisionAnalysisResponse(
         components=[
