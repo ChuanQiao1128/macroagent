@@ -26,6 +26,8 @@ Optional flags:
 ## Behavior
 
 - Uses the Claude vision wrapper to analyze the image when no injected vision result is provided.
+- The default vision provider is Claude Code subscription auth (`VISION_PROVIDER=claude_cli`), not the Anthropic API key path.
+- Set `VISION_PROVIDER=anthropic` only when you intentionally want the Anthropic SDK/API provider.
 - Passes the resulting `FoodComponent` objects through `services.meal`.
 - The CLI stays on the backward-compatible `analyze_meal_photo()` path, so the downstream meal pipeline still receives the legacy `FoodComponent` list.
 - Call `services.vision.analyze_meal_photo_structured()` directly if you need the richer uncertainty payload before meal estimation.

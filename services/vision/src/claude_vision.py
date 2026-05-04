@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -22,9 +24,13 @@ from services.nutrition.src.version_metadata import (
 from services.vision.src.cache import VisionResultCache
 
 DEFAULT_MODEL = VISION_MODEL_NAME
+DEFAULT_CLAUDE_CLI_MODEL = "sonnet"
 DEFAULT_PROMPT = VISION_PROMPT_TEXT
 TOOL_NAME = "extract_food_components"
 STRUCTURED_CACHE_FORMAT = VISION_SCHEMA_VERSION
+VISION_PROVIDER_ENV = "VISION_PROVIDER"
+VISION_PROVIDER_CLAUDE_CLI = "claude_cli"
+VISION_PROVIDER_ANTHROPIC = "anthropic"
 
 
 class VisionParseError(ValueError):
@@ -512,6 +518,354 @@ class ClaudeVisionClient:
         )
 
 
+class ClaudeCliVisionClient:
+    """Analyze meal photos through Claude Code subscription auth instead of API keys."""
+
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        max_long_side: int = 1024,
+        cache: VisionResultCache | None = None,
+        claude_binary: str = "claude",
+        timeout_seconds: int = 180,
+        cwd: str | Path | None = None,
+    ) -> None:
+        self.model = model or os.getenv("CLAUDE_CLI_MODEL", DEFAULT_CLAUDE_CLI_MODEL)
+        self.max_long_side = max_long_side
+        self._cache = cache
+        self.claude_binary = claude_binary
+        self.timeout_seconds = timeout_seconds
+        self.cwd = Path(cwd) if cwd is not None else Path.cwd()
+
+    def analyze_meal_photo(
+        self,
+        image: str | Path | bytes | bytearray,
+        *,
+        prompt: str = DEFAULT_PROMPT,
+    ) -> list[FoodComponent]:
+        return self.analyze_meal_photo_structured(image, prompt=prompt).to_food_components()
+
+    def analyze_meal_photo_structured(
+        self,
+        image: str | Path | bytes | bytearray,
+        *,
+        prompt: str = DEFAULT_PROMPT,
+    ) -> VisionAnalysisResponse:
+        prepared = self._prepare_image(image)
+        image_hash = ClaudeVisionClient._image_hash(prepared.data)
+        cache_key = ClaudeVisionClient._cache_key(
+            image_hash=image_hash,
+            model=self.model,
+            prompt=prompt,
+        )
+        structured_cache_key = ClaudeVisionClient._structured_cache_key(
+            image_hash=image_hash,
+            model=self.model,
+            prompt=prompt,
+        )
+
+        if self._cache is not None:
+            cached_structured = ClaudeVisionClient._deserialize_structured_cache_payload(
+                self._cache.get(structured_cache_key)
+            )
+            if cached_structured is not None:
+                return self._with_trace_versions(cached_structured, prompt=prompt)
+            cached_components = self._cache.get(cache_key)
+            if cached_components is not None:
+                legacy = FoodComponentsResponse.model_validate(
+                    {"components": cached_components}
+                )
+                return self._with_trace_versions(
+                    ClaudeVisionClient._legacy_components_to_structured(legacy.components),
+                    prompt=prompt,
+                )
+
+        structured = self._with_trace_versions(
+            self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt),
+            prompt=prompt,
+        )
+
+        if self._cache is not None:
+            self._cache.set(
+                structured_cache_key,
+                ClaudeVisionClient._serialize_structured_cache_payload(structured),
+            )
+            self._cache.set(
+                cache_key,
+                [
+                    component.model_dump(mode="json")
+                    for component in structured.to_food_components()
+                ],
+            )
+
+        return structured
+
+    def _with_trace_versions(
+        self,
+        structured: VisionAnalysisResponse,
+        *,
+        prompt: str,
+    ) -> VisionAnalysisResponse:
+        return structured.model_copy(
+            update={
+                "trace_versions": build_trace_version_metadata(
+                    vision_model_name=f"claude-cli:{self.model}",
+                    vision_prompt_text=prompt,
+                )
+            }
+        )
+
+    def _prepare_image(self, image: str | Path | bytes | bytearray) -> PreparedImage:
+        raw = ClaudeVisionClient._read_image_bytes(image)
+        ClaudeVisionClient._register_heif_opener()
+
+        with Image.open(BytesIO(raw)) as opened:
+            img = ImageOps.exif_transpose(opened)
+            if img.mode not in {"RGB", "L"}:
+                img = img.convert("RGB")
+            elif img.mode == "L":
+                img = img.convert("RGB")
+
+            if max(img.size) > self.max_long_side:
+                img.thumbnail((self.max_long_side, self.max_long_side), Image.Resampling.LANCZOS)
+
+            out = BytesIO()
+            img.save(out, format="JPEG", quality=90, optimize=True)
+            return PreparedImage(media_type="image/jpeg", data=out.getvalue())
+
+    def _analyze_meal_photo_structured(
+        self,
+        *,
+        prepared: PreparedImage,
+        prompt: str,
+    ) -> VisionAnalysisResponse:
+        last_error: Exception | None = None
+
+        with tempfile.TemporaryDirectory(prefix="macroagent_vision_") as tmp_dir:
+            prepared_path = Path(tmp_dir) / "prepared_meal.jpg"
+            prepared_path.write_bytes(prepared.data)
+
+            for attempt in range(2):
+                try:
+                    return self._run_claude_cli(
+                        image_path=prepared_path,
+                        prompt=ClaudeVisionClient._prompt_for_attempt(prompt, attempt),
+                        add_dir=Path(tmp_dir),
+                    )
+                except (ValidationError, VisionParseError, TypeError, ValueError) as exc:
+                    last_error = exc
+
+        raise VisionParseError(
+            "Claude CLI vision response did not match VisionAnalysisResponse schema"
+        ) from last_error
+
+    def _run_claude_cli(
+        self,
+        *,
+        image_path: Path,
+        prompt: str,
+        add_dir: Path,
+    ) -> VisionAnalysisResponse:
+        env = dict(os.environ)
+        env.pop("ANTHROPIC_API_KEY", None)
+        command = [
+            self.claude_binary,
+            "-p",
+            "--model",
+            self.model,
+            "--permission-mode",
+            "dontAsk",
+            "--output-format",
+            "json",
+            "--json-schema",
+            json.dumps(_claude_cli_vision_schema(), separators=(",", ":")),
+            "--add-dir",
+            str(add_dir),
+            (
+                f"Analyze @{image_path} as a meal photo.\n\n"
+                f"{prompt}\n\n"
+                "Return only the structured output fields required by the JSON schema."
+            ),
+        ]
+        completed = subprocess.run(
+            command,
+            cwd=self.cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout_seconds,
+            check=False,
+        )
+        if completed.returncode != 0:
+            message = (completed.stderr or completed.stdout).strip()
+            raise VisionParseError(f"Claude CLI failed: {message}")
+
+        output = json.loads(completed.stdout)
+        if output.get("is_error") is True:
+            raise VisionParseError(f"Claude CLI returned an error: {output.get('result')}")
+
+        payload = output.get("structured_output")
+        if payload is None and isinstance(output.get("result"), str):
+            payload = json.loads(output["result"])
+        if payload is None:
+            raise VisionParseError("Claude CLI output did not include structured_output")
+
+        return ClaudeVisionClient._validate_structured_payload(payload)
+
+
+def _claude_cli_vision_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "image_quality_issues": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "issue": {"type": "string"},
+                        "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "impact": {"type": ["string", "null"]},
+                    },
+                    "required": ["issue", "severity"],
+                    "additionalProperties": False,
+                },
+            },
+            "meal_uncertainty_flags": {"type": "array", "items": {"type": "string"}},
+            "components": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "component_id": {"type": "string"},
+                        "visible_name": {"type": "string"},
+                        "candidates": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 5,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                    },
+                                    "visual_evidence": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": {"type": "string"},
+                                    },
+                                },
+                                "required": ["name", "confidence", "visual_evidence"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "portion": {
+                            "type": "object",
+                            "properties": {
+                                "description": {"type": "string"},
+                                "confidence": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                },
+                                "visual_basis": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {"type": "string"},
+                                },
+                            },
+                            "required": ["description", "confidence", "visual_basis"],
+                            "additionalProperties": False,
+                        },
+                        "state_hints": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "state": {
+                                        "type": "string",
+                                        "enum": [
+                                            "cooked",
+                                            "raw",
+                                            "fried",
+                                            "grilled",
+                                            "boiled",
+                                            "plain",
+                                            "sauced",
+                                        ],
+                                    },
+                                    "confidence": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                    },
+                                    "visual_evidence": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                },
+                                "required": ["state", "confidence", "visual_evidence"],
+                                "additionalProperties": False,
+                            },
+                        },
+                        "hidden_ingredient_risks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "ingredient": {"type": "string"},
+                                    "likelihood": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1,
+                                    },
+                                    "macro_impact": {
+                                        "type": "string",
+                                        "enum": ["low", "medium", "high", "unknown"],
+                                    },
+                                    "rationale": {"type": ["string", "null"]},
+                                },
+                                "required": ["ingredient", "likelihood", "macro_impact"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": [
+                        "component_id",
+                        "visible_name",
+                        "candidates",
+                        "portion",
+                        "state_hints",
+                        "hidden_ingredient_risks",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["image_quality_issues", "meal_uncertainty_flags", "components"],
+        "additionalProperties": False,
+    }
+
+
+def _selected_vision_provider(client: Any | None) -> str:
+    if client is not None:
+        return VISION_PROVIDER_ANTHROPIC
+    provider = os.getenv(VISION_PROVIDER_ENV, VISION_PROVIDER_CLAUDE_CLI)
+    normalized = provider.strip().casefold().replace("-", "_")
+    if normalized in {"claude", "claude_cli", "claude_code", "subscription"}:
+        return VISION_PROVIDER_CLAUDE_CLI
+    if normalized in {"anthropic", "api", "anthropic_api"}:
+        return VISION_PROVIDER_ANTHROPIC
+    raise ValueError(
+        f"unsupported {VISION_PROVIDER_ENV}={provider!r}; "
+        "use 'claude_cli' or 'anthropic'"
+    )
+
+
 def _read_attr(value: Any, name: str) -> Any:
     if isinstance(value, dict):
         return value.get(name)
@@ -525,6 +879,8 @@ def analyze_meal_photo(
     model: str | None = None,
     cache: VisionResultCache | None = None,
 ) -> list[FoodComponent]:
+    if _selected_vision_provider(client) == VISION_PROVIDER_CLAUDE_CLI:
+        return ClaudeCliVisionClient(model=model, cache=cache).analyze_meal_photo(image)
     return ClaudeVisionClient(client=client, model=model, cache=cache).analyze_meal_photo(image)
 
 
@@ -535,5 +891,9 @@ def analyze_meal_photo_structured(
     model: str | None = None,
     cache: VisionResultCache | None = None,
 ) -> VisionAnalysisResponse:
+    if _selected_vision_provider(client) == VISION_PROVIDER_CLAUDE_CLI:
+        return ClaudeCliVisionClient(model=model, cache=cache).analyze_meal_photo_structured(
+            image
+        )
     vision_client = ClaudeVisionClient(client=client, model=model, cache=cache)
     return vision_client.analyze_meal_photo_structured(image)

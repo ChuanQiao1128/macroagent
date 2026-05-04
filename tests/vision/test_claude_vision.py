@@ -20,14 +20,17 @@ from services.nutrition.src.version_metadata import (
     prompt_sha256,
 )
 from services.vision import (
+    ClaudeCliVisionClient,
     ClaudeVisionClient,
     FoodComponent,
     JsonFileVisionCache,
     StateHint,
+    VisionAnalysisResponse,
     VisionParseError,
     analyze_meal_photo,
 )
 from services.vision.src import cache as cache_module
+from services.vision.src import claude_vision as claude_vision_module
 
 
 class FakeMessages:
@@ -199,6 +202,123 @@ def test_prepare_image_invokes_heif_opener_registration(monkeypatch: pytest.Monk
 
     assert called["value"] is True
     assert prepared.media_type == "image/jpeg"
+
+
+def test_claude_cli_vision_client_uses_subscription_auth_and_parses_structured_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "meal.png"
+    image_path.write_bytes(png_bytes(320, 200))
+    calls: list[tuple[list[str], dict]] = []
+
+    payload = {
+        "image_quality_issues": [],
+        "meal_uncertainty_flags": ["no scale reference"],
+        "components": [
+            {
+                "component_id": "component_1",
+                "visible_name": "black coffee",
+                "candidates": [
+                    {
+                        "name": "black coffee",
+                        "confidence": 0.91,
+                        "visual_evidence": ["dark liquid in cup"],
+                    }
+                ],
+                "portion": {
+                    "description": "1 small cup",
+                    "confidence": 0.7,
+                    "visual_basis": ["single cup visible"],
+                },
+                "state_hints": [
+                    {
+                        "state": "plain",
+                        "confidence": 0.7,
+                        "visual_evidence": ["no milk visible"],
+                    }
+                ],
+                "hidden_ingredient_risks": [],
+            }
+        ],
+    }
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append((command, kwargs))
+        env = kwargs["env"]
+        assert isinstance(env, dict)
+        assert "ANTHROPIC_API_KEY" not in env
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"is_error": False, "structured_output": payload}),
+            stderr="",
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-be-used")
+    monkeypatch.setattr(claude_vision_module.subprocess, "run", fake_run)
+
+    result = ClaudeCliVisionClient(model="sonnet", cwd=tmp_path).analyze_meal_photo_structured(
+        image_path
+    )
+
+    assert len(calls) == 1
+    command = calls[0][0]
+    assert command[:4] == ["claude", "-p", "--model", "sonnet"]
+    assert "--json-schema" in command
+    assert "--add-dir" in command
+    assert result.trace_versions.vision_model_name == "claude-cli:sonnet"
+    assert result.components[0].visible_name == "black coffee"
+    assert result.components[0].candidates[0].name == "black coffee"
+
+
+def test_default_analyze_meal_photo_structured_uses_claude_cli_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    structured = VisionAnalysisResponse.model_validate(
+        {
+            "components": [
+                {
+                    "component_id": "component_1",
+                    "visible_name": "banana",
+                    "candidates": [
+                        {
+                            "name": "banana",
+                            "confidence": 0.9,
+                            "visual_evidence": ["yellow fruit"],
+                        }
+                    ],
+                    "portion": {
+                        "description": "1 piece",
+                        "confidence": 0.8,
+                        "visual_basis": ["single fruit"],
+                    },
+                    "state_hints": [],
+                    "hidden_ingredient_risks": [],
+                }
+            ]
+        }
+    )
+
+    class FakeClaudeCliVisionClient:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+        def analyze_meal_photo_structured(self, image: object) -> VisionAnalysisResponse:
+            calls.append(image)
+            return structured
+
+    monkeypatch.delenv("VISION_PROVIDER", raising=False)
+    monkeypatch.setattr(
+        claude_vision_module,
+        "ClaudeCliVisionClient",
+        FakeClaudeCliVisionClient,
+    )
+
+    result = claude_vision_module.analyze_meal_photo_structured("meal.jpg")
+
+    assert result is structured
+    assert calls == [{"model": None, "cache": None}, "meal.jpg"]
 
 
 def test_analyze_meal_photo_cache_hit_skips_anthropic_and_returns_components() -> None:

@@ -1,6 +1,6 @@
 # Claude Vision Meal Component Wrapper
 
-`services.vision` wraps Anthropic Claude Sonnet for meal-photo understanding and exposes both a structured uncertainty API and a compatibility view for the existing meal pipeline.
+`services.vision` wraps Claude Sonnet for meal-photo understanding and exposes both a structured uncertainty API and a compatibility view for the existing meal pipeline.
 
 ## What It Does
 
@@ -11,8 +11,9 @@
   - converts to JPEG
   - resizes the long side to 1024 px
 - Computes a stable SHA-256 hash from the normalized JPEG bytes.
-- Optionally checks a cache before calling Anthropic.
-- Sends the image to Claude Sonnet through the Anthropic API on cache miss.
+- Optionally checks a cache before making a Claude call.
+- Uses Claude Code subscription auth by default through `ClaudeCliVisionClient`, which shells out to `claude -p` and removes `ANTHROPIC_API_KEY` from the subprocess environment.
+- Can still use the Anthropic SDK path by setting `VISION_PROVIDER=anthropic`.
 - Constrains Claude with a Pydantic-generated tool schema for `VisionAnalysisResponse`.
 - Requests uncertainty-aware perception only:
   - image quality and usability issues
@@ -26,6 +27,7 @@
 
 ## Public API
 
+- `ClaudeCliVisionClient`
 - `ClaudeVisionClient`
 - `analyze_meal_photo(image, client=None, model=None, cache=None)`
 - `analyze_meal_photo_structured(image, client=None, model=None, cache=None)`
@@ -65,7 +67,7 @@ Legacy simple payloads such as `{"components": [{"name": "...", "confidence": ..
 
 ## Caching
 
-`ClaudeVisionClient` accepts an optional cache object that implements `VisionResultCache`.
+`ClaudeCliVisionClient` and `ClaudeVisionClient` accept an optional cache object that implements `VisionResultCache`.
 Cache keys include:
 
 - normalized image hash

@@ -3,6 +3,7 @@ from services.vision.src.claude_vision import (
     DEFAULT_MODEL,
     DEFAULT_PROMPT,
     STRUCTURED_CACHE_FORMAT,
+    ClaudeCliVisionClient,
     ClaudeVisionClient,
     FoodCandidate,
     FoodComponent,
@@ -19,6 +20,7 @@ from services.vision.src.claude_vision import (
 
 __all__ = [
     "ClaudeVisionClient",
+    "ClaudeCliVisionClient",
     "DEFAULT_MODEL",
     "DEFAULT_PROMPT",
     "FoodCandidate",
