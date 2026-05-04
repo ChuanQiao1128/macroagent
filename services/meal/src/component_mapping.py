@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,6 +29,7 @@ from services.vision import FoodComponent, VisionAnalysisResponse
 DEFAULT_CANDIDATE_LIMIT = 3
 DEFAULT_MIN_MATCH_SCORE = 0.60
 DEFAULT_CONFIDENT_MATCH_SCORE = 0.70
+DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES = 3
 HIGH_IMPACT_KCAL_DELTA_THRESHOLD = 40.0
 HIGH_IMPACT_FAT_DELTA_THRESHOLD = 4.0
 DOMINANT_UNCERTAINTY_RATIO = 1.35
@@ -57,6 +58,32 @@ class MealUncertaintySignal(BaseModel):
     @property
     def impact_score(self) -> float:
         return self.estimated_kcal_delta + (self.estimated_fat_g_delta * 9.0)
+
+
+class PortionCorrectionPrior(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    strategy: Literal["macro_entry", "normalized_component"]
+    reference: str = Field(..., min_length=1)
+    sample_count: int = Field(..., ge=1)
+    grams_p50: float = Field(..., gt=0)
+
+
+class AppliedPortionPriorTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    strategy: Literal["macro_entry", "normalized_component"]
+    reference: str = Field(..., min_length=1)
+    sample_count: int = Field(..., ge=1)
+    prior_grams_p50: float = Field(..., gt=0)
+    original_grams_p50: float = Field(..., ge=0)
+    applied_grams_p50: float = Field(..., ge=0)
+
+
+PortionPriorResolver = Callable[
+    [str, str | None, Literal["USDA", "PERSONAL"] | None],
+    PortionCorrectionPrior | None,
+]
 
 
 HIGH_IMPACT_CATEGORIES = (
@@ -182,6 +209,7 @@ class MealComponentEstimate(BaseModel):
     hidden_ingredient_risks: tuple[NormalizedHiddenIngredientRisk, ...] = Field(
         default_factory=tuple
     )
+    applied_portion_prior: AppliedPortionPriorTrace | None = None
     macro_interval: FoodMacroInterval | None = None
     unmatched_reason: str | None = None
 
@@ -248,6 +276,8 @@ def analyze_meal_components(
     candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
     min_match_score: float = DEFAULT_MIN_MATCH_SCORE,
     confident_match_score: float = DEFAULT_CONFIDENT_MATCH_SCORE,
+    correction_prior_resolver: PortionPriorResolver | None = None,
+    correction_prior_minimum_samples: int = DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES,
 ) -> MealEstimate:
     """Map vision components into deterministic nutrition estimates."""
     if candidate_limit <= 0:
@@ -256,6 +286,8 @@ def analyze_meal_components(
         raise ValueError("min_match_score must be within [0, 1]")
     if not 0 <= confident_match_score <= 1:
         raise ValueError("confident_match_score must be within [0, 1]")
+    if correction_prior_minimum_samples <= 0:
+        raise ValueError("correction_prior_minimum_samples must be greater than 0")
 
     normalized_components = normalize_meal_components(components)
 
@@ -264,16 +296,9 @@ def analyze_meal_components(
     uncertainty_signals: list[MealUncertaintySignal] = []
 
     for component in normalized_components.components:
-        portion_range = parse_portion_range(
+        base_portion_range = parse_portion_range(
             component_name=component.name,
             portion_hint=component.portion_hint,
-        )
-        uncertainty_signals.extend(
-            _collect_hidden_risk_uncertainty_signals(
-                component_name=component.name,
-                portion_range=portion_range,
-                hidden_ingredient_risks=component.hidden_ingredient_risks,
-            )
         )
         raw_candidates = match_food_candidates(
             _extract_query_candidates(
@@ -289,6 +314,34 @@ def analyze_meal_components(
         top_candidates = tuple(_to_component_candidate(candidate) for candidate in raw_candidates)
 
         selected = raw_candidates[0] if raw_candidates else None
+        macro_entry_id_for_prior: str | None = None
+        macro_entry_source_for_prior: Literal["USDA", "PERSONAL"] | None = None
+        if selected is not None and selected.score >= confident_match_score:
+            macro_entry_id_for_prior = selected.entry.id
+            macro_entry_source_for_prior = selected.entry.source
+
+        applied_portion_prior: AppliedPortionPriorTrace | None = None
+        portion_range = base_portion_range
+        if correction_prior_resolver is not None:
+            resolved_prior = correction_prior_resolver(
+                component.name,
+                macro_entry_id_for_prior,
+                macro_entry_source_for_prior,
+            )
+            portion_range, applied_portion_prior = _apply_portion_prior(
+                portion_range=base_portion_range,
+                prior=resolved_prior,
+                minimum_samples=correction_prior_minimum_samples,
+            )
+
+        uncertainty_signals.extend(
+            _collect_hidden_risk_uncertainty_signals(
+                component_name=component.name,
+                portion_range=portion_range,
+                hidden_ingredient_risks=component.hidden_ingredient_risks,
+            )
+        )
+
         if selected is not None and selected.score >= confident_match_score:
             macro_interval = calculate_food_macro_interval(
                 entry=selected.entry,
@@ -308,6 +361,7 @@ def analyze_meal_components(
                     selected_match_score=selected.score,
                     portion_range=portion_range,
                     hidden_ingredient_risks=component.hidden_ingredient_risks,
+                    applied_portion_prior=applied_portion_prior,
                     macro_interval=macro_interval,
                 )
             )
@@ -332,6 +386,7 @@ def analyze_meal_components(
                 top_candidates=top_candidates,
                 portion_range=portion_range,
                 hidden_ingredient_risks=component.hidden_ingredient_risks,
+                applied_portion_prior=applied_portion_prior,
                 unmatched_reason=unmatched_reason,
             )
         )
@@ -373,6 +428,8 @@ def estimate_meal_from_components(
     candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
     min_match_score: float = DEFAULT_MIN_MATCH_SCORE,
     confident_match_score: float = DEFAULT_CONFIDENT_MATCH_SCORE,
+    correction_prior_resolver: PortionPriorResolver | None = None,
+    correction_prior_minimum_samples: int = DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES,
 ) -> MealEstimate:
     """Compatibility alias for analyze_meal_components()."""
     return analyze_meal_components(
@@ -380,6 +437,8 @@ def estimate_meal_from_components(
         candidate_limit=candidate_limit,
         min_match_score=min_match_score,
         confident_match_score=confident_match_score,
+        correction_prior_resolver=correction_prior_resolver,
+        correction_prior_minimum_samples=correction_prior_minimum_samples,
     )
 
 
@@ -432,6 +491,44 @@ def _clamp_confidence(value: object, *, fallback: float) -> float:
     except (TypeError, ValueError):
         return fallback
     return max(0.0, min(1.0, parsed))
+
+
+def _apply_portion_prior(
+    *,
+    portion_range: PortionGramRange,
+    prior: PortionCorrectionPrior | None,
+    minimum_samples: int,
+) -> tuple[PortionGramRange, AppliedPortionPriorTrace | None]:
+    if prior is None or prior.sample_count < minimum_samples:
+        return portion_range, None
+
+    prior_p50 = _round_one_decimal(prior.grams_p50)
+    clamped_p50 = _round_one_decimal(
+        max(portion_range.grams_p10, min(prior_p50, portion_range.grams_p90))
+    )
+    applied_range = PortionGramRange(
+        grams_min=portion_range.grams_min,
+        grams_max=portion_range.grams_max,
+        grams_p10=portion_range.grams_p10,
+        grams_p50=clamped_p50,
+        grams_p90=portion_range.grams_p90,
+        percentiles_available=portion_range.percentiles_available,
+        confidence=portion_range.confidence,
+        source=portion_range.source,
+        reason=(
+            f"{portion_range.reason}; p50 adjusted via correction prior "
+            f"({prior.strategy}, n={prior.sample_count}, prior_p50={prior_p50:g}g)"
+        ),
+        uncertainty_flags=portion_range.uncertainty_flags,
+    )
+    return applied_range, AppliedPortionPriorTrace(
+        strategy=prior.strategy,
+        reference=prior.reference,
+        sample_count=prior.sample_count,
+        prior_grams_p50=prior_p50,
+        original_grams_p50=portion_range.grams_p50,
+        applied_grams_p50=clamped_p50,
+    )
 
 
 def _build_unmatched_uncertainty_signal(
@@ -614,14 +711,18 @@ def _round_one_decimal(value: float) -> float:
 
 
 __all__ = [
+    "AppliedPortionPriorTrace",
     "ComponentMatchCandidate",
     "DEFAULT_CANDIDATE_LIMIT",
+    "DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES",
     "DEFAULT_CONFIDENT_MATCH_SCORE",
     "DEFAULT_MIN_MATCH_SCORE",
     "HIGH_IMPACT_BY_KEY",
     "MealComponentEstimate",
     "MealEstimate",
     "MealUncertaintySignal",
+    "PortionCorrectionPrior",
+    "PortionPriorResolver",
     "analyze_meal_components",
     "estimate_meal_from_components",
 ]

@@ -1,19 +1,31 @@
 from services.storage.src.sqlite_ledger import (
     DailyLedgerTotals,
+    PortionCorrectionPrior,
+    PortionCorrectionPriors,
+    PortionCorrectionRecord,
     StoredMealEstimate,
     export_ledger_backup,
     fetch_daily_totals,
     fetch_meal_by_id,
+    fetch_portion_correction_by_id,
+    fetch_portion_correction_priors,
     initialize_sqlite_ledger,
     insert_meal_estimate,
+    insert_portion_correction,
 )
 
 __all__ = [
     "DailyLedgerTotals",
+    "PortionCorrectionPrior",
+    "PortionCorrectionPriors",
+    "PortionCorrectionRecord",
     "StoredMealEstimate",
     "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
+    "fetch_portion_correction_by_id",
+    "fetch_portion_correction_priors",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
+    "insert_portion_correction",
 ]

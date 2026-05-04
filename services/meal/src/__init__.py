@@ -1,11 +1,15 @@
 from services.meal.src.component_mapping import (
     DEFAULT_CANDIDATE_LIMIT,
     DEFAULT_CONFIDENT_MATCH_SCORE,
+    DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES,
     DEFAULT_MIN_MATCH_SCORE,
+    AppliedPortionPriorTrace,
     ComponentMatchCandidate,
     MealComponentEstimate,
     MealEstimate,
     MealUncertaintySignal,
+    PortionCorrectionPrior,
+    PortionPriorResolver,
     analyze_meal_components,
     estimate_meal_from_components,
 )
@@ -19,8 +23,10 @@ from services.meal.src.component_normalizer import (
 )
 
 __all__ = [
+    "AppliedPortionPriorTrace",
     "ComponentMatchCandidate",
     "DEFAULT_CANDIDATE_LIMIT",
+    "DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES",
     "DEFAULT_CONFIDENT_MATCH_SCORE",
     "DEFAULT_MIN_MATCH_SCORE",
     "MealComponentEstimate",
@@ -31,6 +37,8 @@ __all__ = [
     "NormalizedMealComponent",
     "NormalizedMealComponents",
     "NormalizedStateHint",
+    "PortionCorrectionPrior",
+    "PortionPriorResolver",
     "analyze_meal_components",
     "estimate_meal_from_components",
     "normalize_meal_components",

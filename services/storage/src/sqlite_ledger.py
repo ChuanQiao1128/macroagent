@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.accounting import (
     MacroBestEstimate,
@@ -19,6 +21,7 @@ from services.accounting import (
     calculate_meal_macro_best_estimate,
 )
 from services.meal import MealComponentEstimate, MealEstimate
+from services.nutrition import parse_portion_range
 
 
 class StoredMealEstimate(BaseModel):
@@ -43,6 +46,59 @@ class DailyLedgerTotals(BaseModel):
     carbs_g: MacroRange
     fat_g: MacroRange
     macro_best_estimate: MacroBestEstimateSet
+
+
+class PortionCorrectionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    correction_id: str = Field(..., min_length=1)
+    created_at: str = Field(..., min_length=1)
+    component_name: str = Field(..., min_length=1)
+    component_name_normalized: str = Field(..., min_length=1)
+    selected_macro_entry_id: str | None = None
+    selected_macro_entry_source: Literal["USDA", "PERSONAL"] | None = None
+    original_portion_grams_p10: float = Field(..., ge=0)
+    original_portion_grams_p50: float = Field(..., ge=0)
+    original_portion_grams_p90: float = Field(..., ge=0)
+    corrected_grams: float | None = Field(default=None, gt=0)
+    corrected_serving_label: str | None = None
+    corrected_grams_p50: float = Field(..., gt=0)
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_fields(self) -> PortionCorrectionRecord:
+        if self.original_portion_grams_p10 > self.original_portion_grams_p50:
+            raise ValueError("original_portion_grams_p10 must be <= original_portion_grams_p50")
+        if self.original_portion_grams_p50 > self.original_portion_grams_p90:
+            raise ValueError("original_portion_grams_p50 must be <= original_portion_grams_p90")
+        if bool(self.selected_macro_entry_id) != bool(self.selected_macro_entry_source):
+            raise ValueError(
+                "selected_macro_entry_id and selected_macro_entry_source must be set together"
+            )
+        if self.corrected_grams is None and not self.corrected_serving_label:
+            raise ValueError("either corrected_grams or corrected_serving_label is required")
+        if self.corrected_serving_label is not None and not self.corrected_serving_label.strip():
+            raise ValueError("corrected_serving_label must not be empty")
+        return self
+
+
+class PortionCorrectionPrior(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    strategy: Literal["macro_entry", "normalized_component"]
+    reference: str = Field(..., min_length=1)
+    sample_count: int = Field(..., ge=1)
+    grams_p50: float = Field(..., gt=0)
+
+
+class PortionCorrectionPriors(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    component_name_normalized: str = Field(..., min_length=1)
+    minimum_samples: int = Field(..., ge=1)
+    macro_entry_prior: PortionCorrectionPrior | None = None
+    normalized_component_prior: PortionCorrectionPrior | None = None
+    applied_prior: PortionCorrectionPrior | None = None
 
 
 @dataclass(frozen=True)
@@ -126,10 +182,51 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
         );
         """,
     ),
+    _SchemaMigration(
+        version=2,
+        sql="""
+        CREATE TABLE IF NOT EXISTS portion_corrections (
+            correction_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            component_name TEXT NOT NULL,
+            component_name_normalized TEXT NOT NULL,
+            selected_macro_entry_id TEXT,
+            selected_macro_entry_source TEXT
+                CHECK (selected_macro_entry_source IN ('USDA', 'PERSONAL')),
+            original_portion_grams_p10 REAL NOT NULL,
+            original_portion_grams_p50 REAL NOT NULL,
+            original_portion_grams_p90 REAL NOT NULL,
+            corrected_grams REAL,
+            corrected_serving_label TEXT,
+            corrected_grams_p50 REAL NOT NULL,
+            note TEXT,
+            CHECK (
+                corrected_grams IS NOT NULL
+                OR corrected_serving_label IS NOT NULL
+            ),
+            CHECK (
+                selected_macro_entry_id IS NULL
+                OR selected_macro_entry_source IS NOT NULL
+            ),
+            CHECK (
+                selected_macro_entry_source IS NULL
+                OR selected_macro_entry_id IS NOT NULL
+            )
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_portion_corrections_macro_entry
+            ON portion_corrections(selected_macro_entry_id, selected_macro_entry_source);
+
+        CREATE INDEX IF NOT EXISTS idx_portion_corrections_component
+            ON portion_corrections(component_name_normalized);
+        """,
+    ),
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
 _EXPORT_SCHEMA_VERSION = 1
+_BASE_SCHEMA_VERSION = _MIGRATIONS[0].version if _MIGRATIONS else 0
+_LATEST_SCHEMA_VERSION = _MIGRATIONS[-1].version if _MIGRATIONS else 0
 
 
 def initialize_sqlite_ledger(database_path: str | Path) -> None:
@@ -139,7 +236,7 @@ def initialize_sqlite_ledger(database_path: str | Path) -> None:
         Path(db_target).parent.mkdir(parents=True, exist_ok=True)
 
     with _connect(db_target) as connection:
-        _apply_migrations(connection)
+        _apply_migrations(connection, target_version=_BASE_SCHEMA_VERSION)
 
 
 def insert_meal_estimate(
@@ -252,6 +349,212 @@ def insert_meal_estimate(
             )
 
     return resolved_meal_id
+
+
+def insert_portion_correction(
+    database_path: str | Path,
+    *,
+    component_name: str,
+    selected_macro_entry_id: str | None = None,
+    selected_macro_entry_source: Literal["USDA", "PERSONAL"] | None = None,
+    original_portion_grams_p10: float,
+    original_portion_grams_p50: float,
+    original_portion_grams_p90: float,
+    corrected_grams: float | None = None,
+    corrected_serving_label: str | None = None,
+    note: str | None = None,
+    correction_id: str | None = None,
+    created_at: str | datetime | None = None,
+) -> str:
+    """
+    Persist one local user portion correction and return its correction_id.
+
+    Corrections are used to derive deterministic portion priors for future estimates.
+    """
+    normalized_component_name = _normalize_component_name(component_name)
+    if not normalized_component_name:
+        raise ValueError("component_name must include at least one alphanumeric token")
+    if bool(selected_macro_entry_id) != bool(selected_macro_entry_source):
+        raise ValueError(
+            "selected_macro_entry_id and selected_macro_entry_source must be set together"
+        )
+    if original_portion_grams_p10 > original_portion_grams_p50:
+        raise ValueError("original_portion_grams_p10 must be <= original_portion_grams_p50")
+    if original_portion_grams_p50 > original_portion_grams_p90:
+        raise ValueError("original_portion_grams_p50 must be <= original_portion_grams_p90")
+
+    resolved_correction_id = correction_id or str(uuid.uuid4())
+    created_dt = _coerce_created_at(created_at)
+    created_at_iso = created_dt.isoformat(timespec="seconds")
+    resolved_corrected_serving_label = (
+        corrected_serving_label.strip()
+        if corrected_serving_label is not None and corrected_serving_label.strip()
+        else None
+    )
+    resolved_note = note.strip() if note is not None and note.strip() else None
+    corrected_grams_p50 = _resolve_corrected_grams_p50(
+        component_name=component_name,
+        corrected_grams=corrected_grams,
+        corrected_serving_label=resolved_corrected_serving_label,
+    )
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        try:
+            connection.execute(
+                """
+                INSERT INTO portion_corrections (
+                    correction_id,
+                    created_at,
+                    component_name,
+                    component_name_normalized,
+                    selected_macro_entry_id,
+                    selected_macro_entry_source,
+                    original_portion_grams_p10,
+                    original_portion_grams_p50,
+                    original_portion_grams_p90,
+                    corrected_grams,
+                    corrected_serving_label,
+                    corrected_grams_p50,
+                    note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    resolved_correction_id,
+                    created_at_iso,
+                    component_name.strip(),
+                    normalized_component_name,
+                    selected_macro_entry_id,
+                    selected_macro_entry_source,
+                    original_portion_grams_p10,
+                    original_portion_grams_p50,
+                    original_portion_grams_p90,
+                    corrected_grams,
+                    resolved_corrected_serving_label,
+                    corrected_grams_p50,
+                    resolved_note,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"correction_id already exists: {resolved_correction_id}") from exc
+
+    return resolved_correction_id
+
+
+def fetch_portion_correction_by_id(
+    database_path: str | Path,
+    correction_id: str,
+) -> PortionCorrectionRecord | None:
+    """Return one correction by id, or None if it does not exist."""
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        row = connection.execute(
+            """
+            SELECT
+                correction_id,
+                created_at,
+                component_name,
+                component_name_normalized,
+                selected_macro_entry_id,
+                selected_macro_entry_source,
+                original_portion_grams_p10,
+                original_portion_grams_p50,
+                original_portion_grams_p90,
+                corrected_grams,
+                corrected_serving_label,
+                corrected_grams_p50,
+                note
+            FROM portion_corrections
+            WHERE correction_id = ?
+            """,
+            (correction_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return _build_portion_correction_record(row)
+
+
+def fetch_portion_correction_priors(
+    database_path: str | Path,
+    *,
+    component_name: str,
+    selected_macro_entry_id: str | None = None,
+    selected_macro_entry_source: Literal["USDA", "PERSONAL"] | None = None,
+    minimum_samples: int = 3,
+) -> PortionCorrectionPriors:
+    """
+    Fetch correction-derived priors for one component.
+
+    Prior selection order is deterministic: macro entry first, then normalized component.
+    """
+    if minimum_samples <= 0:
+        raise ValueError("minimum_samples must be greater than 0")
+    if bool(selected_macro_entry_id) != bool(selected_macro_entry_source):
+        raise ValueError(
+            "selected_macro_entry_id and selected_macro_entry_source must be set together"
+        )
+
+    component_name_normalized = _normalize_component_name(component_name)
+    if not component_name_normalized:
+        raise ValueError("component_name must include at least one alphanumeric token")
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        macro_row = None
+        if selected_macro_entry_id is not None and selected_macro_entry_source is not None:
+            macro_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS sample_count,
+                    AVG(corrected_grams_p50) AS grams_p50
+                FROM portion_corrections
+                WHERE selected_macro_entry_id = ?
+                  AND selected_macro_entry_source = ?
+                """,
+                (selected_macro_entry_id, selected_macro_entry_source),
+            ).fetchone()
+
+        component_row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS sample_count,
+                AVG(corrected_grams_p50) AS grams_p50
+            FROM portion_corrections
+            WHERE component_name_normalized = ?
+            """,
+            (component_name_normalized,),
+        ).fetchone()
+
+    macro_entry_prior = _build_prior_from_row(
+        strategy="macro_entry",
+        reference=(
+            f"{selected_macro_entry_source}:{selected_macro_entry_id}"
+            if selected_macro_entry_id is not None and selected_macro_entry_source is not None
+            else ""
+        ),
+        row=macro_row,
+    )
+    normalized_component_prior = _build_prior_from_row(
+        strategy="normalized_component",
+        reference=component_name_normalized,
+        row=component_row,
+    )
+    applied_prior: PortionCorrectionPrior | None = None
+    if macro_entry_prior is not None and macro_entry_prior.sample_count >= minimum_samples:
+        applied_prior = macro_entry_prior
+    elif (
+        normalized_component_prior is not None
+        and normalized_component_prior.sample_count >= minimum_samples
+    ):
+        applied_prior = normalized_component_prior
+
+    return PortionCorrectionPriors(
+        component_name_normalized=component_name_normalized,
+        minimum_samples=minimum_samples,
+        macro_entry_prior=macro_entry_prior,
+        normalized_component_prior=normalized_component_prior,
+        applied_prior=applied_prior,
+    )
 
 
 def fetch_meal_by_id(database_path: str | Path, meal_id: str) -> StoredMealEstimate | None:
@@ -374,7 +677,7 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
     restore API until atomic restore semantics are defined and tested.
     """
     with _connect(_normalize_database_path(database_path)) as connection:
-        _apply_migrations(connection)
+        _apply_migrations(connection, target_version=_BASE_SCHEMA_VERSION)
         schema_rows = connection.execute(
             """
             SELECT version, applied_at
@@ -456,6 +759,8 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
             """
         ).fetchall()
 
+    ledger_schema_version = max((int(row["version"]) for row in schema_rows), default=0)
+
     components_by_meal: dict[str, list[dict[str, object]]] = {}
     for row in component_rows:
         meal_id = str(row["meal_id"])
@@ -474,7 +779,7 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
     return {
         "format": _EXPORT_FORMAT,
         "export_schema_version": _EXPORT_SCHEMA_VERSION,
-        "ledger_schema_version": _MIGRATIONS[-1].version if _MIGRATIONS else 0,
+        "ledger_schema_version": ledger_schema_version,
         "schema_migrations": [
             {
                 "version": int(row["version"]),
@@ -587,7 +892,11 @@ def _insert_component_row(
     )
 
 
-def _apply_migrations(connection: sqlite3.Connection) -> None:
+def _apply_migrations(
+    connection: sqlite3.Connection,
+    *,
+    target_version: int = _BASE_SCHEMA_VERSION,
+) -> None:
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -596,11 +905,16 @@ def _apply_migrations(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    if target_version <= 0:
+        return
+
     applied_versions = {
         int(row["version"]) for row in connection.execute("SELECT version FROM schema_migrations")
     }
 
     for migration in _MIGRATIONS:
+        if migration.version > target_version:
+            break
         if migration.version in applied_versions:
             continue
         connection.executescript(migration.sql)
@@ -769,6 +1083,58 @@ def _build_component_backup_row(row: sqlite3.Row) -> dict[str, object]:
     }
 
 
+def _build_portion_correction_record(row: sqlite3.Row) -> PortionCorrectionRecord:
+    return PortionCorrectionRecord(
+        correction_id=str(row["correction_id"]),
+        created_at=str(row["created_at"]),
+        component_name=str(row["component_name"]),
+        component_name_normalized=str(row["component_name_normalized"]),
+        selected_macro_entry_id=(
+            str(row["selected_macro_entry_id"])
+            if row["selected_macro_entry_id"] is not None
+            else None
+        ),
+        selected_macro_entry_source=(
+            str(row["selected_macro_entry_source"])
+            if row["selected_macro_entry_source"] is not None
+            else None
+        ),
+        original_portion_grams_p10=float(row["original_portion_grams_p10"]),
+        original_portion_grams_p50=float(row["original_portion_grams_p50"]),
+        original_portion_grams_p90=float(row["original_portion_grams_p90"]),
+        corrected_grams=(
+            float(row["corrected_grams"]) if row["corrected_grams"] is not None else None
+        ),
+        corrected_serving_label=(
+            str(row["corrected_serving_label"])
+            if row["corrected_serving_label"] is not None
+            else None
+        ),
+        corrected_grams_p50=float(row["corrected_grams_p50"]),
+        note=str(row["note"]) if row["note"] is not None else None,
+    )
+
+
+def _build_prior_from_row(
+    *,
+    strategy: Literal["macro_entry", "normalized_component"],
+    reference: str,
+    row: sqlite3.Row | None,
+) -> PortionCorrectionPrior | None:
+    if row is None:
+        return None
+    sample_count = int(row["sample_count"])
+    grams_p50 = row["grams_p50"]
+    if sample_count <= 0 or grams_p50 is None:
+        return None
+    return PortionCorrectionPrior(
+        strategy=strategy,
+        reference=reference,
+        sample_count=sample_count,
+        grams_p50=_round_to_tenth(float(grams_p50)),
+    )
+
+
 def _normalize_database_path(database_path: str | Path) -> str:
     return str(database_path)
 
@@ -873,6 +1239,40 @@ def _validate_local_date(local_date_value: str) -> str:
     return parsed.isoformat()
 
 
+def _normalize_component_name(value: str) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.casefold())
+    return " ".join(normalized.split())
+
+
+def _resolve_corrected_grams_p50(
+    *,
+    component_name: str,
+    corrected_grams: float | None,
+    corrected_serving_label: str | None,
+) -> float:
+    if corrected_grams is not None:
+        if corrected_grams <= 0:
+            raise ValueError("corrected_grams must be greater than 0")
+        return _round_to_tenth(corrected_grams)
+
+    if corrected_serving_label is None or not corrected_serving_label.strip():
+        raise ValueError("either corrected_grams or corrected_serving_label is required")
+
+    parsed = parse_portion_range(
+        component_name=component_name,
+        portion_hint=corrected_serving_label,
+    )
+    if parsed.source == "fallback_default":
+        raise ValueError("corrected_serving_label could not be parsed into a reliable gram prior")
+    return _round_to_tenth(parsed.grams_p50)
+
+
+def _round_to_tenth(value: float) -> float:
+    return round(value, 1)
+
+
 def _json_dumps(payload: object) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
@@ -890,10 +1290,16 @@ def _connect(database_path: str) -> sqlite3.Connection:
 
 __all__ = [
     "DailyLedgerTotals",
+    "PortionCorrectionPrior",
+    "PortionCorrectionPriors",
+    "PortionCorrectionRecord",
     "StoredMealEstimate",
     "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
+    "fetch_portion_correction_by_id",
+    "fetch_portion_correction_priors",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
+    "insert_portion_correction",
 ]
