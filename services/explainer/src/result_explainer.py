@@ -13,6 +13,7 @@ from services.meal import MealEstimate, MealUncertaintySignal
 ExplanationLanguage = Literal["en", "zh"]
 DEFAULT_MAX_UNCERTAINTY_DRIVERS = 3
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
+_CHINESE_NUMBER_PATTERN = re.compile(r"[负負]?[零〇一二两兩三四五六七八九十百千万萬亿億点點]+")
 
 
 class MealExplanationText(BaseModel):
@@ -178,13 +179,7 @@ def _assert_no_new_numbers(
         )
     )
     driver_allowed_number_tokens = _collect_number_tokens_from_value(
-        tuple(
-            {
-                "estimated_kcal_delta": signal.estimated_kcal_delta,
-                "estimated_fat_g_delta": signal.estimated_fat_g_delta,
-            }
-            for signal in top_uncertainty_signals
-        )
+        tuple(signal.model_dump(mode="json") for signal in top_uncertainty_signals)
     )
     question_allowed_number_tokens = _collect_number_tokens_from_value(
         tuple(
@@ -247,6 +242,9 @@ def _collect_number_tokens_from_value(value: object) -> set[str]:
         return tokens
     if isinstance(value, str):
         tokens.update(_normalize_number_token(token) for token in _NUMBER_PATTERN.findall(value))
+        tokens.update(
+            _normalize_number_token(token) for token in _CHINESE_NUMBER_PATTERN.findall(value)
+        )
         return tokens
     if isinstance(value, Mapping):
         for nested in value.values():
