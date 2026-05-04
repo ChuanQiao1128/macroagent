@@ -313,6 +313,112 @@ def test_match_food_candidates_personal_state_conflict_loses_to_usda(
 
 
 @pytest.mark.parametrize(
+    ("query", "state_hint", "usda_name", "personal_name", "expected_top_source"),
+    (
+        (
+            "chicken breast",
+            "grilled",
+            "Chicken breast, grilled",
+            "Chicken breast, fried",
+            "USDA",
+        ),
+        (
+            "chicken breast",
+            "fried",
+            "Chicken breast, grilled",
+            "Chicken breast, fried",
+            "PERSONAL",
+        ),
+        (
+            "chicken breast",
+            "boiled",
+            "Chicken breast, boiled",
+            "Chicken breast, fried",
+            "USDA",
+        ),
+        (
+            "salmon fillet",
+            "raw",
+            "Salmon fillet, cooked",
+            "Salmon fillet, raw",
+            "PERSONAL",
+        ),
+        (
+            "salmon fillet",
+            "cooked",
+            "Salmon fillet, cooked",
+            "Salmon fillet, raw",
+            "USDA",
+        ),
+        (
+            "pasta",
+            "plain",
+            "Pasta, plain",
+            "Pasta, sauced",
+            "USDA",
+        ),
+        (
+            "pasta",
+            "sauced",
+            "Pasta, plain",
+            "Pasta, sauced",
+            "PERSONAL",
+        ),
+    ),
+)
+def test_match_food_candidates_state_hints_cover_supported_state_labels(
+    monkeypatch: pytest.MonkeyPatch,
+    query: str,
+    state_hint: str,
+    usda_name: str,
+    personal_name: str,
+    expected_top_source: str,
+) -> None:
+    usda_entry = MacroEntry.model_validate(
+        {
+            "id": "state_usda",
+            "name": usda_name,
+            "aliases": [query],
+            "category": "test",
+            "source": "USDA",
+            "kcal_per_100g": 100,
+            "protein_g_per_100g": 10.0,
+            "carbs_g_per_100g": 10.0,
+            "fat_g_per_100g": 10.0,
+        }
+    )
+    personal_entry = MacroEntry.model_validate(
+        {
+            "id": "state_personal",
+            "name": personal_name,
+            "aliases": [query],
+            "category": "test",
+            "source": "PERSONAL",
+            "kcal_per_100g": 100,
+            "protein_g_per_100g": 10.0,
+            "carbs_g_per_100g": 10.0,
+            "fat_g_per_100g": 10.0,
+        }
+    )
+    monkeypatch.setattr(
+        food_data_module,
+        "_load_all_entries",
+        lambda: (usda_entry, personal_entry),
+    )
+
+    matches = match_food_candidates(
+        [(query, 0.95)],
+        state_hints=[(state_hint, 0.95)],
+        limit=2,
+        min_score=0.6,
+    )
+
+    assert len(matches) == 2
+    assert matches[0].entry.source == expected_top_source
+    assert f"state hints observed: {state_hint}" in matches[0].reason
+
+
+@pytest.mark.parametrize(
     ("personal_name", "personal_aliases"),
     (
         ("banana low confidence tracker", ["banana"]),

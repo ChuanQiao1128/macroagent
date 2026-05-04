@@ -190,4 +190,18 @@ def test_analyze_meal_components_uses_top_k_vision_candidate_fallback_with_reaso
     assert component.selected_macro_entry_id == "personal_seed_0012"
     assert len(component.top_candidates) == 2
     assert component.top_candidates[0].matched_on == "banana"
-    assert "matched via vision candidate 'banana' (confidence=0.72)" in component.top_candidates[0].reason
+    assert (
+        "matched via vision candidate 'banana' (confidence=0.72)"
+        in component.top_candidates[0].reason
+    )
+    for candidate in component.top_candidates:
+        assert candidate.macro_entry_source in {"USDA", "PERSONAL"}
+        assert 0.0 <= candidate.score <= 1.0
+        assert candidate.match_type in {
+            "exact_name",
+            "exact_alias",
+            "token_containment",
+            "fuzzy",
+        }
+        assert candidate.matched_on
+        assert candidate.reason
