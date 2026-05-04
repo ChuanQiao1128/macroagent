@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from services.meal import analyze_meal_components, estimate_meal_from_components
+from services.trace import build_trace_version_metadata
 from services.vision import (
     FoodCandidate,
     FoodComponent,
@@ -206,6 +207,39 @@ def test_analyze_meal_components_uses_top_k_vision_candidate_fallback_with_reaso
         }
         assert candidate.matched_on
         assert candidate.reason
+
+
+def test_analyze_meal_components_preserves_trace_versions_from_structured_input() -> None:
+    trace_versions = build_trace_version_metadata(
+        vision_model_name="trace-meal-model",
+        vision_prompt_text="trace meal prompt",
+    )
+    response = VisionAnalysisResponse(
+        components=[
+            StructuredFoodComponent(
+                component_id="comp-1",
+                visible_name="white rice",
+                candidates=[
+                    FoodCandidate(
+                        name="white rice",
+                        confidence=0.94,
+                        visual_evidence=["white grains"],
+                    )
+                ],
+                portion=PortionEstimate(
+                    description="100 g",
+                    confidence=0.81,
+                    visual_basis=["plate scale"],
+                ),
+            )
+        ],
+        trace_versions=trace_versions,
+    )
+
+    meal = analyze_meal_components(response)
+
+    assert meal.trace_versions == trace_versions
+    assert meal.trace_versions.vision_model_name == "trace-meal-model"
 
 
 def test_analyze_meal_components_flags_low_impact_unmatched_vegetable() -> None:

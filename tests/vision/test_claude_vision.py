@@ -10,6 +10,15 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+from services.trace import (
+    LEDGER_SCHEMA_VERSION,
+    MACRO_CALCULATOR_VERSION,
+    MATCHER_VERSION,
+    NUTRITION_CATALOG_VERSION,
+    PORTION_ENGINE_VERSION,
+    VISION_SCHEMA_VERSION,
+    prompt_sha256,
+)
 from services.vision import (
     ClaudeVisionClient,
     FoodComponent,
@@ -380,6 +389,53 @@ def test_analyze_meal_photo_structured_parses_full_uncertainty_response() -> Non
     assert component.portion.description == "about one cup"
     assert component.state_hints[0].state == "sauced"
     assert component.hidden_ingredient_risks[0].ingredient == "added sugar in sauce"
+
+
+def test_analyze_meal_photo_structured_includes_trace_version_metadata() -> None:
+    prompt = "trace metadata prompt"
+    model = "claude-trace-metadata-model"
+    fake = FakeAnthropicClient(
+        [
+            {
+                "components": [
+                    {
+                        "component_id": "component_1",
+                        "visible_name": "white rice",
+                        "candidates": [
+                            {
+                                "name": "white rice",
+                                "confidence": 0.93,
+                                "visual_evidence": ["white grains"],
+                            }
+                        ],
+                        "portion": {
+                            "description": "100 g",
+                            "confidence": 0.78,
+                            "visual_basis": ["plate scale"],
+                        },
+                        "state_hints": [],
+                        "hidden_ingredient_risks": [],
+                    }
+                ]
+            }
+        ]
+    )
+
+    structured = ClaudeVisionClient(client=fake, model=model).analyze_meal_photo_structured(
+        png_bytes(300, 300),
+        prompt=prompt,
+    )
+
+    assert structured.trace_versions.model_dump(mode="json") == {
+        "vision_schema_version": VISION_SCHEMA_VERSION,
+        "vision_model_name": model,
+        "vision_prompt_hash": prompt_sha256(prompt),
+        "nutrition_catalog_version": NUTRITION_CATALOG_VERSION,
+        "matcher_version": MATCHER_VERSION,
+        "portion_engine_version": PORTION_ENGINE_VERSION,
+        "macro_calculator_version": MACRO_CALCULATOR_VERSION,
+        "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+    }
 
 
 def test_state_hint_accepts_boiled_state() -> None:

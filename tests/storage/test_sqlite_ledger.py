@@ -20,6 +20,7 @@ from services.storage import (
     insert_meal_estimate,
     insert_portion_correction,
 )
+from services.trace import LEDGER_SCHEMA_VERSION
 from services.vision import FoodComponent
 
 
@@ -76,6 +77,7 @@ def test_insert_and_fetch_meal_round_trip_with_component_trace_storage(tmp_path:
     assert stored.local_date == "2026-05-04"
     assert stored.created_at == "2026-05-04T08:30:00+12:00"
     assert stored.meal_estimate == meal_estimate
+    assert stored.meal_estimate.trace_versions == meal_estimate.trace_versions
     assert stored.macro_best_estimate == calculate_meal_macro_best_estimate(
         meal_estimate.macro_interval
     )
@@ -93,6 +95,9 @@ def test_insert_and_fetch_meal_round_trip_with_component_trace_storage(tmp_path:
         assert len(source_traces_payload) == len(meal_estimate.macro_interval.source_traces)
         assert meal_payload["matched_component_count"] == meal_estimate.matched_component_count
         assert meal_payload["unmatched_component_count"] == meal_estimate.unmatched_component_count
+        assert meal_payload["trace_versions"] == meal_estimate.trace_versions.model_dump(
+            mode="json"
+        )
 
         component_rows = conn.execute(
             (
@@ -373,8 +378,8 @@ def test_export_ledger_backup_empty_db_has_metadata_and_no_meals(tmp_path: Path)
     payload = export_ledger_backup(db_path)
 
     assert payload["format"] == "macroagent.sqlite_ledger_backup"
-    assert payload["export_schema_version"] == 2
-    assert payload["ledger_schema_version"] == 2
+    assert payload["export_schema_version"] == LEDGER_SCHEMA_VERSION
+    assert payload["ledger_schema_version"] == LEDGER_SCHEMA_VERSION
     assert payload["portion_correction_count"] == 0
     assert payload["portion_corrections"] == []
     assert payload["meal_count"] == 0
@@ -423,6 +428,7 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
     assert meal["unmatched_component_count"] == meal_estimate.unmatched_component_count
     assert meal["component_count"] == len(meal_estimate.component_estimates)
     assert meal["meal_estimate"] == meal_estimate.model_dump(mode="json")
+    assert meal["trace_versions"] == meal_estimate.trace_versions.model_dump(mode="json")
     assert len(meal["source_traces"]) == len(meal_estimate.macro_interval.source_traces)
 
     assert meal["macro_ranges"]["kcal"]["min"] == pytest.approx(

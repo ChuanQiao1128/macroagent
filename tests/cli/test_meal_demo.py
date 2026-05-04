@@ -10,6 +10,7 @@ import pytest
 from services.cli import meal_demo as meal_demo_module
 from services.cli.meal_demo import main, parse_args, run_meal_demo
 from services.storage import fetch_meal_by_id
+from services.trace import LEDGER_SCHEMA_VERSION
 from services.vision import FoodComponent, VisionAnalysisResponse
 
 
@@ -113,6 +114,18 @@ def test_main_dry_run_prints_json_and_skips_persistence(tmp_path: Path) -> None:
     assert len(payload["component_estimates"]) == 1
     assert "macro_ranges" in payload
     assert "best_estimates" in payload
+    assert payload["trace_versions"]["ledger_schema_version"] == LEDGER_SCHEMA_VERSION
+    assert payload["trace_versions"]["vision_prompt_hash"]
+    assert set(payload["trace_versions"]) == {
+        "vision_schema_version",
+        "vision_model_name",
+        "vision_prompt_hash",
+        "nutrition_catalog_version",
+        "matcher_version",
+        "portion_engine_version",
+        "macro_calculator_version",
+        "ledger_schema_version",
+    }
 
 
 def test_run_meal_demo_default_analyzer_preserves_structured_top_k(
@@ -192,6 +205,7 @@ def test_main_persists_result_to_sqlite_when_not_dry_run(tmp_path: Path) -> None
     assert stored is not None
     assert len(stored.meal_estimate.component_estimates) == len(payload["component_estimates"])
     assert stored.macro_best_estimate.model_dump(mode="json") == payload["best_estimates"]
+    assert stored.meal_estimate.trace_versions.model_dump(mode="json") == payload["trace_versions"]
 
 
 def test_main_returns_error_for_invalid_vision_result_payload(tmp_path: Path) -> None:
