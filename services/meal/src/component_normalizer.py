@@ -332,7 +332,7 @@ def _to_normalized_component(accumulator: _ComponentAccumulator) -> NormalizedMe
         )
         for name, candidate in sorted(
             accumulator.candidates.items(),
-            key=lambda item: (-item[1].confidence, item[0]),
+            key=lambda item: -item[1].confidence,
         )
     )
     state_hints = tuple(
