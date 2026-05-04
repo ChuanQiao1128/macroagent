@@ -5,6 +5,7 @@ from services.meal.src.component_mapping import (
     ComponentMatchCandidate,
     MealComponentEstimate,
     MealEstimate,
+    MealUncertaintySignal,
     analyze_meal_components,
     estimate_meal_from_components,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "DEFAULT_MIN_MATCH_SCORE",
     "MealComponentEstimate",
     "MealEstimate",
+    "MealUncertaintySignal",
     "NormalizedFoodCandidate",
     "NormalizedHiddenIngredientRisk",
     "NormalizedMealComponent",

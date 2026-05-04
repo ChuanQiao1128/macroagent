@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,6 +15,7 @@ from services.accounting import (
 )
 from services.meal.src.component_normalizer import (
     NormalizedFoodCandidate,
+    NormalizedHiddenIngredientRisk,
     normalize_meal_components,
 )
 from services.nutrition import (
@@ -26,6 +29,117 @@ from services.vision import FoodComponent, VisionAnalysisResponse
 DEFAULT_CANDIDATE_LIMIT = 3
 DEFAULT_MIN_MATCH_SCORE = 0.60
 DEFAULT_CONFIDENT_MATCH_SCORE = 0.70
+HIGH_IMPACT_KCAL_DELTA_THRESHOLD = 40.0
+HIGH_IMPACT_FAT_DELTA_THRESHOLD = 4.0
+DOMINANT_UNCERTAINTY_RATIO = 1.35
+
+
+@dataclass(frozen=True)
+class _HighImpactCategory:
+    key: str
+    phrases: tuple[str, ...]
+    kcal_per_100g: float
+    fat_g_per_100g: float
+    unmatched_question_template: str
+
+
+class MealUncertaintySignal(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    component_name: str
+    source: Literal["unmatched_component", "hidden_ingredient_risk"]
+    impact: Literal["low", "high"]
+    reason: str
+    estimated_kcal_delta: float
+    estimated_fat_g_delta: float
+    recommended_question: str | None = None
+
+    @property
+    def impact_score(self) -> float:
+        return self.estimated_kcal_delta + (self.estimated_fat_g_delta * 9.0)
+
+
+HIGH_IMPACT_CATEGORIES = (
+    _HighImpactCategory(
+        key="creamy_or_oily_sauce",
+        phrases=(
+            "sauce",
+            "dressing",
+            "gravy",
+            "aioli",
+            "mayo",
+            "mayonnaise",
+            "alfredo",
+            "creamy",
+            "oily sauce",
+        ),
+        kcal_per_100g=280.0,
+        fat_g_per_100g=26.0,
+        unmatched_question_template=(
+            "Did {component_name} include a creamy or oily sauce? About how much was on the meal?"
+        ),
+    ),
+    _HighImpactCategory(
+        key="oil_or_butter",
+        phrases=("oil", "butter", "ghee", "margarine"),
+        kcal_per_100g=884.0,
+        fat_g_per_100g=100.0,
+        unmatched_question_template=(
+            "Was extra oil or butter used for {component_name}? About how much was used?"
+        ),
+    ),
+    _HighImpactCategory(
+        key="nuts_or_nut_butter",
+        phrases=(
+            "nut",
+            "nuts",
+            "nut butter",
+            "peanut butter",
+            "almond butter",
+            "cashew butter",
+            "hazelnut butter",
+            "tahini",
+        ),
+        kcal_per_100g=600.0,
+        fat_g_per_100g=50.0,
+        unmatched_question_template=(
+            "Did {component_name} include nuts or nut butter? About how much was included?"
+        ),
+    ),
+    _HighImpactCategory(
+        key="cheese_or_cream",
+        phrases=("cheese", "cream", "cream cheese", "sour cream", "queso"),
+        kcal_per_100g=360.0,
+        fat_g_per_100g=30.0,
+        unmatched_question_template=(
+            "Did {component_name} include cheese or cream? About how much was added?"
+        ),
+    ),
+    _HighImpactCategory(
+        key="sugary_drink_or_dessert",
+        phrases=(
+            "dessert",
+            "cake",
+            "cookie",
+            "brownie",
+            "ice cream",
+            "milkshake",
+            "pastry",
+            "donut",
+            "soda",
+            "cola",
+            "sweet tea",
+            "juice",
+            "boba",
+        ),
+        kcal_per_100g=220.0,
+        fat_g_per_100g=8.0,
+        unmatched_question_template=(
+            "Was there a sugary drink or dessert for {component_name}? What was it and how much?"
+        ),
+    ),
+)
+HIGH_IMPACT_BY_KEY = {category.key: category for category in HIGH_IMPACT_CATEGORIES}
 
 
 class ComponentMatchCandidate(BaseModel):
@@ -58,6 +172,9 @@ class MealComponentEstimate(BaseModel):
     selected_macro_entry_source: Literal["USDA", "PERSONAL"] | None = None
     selected_match_score: float | None = Field(default=None, ge=0, le=1)
     portion_range: PortionGramRange
+    hidden_ingredient_risks: tuple[NormalizedHiddenIngredientRisk, ...] = Field(
+        default_factory=tuple
+    )
     macro_interval: FoodMacroInterval | None = None
     unmatched_reason: str | None = None
 
@@ -94,10 +211,16 @@ class MealComponentEstimate(BaseModel):
 class MealEstimate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    estimate_status: Literal["complete", "incomplete_low_impact", "incomplete_high_impact"] = (
+        "complete"
+    )
+    macro_range_label: Literal["full_meal", "known_components_only"] = "full_meal"
     component_estimates: tuple[MealComponentEstimate, ...] = Field(default_factory=tuple)
     matched_component_count: int = Field(..., ge=0)
     unmatched_component_count: int = Field(..., ge=0)
     macro_interval: MealMacroInterval
+    uncertainty_signals: tuple[MealUncertaintySignal, ...] = Field(default_factory=tuple)
+    recommended_user_question: str | None = None
 
     @model_validator(mode="after")
     def _validate_counts(self) -> MealEstimate:
@@ -131,11 +254,19 @@ def analyze_meal_components(
 
     component_estimates: list[MealComponentEstimate] = []
     matched_intervals: list[FoodMacroInterval] = []
+    uncertainty_signals: list[MealUncertaintySignal] = []
 
     for component in normalized_components.components:
         portion_range = parse_portion_range(
             component_name=component.name,
             portion_hint=component.portion_hint,
+        )
+        uncertainty_signals.extend(
+            _collect_hidden_risk_uncertainty_signals(
+                component_name=component.name,
+                portion_range=portion_range,
+                hidden_ingredient_risks=component.hidden_ingredient_risks,
+            )
         )
         raw_candidates = match_food_candidates(
             _extract_query_candidates(
@@ -169,6 +300,7 @@ def analyze_meal_components(
                     selected_macro_entry_source=selected.entry.source,
                     selected_match_score=selected.score,
                     portion_range=portion_range,
+                    hidden_ingredient_risks=component.hidden_ingredient_risks,
                     macro_interval=macro_interval,
                 )
             )
@@ -192,16 +324,39 @@ def analyze_meal_components(
                 status="unmatched",
                 top_candidates=top_candidates,
                 portion_range=portion_range,
+                hidden_ingredient_risks=component.hidden_ingredient_risks,
+                unmatched_reason=unmatched_reason,
+            )
+        )
+        uncertainty_signals.append(
+            _build_unmatched_uncertainty_signal(
+                component_name=component.name,
+                component_confidence=component.confidence,
+                portion_range=portion_range,
+                top_candidates=top_candidates,
                 unmatched_reason=unmatched_reason,
             )
         )
 
     meal_interval = aggregate_meal_macro_interval(matched_intervals)
+    high_impact_present = any(signal.impact == "high" for signal in uncertainty_signals)
+    if not uncertainty_signals:
+        estimate_status: Literal["complete", "incomplete_low_impact", "incomplete_high_impact"] = (
+            "complete"
+        )
+    elif high_impact_present:
+        estimate_status = "incomplete_high_impact"
+    else:
+        estimate_status = "incomplete_low_impact"
     return MealEstimate(
+        estimate_status=estimate_status,
+        macro_range_label="full_meal" if not uncertainty_signals else "known_components_only",
         component_estimates=tuple(component_estimates),
         matched_component_count=len(matched_intervals),
         unmatched_component_count=len(component_estimates) - len(matched_intervals),
         macro_interval=meal_interval,
+        uncertainty_signals=tuple(uncertainty_signals),
+        recommended_user_question=_select_recommended_user_question(uncertainty_signals),
     )
 
 
@@ -272,13 +427,194 @@ def _clamp_confidence(value: object, *, fallback: float) -> float:
     return max(0.0, min(1.0, parsed))
 
 
+def _build_unmatched_uncertainty_signal(
+    *,
+    component_name: str,
+    component_confidence: float,
+    portion_range: PortionGramRange,
+    top_candidates: Sequence[ComponentMatchCandidate],
+    unmatched_reason: str,
+) -> MealUncertaintySignal:
+    category = _detect_high_impact_category(
+        (
+            component_name,
+            *[candidate.macro_entry_name for candidate in top_candidates],
+        )
+    )
+    if category is None:
+        return MealUncertaintySignal(
+            component_name=component_name,
+            source="unmatched_component",
+            impact="low",
+            reason=unmatched_reason,
+            estimated_kcal_delta=0.0,
+            estimated_fat_g_delta=0.0,
+            recommended_question=None,
+        )
+
+    estimated_unknown_grams = _estimate_unmatched_unknown_grams(portion_range, component_confidence)
+    estimated_kcal_delta = _round_one_decimal(
+        (estimated_unknown_grams * category.kcal_per_100g) / 100.0
+    )
+    estimated_fat_delta = _round_one_decimal(
+        (estimated_unknown_grams * category.fat_g_per_100g) / 100.0
+    )
+    high_impact = (
+        estimated_kcal_delta >= HIGH_IMPACT_KCAL_DELTA_THRESHOLD
+        or estimated_fat_delta >= HIGH_IMPACT_FAT_DELTA_THRESHOLD
+    )
+    reason_prefix = (
+        f"{unmatched_reason}; potential high-impact category detected: {category.key}"
+        if high_impact
+        else f"{unmatched_reason}; potential category detected: {category.key}"
+    )
+    return MealUncertaintySignal(
+        component_name=component_name,
+        source="unmatched_component",
+        impact="high" if high_impact else "low",
+        reason=reason_prefix,
+        estimated_kcal_delta=estimated_kcal_delta,
+        estimated_fat_g_delta=estimated_fat_delta,
+        recommended_question=category.unmatched_question_template.format(
+            component_name=component_name
+        )
+        if high_impact
+        else None,
+    )
+
+
+def _collect_hidden_risk_uncertainty_signals(
+    *,
+    component_name: str,
+    portion_range: PortionGramRange,
+    hidden_ingredient_risks: Sequence[NormalizedHiddenIngredientRisk],
+) -> tuple[MealUncertaintySignal, ...]:
+    signals: list[MealUncertaintySignal] = []
+    for risk in hidden_ingredient_risks:
+        category = _detect_high_impact_category((risk.ingredient, component_name))
+        if category is None:
+            continue
+
+        potential_unknown_grams = _estimate_hidden_risk_unknown_grams(
+            portion_range=portion_range,
+            likelihood=risk.likelihood,
+        )
+        estimated_kcal_delta = _round_one_decimal(
+            (potential_unknown_grams * category.kcal_per_100g) / 100.0
+        )
+        estimated_fat_delta = _round_one_decimal(
+            (potential_unknown_grams * category.fat_g_per_100g) / 100.0
+        )
+        materially_high = (
+            risk.likelihood >= 0.5
+            and (
+                risk.macro_impact in {"medium", "high", "unknown"}
+                or estimated_kcal_delta >= HIGH_IMPACT_KCAL_DELTA_THRESHOLD
+                or estimated_fat_delta >= HIGH_IMPACT_FAT_DELTA_THRESHOLD
+            )
+        )
+        if not materially_high:
+            continue
+
+        rationale_suffix = (
+            f"; evidence: {'; '.join(risk.rationales)}" if risk.rationales else ""
+        )
+        signals.append(
+            MealUncertaintySignal(
+                component_name=component_name,
+                source="hidden_ingredient_risk",
+                impact="high",
+                reason=(
+                    "hidden ingredient risk detected: "
+                    f"{risk.ingredient} (likelihood={risk.likelihood:.2f}, "
+                    f"macro_impact={risk.macro_impact}){rationale_suffix}"
+                ),
+                estimated_kcal_delta=estimated_kcal_delta,
+                estimated_fat_g_delta=estimated_fat_delta,
+                recommended_question=(
+                    f"For {component_name}, was there hidden {risk.ingredient}? "
+                    "About how much was used?"
+                ),
+            )
+        )
+    return tuple(signals)
+
+
+def _detect_high_impact_category(texts: Sequence[str]) -> _HighImpactCategory | None:
+    normalized_texts = tuple(_normalize_gate_text(text) for text in texts)
+    for category in HIGH_IMPACT_CATEGORIES:
+        if any(
+            _contains_phrase(normalized_text, category.phrases)
+            for normalized_text in normalized_texts
+        ):
+            return category
+    return None
+
+
+def _contains_phrase(normalized_text: str, phrases: Sequence[str]) -> bool:
+    if not normalized_text:
+        return False
+    padded_text = f" {normalized_text} "
+    return any(f" {phrase} " in padded_text for phrase in phrases)
+
+
+def _normalize_gate_text(text: str) -> str:
+    lowered = text.casefold()
+    collapsed = re.sub(r"[^a-z0-9]+", " ", lowered)
+    return " ".join(collapsed.split())
+
+
+def _estimate_unmatched_unknown_grams(
+    portion_range: PortionGramRange,
+    component_confidence: float,
+) -> float:
+    center_grams = portion_range.grams_p50
+    confidence_scale = 0.5 + (0.5 * (1.0 - max(0.0, min(1.0, component_confidence))))
+    return max(15.0, center_grams * confidence_scale)
+
+
+def _estimate_hidden_risk_unknown_grams(
+    *,
+    portion_range: PortionGramRange,
+    likelihood: float,
+) -> float:
+    center_grams = portion_range.grams_p50
+    hidden_fraction = 0.08 + (0.22 * max(0.0, min(1.0, likelihood)))
+    return max(5.0, center_grams * hidden_fraction)
+
+
+def _select_recommended_user_question(signals: Sequence[MealUncertaintySignal]) -> str | None:
+    high_impact_signals = [
+        signal
+        for signal in signals
+        if signal.impact == "high" and signal.recommended_question is not None
+    ]
+    if not high_impact_signals:
+        return None
+    ranked = sorted(high_impact_signals, key=lambda signal: signal.impact_score, reverse=True)
+    if len(ranked) == 1:
+        return ranked[0].recommended_question
+    second_score = ranked[1].impact_score
+    if second_score <= 0:
+        return ranked[0].recommended_question
+    if ranked[0].impact_score >= second_score * DOMINANT_UNCERTAINTY_RATIO:
+        return ranked[0].recommended_question
+    return None
+
+
+def _round_one_decimal(value: float) -> float:
+    return round(value, 1)
+
+
 __all__ = [
     "ComponentMatchCandidate",
     "DEFAULT_CANDIDATE_LIMIT",
     "DEFAULT_CONFIDENT_MATCH_SCORE",
     "DEFAULT_MIN_MATCH_SCORE",
+    "HIGH_IMPACT_BY_KEY",
     "MealComponentEstimate",
     "MealEstimate",
+    "MealUncertaintySignal",
     "analyze_meal_components",
     "estimate_meal_from_components",
 ]
