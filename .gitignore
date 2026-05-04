@@ -10,3 +10,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+local_inputs/
+local_outputs/
+*.sqlite
+*.sqlite3
+vision_cache.json
