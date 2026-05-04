@@ -36,6 +36,7 @@ STATE_ALIGNMENT_BONUS = 0.04
 STATE_CONFLICT_PENALTY = 0.18
 STATE_SIGNAL_THRESHOLD = 0.45
 QUERY_DERIVED_STATE_FLOOR = 0.40
+QUERY_CONFIDENCE_RANKING_WEIGHT = 0.02
 
 LOW_CONFIDENCE_MARKERS = (
     "low confidence",
@@ -603,7 +604,7 @@ def match_food_candidates(
         state_hints=state_hints,
     )
 
-    ranked_matches: list[tuple[float, MacroMatchCandidate]] = []
+    ranked_matches: list[tuple[float, float, MacroMatchCandidate]] = []
     for entry in _load_all_entries():
         entry_states = _extract_entry_states(entry)
         best_text_match: MacroMatchCandidate | None = None
@@ -633,8 +634,8 @@ def match_food_candidates(
                 observed_states=observed_states,
                 entry_states=entry_states,
             )
-            query_metric = (
-                text_match.score + state_adjustment + (0.02 * query_candidate.confidence)
+            query_metric = text_match.score + state_adjustment + (
+                QUERY_CONFIDENCE_RANKING_WEIGHT * query_candidate.confidence
             )
             if query_metric <= best_query_metric:
                 continue
@@ -651,7 +652,9 @@ def match_food_candidates(
             continue
 
         final_score = _clamp_score(best_text_match.score + best_state_adjustment)
-        ranking_score = final_score
+        ranking_score = final_score + (
+            QUERY_CONFIDENCE_RANKING_WEIGHT * best_query_confidence
+        )
 
         reason_parts = [
             best_text_match.reason,
@@ -679,7 +682,7 @@ def match_food_candidates(
             elif best_state_conflict:
                 reason_parts.append("personal priority bonus skipped (state conflict)")
             else:
-                ranking_score = _clamp_score(ranking_score + PERSONAL_PRIORITY_BONUS)
+                ranking_score += PERSONAL_PRIORITY_BONUS
                 reason_parts.append(
                     f"personal priority bonus +{PERSONAL_PRIORITY_BONUS:.3f} applied"
                 )
@@ -690,6 +693,7 @@ def match_food_candidates(
         ranked_matches.append(
             (
                 ranking_score,
+                best_query_confidence,
                 MacroMatchCandidate(
                     entry=entry,
                     score=final_score,
@@ -703,11 +707,12 @@ def match_food_candidates(
     ranked_matches.sort(
         key=lambda item: (
             -item[0],
-            MATCH_TYPE_PRIORITY[item[1].match_type],
-            item[1].entry.id,
+            -item[1],
+            MATCH_TYPE_PRIORITY[item[2].match_type],
+            item[2].entry.id,
         )
     )
-    return tuple(candidate for _, candidate in ranked_matches[:limit])
+    return tuple(candidate for _, _, candidate in ranked_matches[:limit])
 
 
 def match_food_name(
