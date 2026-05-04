@@ -19,6 +19,8 @@
 ## Pipeline
 
 - The input can be legacy `services.vision.FoodComponent` objects or a structured `services.vision.VisionAnalysisResponse`.
+- Structured inputs carry `trace_versions` through to the meal estimate.
+- Legacy `FoodComponent[]` inputs receive the default trace metadata.
 - `normalize_meal_components()` performs deterministic cleanup before nutrition matching:
   - trims whitespace
   - normalizes case for matching
@@ -69,11 +71,13 @@ Each `ComponentMatchCandidate` records:
 - `matched_component_count`
 - `unmatched_component_count`
 - aggregated `macro_interval`
+- `trace_versions`
 
 ## Notes
 
 - The local matcher gives `PERSONAL` entries a small priority bonus only when the text match is strong, the entry is not marked low confidence or stale, and state/preparation hints do not conflict.
 - The pipeline is deterministic and local; it does not call Claude, OpenAI, or any network service.
+- The meal trace keeps the upstream vision, nutrition, matcher, portion, calculator, and ledger versions together for debugging and comparison.
 - For an end-to-end local demo that includes vision analysis and SQLite persistence, see [docs/cli.md](cli.md).
 
 ## Verification

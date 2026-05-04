@@ -114,6 +114,10 @@ Behavior:
 
 `services.meal` builds on this catalog and parser to map `FoodComponent` objects into component estimates and meal-level macro intervals. See [docs/meal.md](meal.md).
 
+## Trace Metadata
+
+The shared version constants used in meal traces live in [docs/trace.md](trace.md) and are exported from `services.nutrition.src.version_metadata`.
+
 ## Persistence
 
 `services.storage` persists meal estimates and daily totals in a local SQLite ledger and exposes a JSON backup export API for inspection and backup. See [docs/storage.md](storage.md).

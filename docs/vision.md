@@ -19,6 +19,7 @@
   - meal-level uncertainty flags
   - per-component ids, visible names, top-k food candidates, portion estimates, state hints, and hidden ingredient risks
 - Does not ask for kcal, protein, carbs, fat, or meal totals.
+- Attaches stable trace version metadata to every structured response.
 - Retries once if the first structured response fails validation.
 - Accepts legacy `FoodComponent[]` responses and lifts them into the structured schema for compatibility.
 - Ships with a simple JSON-file cache for local Track A usage.
@@ -49,6 +50,7 @@
 - `image_quality_issues`
 - `meal_uncertainty_flags`
 - `components`
+- `trace_versions`
 
 Each `StructuredFoodComponent` contains:
 
@@ -71,6 +73,7 @@ Cache keys include:
 - prompt text
 
 Structured and legacy-compatible payloads are cached separately so either API can reuse the same analysis.
+Structured cache entries are tagged with the vision schema version.
 `JsonFileVisionCache` stores serialized payloads in a local JSON file and does not persist raw images.
 Writes use a temporary file plus `os.replace()` so local single-user updates are atomic enough for this use case.
 

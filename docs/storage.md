@@ -33,6 +33,7 @@ Each exported meal includes:
 - macro best estimates
 - source traces
 - the serialized meal estimate payload
+- the serialized meal trace versions under `trace_versions`
 - component rows sorted by `component_index`
 
 Each exported component includes:
@@ -54,12 +55,14 @@ Each exported component includes:
 - Stores local date strings as `YYYY-MM-DD`.
 - Stores timestamps as ISO-formatted strings.
 - Persists macro ranges, best estimates, component traces, source trace JSON, and serialized meal estimate JSON.
+- Round-trips `MealEstimate.trace_versions` through the stored `meal_estimate_json` payload.
 - Keeps the ledger local-first and does not require any cloud or network service.
 - Treats repeated inserts with the same `meal_id` and identical payload as idempotent.
 - Raises `ValueError` when a duplicate `meal_id` is reused with a different payload.
 - Returns `None` from `fetch_meal_by_id()` when a meal id is not present.
 - Returns zero ranges and arithmetic-midpoint best estimates for empty-day totals.
 - Exposes export-only backup behavior for now; there is no public restore/import API yet.
+- For the shared trace version constants used by vision, meal, CLI, and export payloads, see [docs/trace.md](trace.md).
 
 ## Verification
 

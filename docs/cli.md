@@ -31,7 +31,7 @@ Optional flags:
 - Call `services.vision.analyze_meal_photo_structured()` directly if you need the richer uncertainty payload before meal estimation.
 - Computes meal-level macro ranges and best estimates with `services.accounting`.
 - Persists the meal to SQLite through `services.storage` unless `--dry-run` is set.
-- Prints a JSON object to stdout with the meal id, component estimates, macro ranges, and best estimates.
+- Prints a JSON object to stdout with the meal id, persistence status, estimate status, macro range label, trace versions, component estimates, macro ranges, best estimates, uncertainty signals, and the recommended user question.
 
 ## Offline Testing
 
