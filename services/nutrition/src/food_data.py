@@ -529,6 +529,17 @@ def _evaluate_state_alignment(
             f"{'/'.join(sorted(observed_methods))} vs entry prep {'/'.join(sorted(entry_methods))}"
         )
 
+    if (
+        observed_methods
+        and not entry_methods
+        and "sauced" in normalized_entry_states
+        and "sauced" not in normalized_observed_states
+    ):
+        conflicts.append(
+            "observed prep "
+            f"{'/'.join(sorted(observed_methods))} vs entry sauced"
+        )
+
     if "plain" in normalized_observed_states and "sauced" in normalized_entry_states:
         conflicts.append("observed plain vs entry sauced")
     if "sauced" in normalized_observed_states and "plain" in normalized_entry_states:
