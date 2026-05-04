@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from services.nutrition import (
     MacroEntry,
+    NutritionEntry,
     find_macro_entry,
     get_macro_entry,
     get_macro_entry_by_name,
@@ -47,10 +48,15 @@ EXPECTED_FIELDS = {
     "protein_g_per_100g",
     "carbs_g_per_100g",
     "fat_g_per_100g",
+    "sugar_g_per_100g",
+    "sodium_mg_per_100g",
+    "fiber_g_per_100g",
 }
 
 
-def test_macro_entry_fields_are_stable() -> None:
+def test_nutrition_entry_fields_are_stable_and_macro_entry_alias_remains() -> None:
+    assert MacroEntry is NutritionEntry
+    assert set(NutritionEntry.model_fields) == EXPECTED_FIELDS
     assert set(MacroEntry.model_fields) == EXPECTED_FIELDS
 
 
@@ -572,6 +578,9 @@ def test_match_food_candidates_uses_fdc_when_local_catalog_misses(
     assert matches[0].entry.source == "USDA"
     assert matches[0].entry.kcal_per_100g == pytest.approx(145.0)
     assert matches[0].entry.protein_g_per_100g == pytest.approx(5.2)
+    assert matches[0].entry.sugar_g_per_100g == pytest.approx(3.4)
+    assert matches[0].entry.sodium_mg_per_100g == pytest.approx(315.0)
+    assert matches[0].entry.fiber_g_per_100g == pytest.approx(1.2)
     assert matches[0].score >= 0.70
     assert "matched via FDC query 'spicy tuna maki roll'" in matches[0].reason
 
@@ -606,6 +615,9 @@ def test_match_food_candidates_cleans_fdc_query_for_sugar_packet(
     assert matches
     assert matches[0].entry.id == "fdc:999001"
     assert matches[0].entry.name == "Sugars, granulated"
+    assert matches[0].entry.sugar_g_per_100g == pytest.approx(99.8)
+    assert matches[0].entry.sodium_mg_per_100g == pytest.approx(1.0)
+    assert matches[0].entry.fiber_g_per_100g == pytest.approx(0.0)
     assert "matched via FDC query 'granulated sugar'" in matches[0].reason
 
 
@@ -733,6 +745,27 @@ def _fdc_sushi_payload() -> dict[str, object]:
                         "unitName": "G",
                         "value": 2.1,
                     },
+                    {
+                        "nutrientId": 2000,
+                        "nutrientNumber": "269",
+                        "nutrientName": "Total Sugars",
+                        "unitName": "G",
+                        "value": 3.4,
+                    },
+                    {
+                        "nutrientId": 1093,
+                        "nutrientNumber": "307",
+                        "nutrientName": "Sodium, Na",
+                        "unitName": "MG",
+                        "value": 315.0,
+                    },
+                    {
+                        "nutrientId": 1079,
+                        "nutrientNumber": "291",
+                        "nutrientName": "Fiber, total dietary",
+                        "unitName": "G",
+                        "value": 1.2,
+                    },
                 ],
             }
         ]
@@ -773,6 +806,29 @@ def _fdc_sugar_payload() -> dict[str, object]:
                         "nutrientId": 1004,
                         "nutrientNumber": "204",
                         "nutrientName": "Total lipid (fat)",
+                        "unitName": "G",
+                        "value": 0.0,
+                    },
+                    {
+                        "nutrientId": 2000,
+                        "nutrientNumber": "269",
+                        "nutrientName": "Sugars, total including NLEA",
+                        "unitName": "G",
+                        "value": 99.8,
+                    },
+                    {
+                        "nutrient": {
+                            "id": 1093,
+                            "number": "307",
+                            "name": "Sodium, Na",
+                            "unitName": "G",
+                        },
+                        "amount": 0.001,
+                    },
+                    {
+                        "nutrientId": 1079,
+                        "nutrientNumber": "291",
+                        "nutrientName": "Fiber, total dietary",
                         "unitName": "G",
                         "value": 0.0,
                     },

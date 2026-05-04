@@ -1,6 +1,7 @@
 from services.nutrition.src.food_data import (
     MacroEntry,
     MacroMatchCandidate,
+    NutritionEntry,
     find_macro_entry,
     find_macro_entry_candidates,
     get_macro_entry,
@@ -28,6 +29,7 @@ __all__ = [
     "MacroMatchCandidate",
     "MATCHER_VERSION",
     "NUTRITION_CATALOG_VERSION",
+    "NutritionEntry",
     "PortionGramRange",
     "PORTION_ENGINE_VERSION",
     "find_macro_entry",

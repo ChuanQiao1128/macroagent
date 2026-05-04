@@ -24,6 +24,9 @@ def _build_entry(
     protein_g_per_100g: float,
     carbs_g_per_100g: float,
     fat_g_per_100g: float,
+    sugar_g_per_100g: float = 0.0,
+    sodium_mg_per_100g: float = 0.0,
+    fiber_g_per_100g: float = 0.0,
 ) -> MacroEntry:
     return MacroEntry(
         id=entry_id,
@@ -35,6 +38,9 @@ def _build_entry(
         protein_g_per_100g=protein_g_per_100g,
         carbs_g_per_100g=carbs_g_per_100g,
         fat_g_per_100g=fat_g_per_100g,
+        sugar_g_per_100g=sugar_g_per_100g,
+        sodium_mg_per_100g=sodium_mg_per_100g,
+        fiber_g_per_100g=fiber_g_per_100g,
     )
 
 
@@ -106,6 +112,9 @@ def test_calculate_food_macro_best_estimate_preserves_all_macro_fields() -> None
         protein_g_per_100g=31.0,
         carbs_g_per_100g=0.0,
         fat_g_per_100g=3.6,
+        sugar_g_per_100g=2.0,
+        sodium_mg_per_100g=74.0,
+        fiber_g_per_100g=1.5,
     )
     interval = calculate_food_macro_interval(
         entry=chicken,
@@ -122,6 +131,12 @@ def test_calculate_food_macro_best_estimate_preserves_all_macro_fields() -> None
     assert estimate.carbs_g.method == "arithmetic_midpoint"
     assert estimate.fat_g.value == 3.5
     assert estimate.fat_g.method == "geometric_midpoint"
+    assert estimate.sugar_g.value == 1.9
+    assert estimate.sugar_g.method == "geometric_midpoint"
+    assert estimate.sodium_mg.value == 71.7
+    assert estimate.sodium_mg.method == "geometric_midpoint"
+    assert estimate.fiber_g.value == 1.4
+    assert estimate.fiber_g.method == "geometric_midpoint"
 
 
 def test_calculate_food_macro_best_estimate_uses_p50_when_source_interval_has_percentiles() -> None:
@@ -133,6 +148,9 @@ def test_calculate_food_macro_best_estimate_uses_p50_when_source_interval_has_pe
         protein_g_per_100g=20.0,
         carbs_g_per_100g=30.0,
         fat_g_per_100g=40.0,
+        sugar_g_per_100g=10.0,
+        sodium_mg_per_100g=500.0,
+        fiber_g_per_100g=5.0,
     )
     interval = calculate_food_macro_interval(
         entry=tofu,
@@ -154,6 +172,12 @@ def test_calculate_food_macro_best_estimate_uses_p50_when_source_interval_has_pe
     assert estimate.carbs_g.method == "percentile_p50"
     assert estimate.fat_g.value == 28.0
     assert estimate.fat_g.method == "percentile_p50"
+    assert estimate.sugar_g.value == 7.0
+    assert estimate.sugar_g.method == "percentile_p50"
+    assert estimate.sodium_mg.value == 350.0
+    assert estimate.sodium_mg.method == "percentile_p50"
+    assert estimate.fiber_g.value == 3.5
+    assert estimate.fiber_g.method == "percentile_p50"
 
 
 def test_calculate_meal_macro_best_estimate_from_aggregate_interval() -> None:
@@ -174,6 +198,9 @@ def test_calculate_meal_macro_best_estimate_from_aggregate_interval() -> None:
         protein_g_per_100g=1.1,
         carbs_g_per_100g=22.8,
         fat_g_per_100g=0.3,
+        sugar_g_per_100g=12.2,
+        sodium_mg_per_100g=1.0,
+        fiber_g_per_100g=2.6,
     )
 
     meal_interval = calculate_meal_macro_interval(
@@ -193,3 +220,9 @@ def test_calculate_meal_macro_best_estimate_from_aggregate_interval() -> None:
     assert meal_estimate.carbs_g.method == "geometric_midpoint"
     assert meal_estimate.fat_g.value == 4.3
     assert meal_estimate.fat_g.method == "geometric_midpoint"
+    assert meal_estimate.sugar_g.value == 10.6
+    assert meal_estimate.sugar_g.method == "geometric_midpoint"
+    assert meal_estimate.sodium_mg.value == 0.9
+    assert meal_estimate.sodium_mg.method == "geometric_midpoint"
+    assert meal_estimate.fiber_g.value == 2.3
+    assert meal_estimate.fiber_g.method == "geometric_midpoint"

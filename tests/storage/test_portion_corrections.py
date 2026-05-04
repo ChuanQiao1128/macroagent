@@ -75,7 +75,7 @@ def test_portion_correction_migration_replay_preserves_existing_meal_data(tmp_pa
             ).fetchall()
         }
 
-    assert versions == [(1, 1), (2, 1)]
+    assert versions == [(1, 1), (2, 1), (3, 1)]
     assert "portion_corrections" in tables
 
 

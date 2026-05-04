@@ -53,6 +53,9 @@ class DailyLedgerTotals(BaseModel):
     protein_g: MacroRange
     carbs_g: MacroRange
     fat_g: MacroRange
+    sugar_g: MacroRange
+    sodium_mg: MacroRange
+    fiber_g: MacroRange
     macro_best_estimate: MacroBestEstimateSet
 
 
@@ -229,11 +232,43 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
             ON portion_corrections(component_name_normalized);
         """,
     ),
+    _SchemaMigration(
+        version=3,
+        sql="""
+        ALTER TABLE meals ADD COLUMN sugar_g_min REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN sugar_g_max REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN sodium_mg_min REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN sodium_mg_max REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN fiber_g_min REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN fiber_g_max REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals ADD COLUMN best_sugar_g REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals
+            ADD COLUMN best_sugar_g_method TEXT NOT NULL DEFAULT 'arithmetic_midpoint';
+        ALTER TABLE meals ADD COLUMN best_sodium_mg REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals
+            ADD COLUMN best_sodium_mg_method TEXT NOT NULL DEFAULT 'arithmetic_midpoint';
+        ALTER TABLE meals ADD COLUMN best_fiber_g REAL NOT NULL DEFAULT 0;
+        ALTER TABLE meals
+            ADD COLUMN best_fiber_g_method TEXT NOT NULL DEFAULT 'arithmetic_midpoint';
+
+        ALTER TABLE meal_component_estimates ADD COLUMN sugar_g_min REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN sugar_g_max REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN sodium_mg_min REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN sodium_mg_max REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN fiber_g_min REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN fiber_g_max REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_sugar_g REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_sugar_g_method TEXT;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_sodium_mg REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_sodium_mg_method TEXT;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_fiber_g REAL;
+        ALTER TABLE meal_component_estimates ADD COLUMN best_fiber_g_method TEXT;
+        """,
+    ),
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
 _EXPORT_SCHEMA_VERSION = LEDGER_SCHEMA_VERSION
-_BASE_SCHEMA_VERSION = _MIGRATIONS[0].version if _MIGRATIONS else 0
 _LATEST_SCHEMA_VERSION = _MIGRATIONS[-1].version if _MIGRATIONS else 0
 
 
@@ -244,7 +279,7 @@ def initialize_sqlite_ledger(database_path: str | Path) -> None:
         Path(db_target).parent.mkdir(parents=True, exist_ok=True)
 
     with _connect(db_target) as connection:
-        _apply_migrations(connection, target_version=_BASE_SCHEMA_VERSION)
+        _apply_migrations(connection)
 
 
 def insert_meal_estimate(
@@ -292,6 +327,12 @@ def insert_meal_estimate(
                     carbs_g_max,
                     fat_g_min,
                     fat_g_max,
+                    sugar_g_min,
+                    sugar_g_max,
+                    sodium_mg_min,
+                    sodium_mg_max,
+                    fiber_g_min,
+                    fiber_g_max,
                     best_kcal,
                     best_kcal_method,
                     best_protein_g,
@@ -300,36 +341,91 @@ def insert_meal_estimate(
                     best_carbs_g_method,
                     best_fat_g,
                     best_fat_g_method,
+                    best_sugar_g,
+                    best_sugar_g_method,
+                    best_sodium_mg,
+                    best_sodium_mg_method,
+                    best_fiber_g,
+                    best_fiber_g_method,
                     source_traces_json,
                     meal_estimate_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    :meal_id,
+                    :local_date,
+                    :created_at,
+                    :matched_component_count,
+                    :unmatched_component_count,
+                    :component_count,
+                    :kcal_min,
+                    :kcal_max,
+                    :protein_g_min,
+                    :protein_g_max,
+                    :carbs_g_min,
+                    :carbs_g_max,
+                    :fat_g_min,
+                    :fat_g_max,
+                    :sugar_g_min,
+                    :sugar_g_max,
+                    :sodium_mg_min,
+                    :sodium_mg_max,
+                    :fiber_g_min,
+                    :fiber_g_max,
+                    :best_kcal,
+                    :best_kcal_method,
+                    :best_protein_g,
+                    :best_protein_g_method,
+                    :best_carbs_g,
+                    :best_carbs_g_method,
+                    :best_fat_g,
+                    :best_fat_g_method,
+                    :best_sugar_g,
+                    :best_sugar_g_method,
+                    :best_sodium_mg,
+                    :best_sodium_mg_method,
+                    :best_fiber_g,
+                    :best_fiber_g_method,
+                    :source_traces_json,
+                    :meal_estimate_json
+                )
                 """,
-                (
-                    resolved_meal_id,
-                    resolved_local_date,
-                    created_at_iso,
-                    meal_estimate.matched_component_count,
-                    meal_estimate.unmatched_component_count,
-                    len(meal_estimate.component_estimates),
-                    macro_interval.kcal.min,
-                    macro_interval.kcal.max,
-                    macro_interval.protein_g.min,
-                    macro_interval.protein_g.max,
-                    macro_interval.carbs_g.min,
-                    macro_interval.carbs_g.max,
-                    macro_interval.fat_g.min,
-                    macro_interval.fat_g.max,
-                    meal_macro_best.kcal.value,
-                    meal_macro_best.kcal.method,
-                    meal_macro_best.protein_g.value,
-                    meal_macro_best.protein_g.method,
-                    meal_macro_best.carbs_g.value,
-                    meal_macro_best.carbs_g.method,
-                    meal_macro_best.fat_g.value,
-                    meal_macro_best.fat_g.method,
-                    source_traces_json,
-                    meal_estimate_json,
-                ),
+                {
+                    "meal_id": resolved_meal_id,
+                    "local_date": resolved_local_date,
+                    "created_at": created_at_iso,
+                    "matched_component_count": meal_estimate.matched_component_count,
+                    "unmatched_component_count": meal_estimate.unmatched_component_count,
+                    "component_count": len(meal_estimate.component_estimates),
+                    "kcal_min": macro_interval.kcal.min,
+                    "kcal_max": macro_interval.kcal.max,
+                    "protein_g_min": macro_interval.protein_g.min,
+                    "protein_g_max": macro_interval.protein_g.max,
+                    "carbs_g_min": macro_interval.carbs_g.min,
+                    "carbs_g_max": macro_interval.carbs_g.max,
+                    "fat_g_min": macro_interval.fat_g.min,
+                    "fat_g_max": macro_interval.fat_g.max,
+                    "sugar_g_min": macro_interval.sugar_g.min,
+                    "sugar_g_max": macro_interval.sugar_g.max,
+                    "sodium_mg_min": macro_interval.sodium_mg.min,
+                    "sodium_mg_max": macro_interval.sodium_mg.max,
+                    "fiber_g_min": macro_interval.fiber_g.min,
+                    "fiber_g_max": macro_interval.fiber_g.max,
+                    "best_kcal": meal_macro_best.kcal.value,
+                    "best_kcal_method": meal_macro_best.kcal.method,
+                    "best_protein_g": meal_macro_best.protein_g.value,
+                    "best_protein_g_method": meal_macro_best.protein_g.method,
+                    "best_carbs_g": meal_macro_best.carbs_g.value,
+                    "best_carbs_g_method": meal_macro_best.carbs_g.method,
+                    "best_fat_g": meal_macro_best.fat_g.value,
+                    "best_fat_g_method": meal_macro_best.fat_g.method,
+                    "best_sugar_g": meal_macro_best.sugar_g.value,
+                    "best_sugar_g_method": meal_macro_best.sugar_g.method,
+                    "best_sodium_mg": meal_macro_best.sodium_mg.value,
+                    "best_sodium_mg_method": meal_macro_best.sodium_mg.method,
+                    "best_fiber_g": meal_macro_best.fiber_g.value,
+                    "best_fiber_g_method": meal_macro_best.fiber_g.method,
+                    "source_traces_json": source_traces_json,
+                    "meal_estimate_json": meal_estimate_json,
+                },
             )
         except sqlite3.IntegrityError as exc:
             if _is_existing_meal_idempotent(
@@ -625,7 +721,13 @@ def fetch_meal_by_id(database_path: str | Path, meal_id: str) -> StoredMealEstim
                 best_carbs_g,
                 best_carbs_g_method,
                 best_fat_g,
-                best_fat_g_method
+                best_fat_g_method,
+                best_sugar_g,
+                best_sugar_g_method,
+                best_sodium_mg,
+                best_sodium_mg_method,
+                best_fiber_g,
+                best_fiber_g_method
             FROM meals
             WHERE meal_id = ?
             """,
@@ -662,7 +764,13 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
                 COALESCE(SUM(carbs_g_min), 0) AS carbs_g_min,
                 COALESCE(SUM(carbs_g_max), 0) AS carbs_g_max,
                 COALESCE(SUM(fat_g_min), 0) AS fat_g_min,
-                COALESCE(SUM(fat_g_max), 0) AS fat_g_max
+                COALESCE(SUM(fat_g_max), 0) AS fat_g_max,
+                COALESCE(SUM(sugar_g_min), 0) AS sugar_g_min,
+                COALESCE(SUM(sugar_g_max), 0) AS sugar_g_max,
+                COALESCE(SUM(sodium_mg_min), 0) AS sodium_mg_min,
+                COALESCE(SUM(sodium_mg_max), 0) AS sodium_mg_max,
+                COALESCE(SUM(fiber_g_min), 0) AS fiber_g_min,
+                COALESCE(SUM(fiber_g_max), 0) AS fiber_g_max
             FROM meals
             WHERE local_date = ?
             """,
@@ -690,6 +798,18 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
             min=float(row["fat_g_min"]) if row is not None else 0.0,
             max=float(row["fat_g_max"]) if row is not None else 0.0,
         ),
+        sugar_g=MacroRange(
+            min=float(row["sugar_g_min"]) if row is not None else 0.0,
+            max=float(row["sugar_g_max"]) if row is not None else 0.0,
+        ),
+        sodium_mg=MacroRange(
+            min=float(row["sodium_mg_min"]) if row is not None else 0.0,
+            max=float(row["sodium_mg_max"]) if row is not None else 0.0,
+        ),
+        fiber_g=MacroRange(
+            min=float(row["fiber_g_min"]) if row is not None else 0.0,
+            max=float(row["fiber_g_max"]) if row is not None else 0.0,
+        ),
         macro_best_estimate=MacroBestEstimateSet(
             kcal=calculate_macro_best_estimate(
                 MacroRange(
@@ -713,6 +833,24 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
                 MacroRange(
                     min=float(row["fat_g_min"]) if row is not None else 0.0,
                     max=float(row["fat_g_max"]) if row is not None else 0.0,
+                )
+            ),
+            sugar_g=calculate_macro_best_estimate(
+                MacroRange(
+                    min=float(row["sugar_g_min"]) if row is not None else 0.0,
+                    max=float(row["sugar_g_max"]) if row is not None else 0.0,
+                )
+            ),
+            sodium_mg=calculate_macro_best_estimate(
+                MacroRange(
+                    min=float(row["sodium_mg_min"]) if row is not None else 0.0,
+                    max=float(row["sodium_mg_max"]) if row is not None else 0.0,
+                )
+            ),
+            fiber_g=calculate_macro_best_estimate(
+                MacroRange(
+                    min=float(row["fiber_g_min"]) if row is not None else 0.0,
+                    max=float(row["fiber_g_max"]) if row is not None else 0.0,
                 )
             ),
         ),
@@ -752,6 +890,12 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
                 carbs_g_max,
                 fat_g_min,
                 fat_g_max,
+                sugar_g_min,
+                sugar_g_max,
+                sodium_mg_min,
+                sodium_mg_max,
+                fiber_g_min,
+                fiber_g_max,
                 best_kcal,
                 best_kcal_method,
                 best_protein_g,
@@ -760,6 +904,12 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
                 best_carbs_g_method,
                 best_fat_g,
                 best_fat_g_method,
+                best_sugar_g,
+                best_sugar_g_method,
+                best_sodium_mg,
+                best_sodium_mg_method,
+                best_fiber_g,
+                best_fiber_g_method,
                 source_traces_json,
                 meal_estimate_json
             FROM meals
@@ -794,6 +944,12 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
                 carbs_g_max,
                 fat_g_min,
                 fat_g_max,
+                sugar_g_min,
+                sugar_g_max,
+                sodium_mg_min,
+                sodium_mg_max,
+                fiber_g_min,
+                fiber_g_max,
                 best_kcal,
                 best_kcal_method,
                 best_protein_g,
@@ -802,6 +958,12 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
                 best_carbs_g_method,
                 best_fat_g,
                 best_fat_g_method,
+                best_sugar_g,
+                best_sugar_g_method,
+                best_sodium_mg,
+                best_sodium_mg_method,
+                best_fiber_g,
+                best_fiber_g_method,
                 source_trace_json,
                 component_estimate_json
             FROM meal_component_estimates
@@ -912,6 +1074,12 @@ def _insert_component_row(
             carbs_g_max,
             fat_g_min,
             fat_g_max,
+            sugar_g_min,
+            sugar_g_max,
+            sodium_mg_min,
+            sodium_mg_max,
+            fiber_g_min,
+            fiber_g_max,
             best_kcal,
             best_kcal_method,
             best_protein_g,
@@ -920,59 +1088,156 @@ def _insert_component_row(
             best_carbs_g_method,
             best_fat_g,
             best_fat_g_method,
+            best_sugar_g,
+            best_sugar_g_method,
+            best_sodium_mg,
+            best_sodium_mg_method,
+            best_fiber_g,
+            best_fiber_g_method,
             source_trace_json,
             component_estimate_json
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?
+            :meal_id,
+            :component_index,
+            :component_name,
+            :component_confidence,
+            :portion_hint,
+            :status,
+            :top_candidates_json,
+            :selected_macro_entry_id,
+            :selected_macro_entry_name,
+            :selected_macro_entry_source,
+            :selected_match_score,
+            :portion_grams_min,
+            :portion_grams_max,
+            :portion_confidence,
+            :portion_source,
+            :portion_reason,
+            :unmatched_reason,
+            :kcal_min,
+            :kcal_max,
+            :protein_g_min,
+            :protein_g_max,
+            :carbs_g_min,
+            :carbs_g_max,
+            :fat_g_min,
+            :fat_g_max,
+            :sugar_g_min,
+            :sugar_g_max,
+            :sodium_mg_min,
+            :sodium_mg_max,
+            :fiber_g_min,
+            :fiber_g_max,
+            :best_kcal,
+            :best_kcal_method,
+            :best_protein_g,
+            :best_protein_g_method,
+            :best_carbs_g,
+            :best_carbs_g_method,
+            :best_fat_g,
+            :best_fat_g_method,
+            :best_sugar_g,
+            :best_sugar_g_method,
+            :best_sodium_mg,
+            :best_sodium_mg_method,
+            :best_fiber_g,
+            :best_fiber_g_method,
+            :source_trace_json,
+            :component_estimate_json
         )
         """,
-        (
-            meal_id,
-            component_index,
-            component.component_name,
-            component.component_confidence,
-            component.portion_hint,
-            component.status,
-            _json_dumps(top_candidates_payload),
-            component.selected_macro_entry_id,
-            component.selected_macro_entry_name,
-            component.selected_macro_entry_source,
-            component.selected_match_score,
-            component.portion_range.grams_min,
-            component.portion_range.grams_max,
-            component.portion_range.confidence,
-            component.portion_range.source,
-            component.portion_range.reason,
-            component.unmatched_reason,
-            macro_interval.kcal.min if macro_interval is not None else None,
-            macro_interval.kcal.max if macro_interval is not None else None,
-            macro_interval.protein_g.min if macro_interval is not None else None,
-            macro_interval.protein_g.max if macro_interval is not None else None,
-            macro_interval.carbs_g.min if macro_interval is not None else None,
-            macro_interval.carbs_g.max if macro_interval is not None else None,
-            macro_interval.fat_g.min if macro_interval is not None else None,
-            macro_interval.fat_g.max if macro_interval is not None else None,
-            component_best.kcal.value if component_best is not None else None,
-            component_best.kcal.method if component_best is not None else None,
-            component_best.protein_g.value if component_best is not None else None,
-            component_best.protein_g.method if component_best is not None else None,
-            component_best.carbs_g.value if component_best is not None else None,
-            component_best.carbs_g.method if component_best is not None else None,
-            component_best.fat_g.value if component_best is not None else None,
-            component_best.fat_g.method if component_best is not None else None,
-            _json_dumps(macro_interval.source_trace.model_dump(mode="json"))
-            if macro_interval is not None
-            else None,
-            _json_dumps(component.model_dump(mode="json")),
-        ),
+        {
+            "meal_id": meal_id,
+            "component_index": component_index,
+            "component_name": component.component_name,
+            "component_confidence": component.component_confidence,
+            "portion_hint": component.portion_hint,
+            "status": component.status,
+            "top_candidates_json": _json_dumps(top_candidates_payload),
+            "selected_macro_entry_id": component.selected_macro_entry_id,
+            "selected_macro_entry_name": component.selected_macro_entry_name,
+            "selected_macro_entry_source": component.selected_macro_entry_source,
+            "selected_match_score": component.selected_match_score,
+            "portion_grams_min": component.portion_range.grams_min,
+            "portion_grams_max": component.portion_range.grams_max,
+            "portion_confidence": component.portion_range.confidence,
+            "portion_source": component.portion_range.source,
+            "portion_reason": component.portion_range.reason,
+            "unmatched_reason": component.unmatched_reason,
+            "kcal_min": macro_interval.kcal.min if macro_interval is not None else None,
+            "kcal_max": macro_interval.kcal.max if macro_interval is not None else None,
+            "protein_g_min": (
+                macro_interval.protein_g.min if macro_interval is not None else None
+            ),
+            "protein_g_max": (
+                macro_interval.protein_g.max if macro_interval is not None else None
+            ),
+            "carbs_g_min": macro_interval.carbs_g.min if macro_interval is not None else None,
+            "carbs_g_max": macro_interval.carbs_g.max if macro_interval is not None else None,
+            "fat_g_min": macro_interval.fat_g.min if macro_interval is not None else None,
+            "fat_g_max": macro_interval.fat_g.max if macro_interval is not None else None,
+            "sugar_g_min": macro_interval.sugar_g.min if macro_interval is not None else None,
+            "sugar_g_max": macro_interval.sugar_g.max if macro_interval is not None else None,
+            "sodium_mg_min": (
+                macro_interval.sodium_mg.min if macro_interval is not None else None
+            ),
+            "sodium_mg_max": (
+                macro_interval.sodium_mg.max if macro_interval is not None else None
+            ),
+            "fiber_g_min": macro_interval.fiber_g.min if macro_interval is not None else None,
+            "fiber_g_max": macro_interval.fiber_g.max if macro_interval is not None else None,
+            "best_kcal": component_best.kcal.value if component_best is not None else None,
+            "best_kcal_method": (
+                component_best.kcal.method if component_best is not None else None
+            ),
+            "best_protein_g": (
+                component_best.protein_g.value if component_best is not None else None
+            ),
+            "best_protein_g_method": (
+                component_best.protein_g.method if component_best is not None else None
+            ),
+            "best_carbs_g": (
+                component_best.carbs_g.value if component_best is not None else None
+            ),
+            "best_carbs_g_method": (
+                component_best.carbs_g.method if component_best is not None else None
+            ),
+            "best_fat_g": component_best.fat_g.value if component_best is not None else None,
+            "best_fat_g_method": (
+                component_best.fat_g.method if component_best is not None else None
+            ),
+            "best_sugar_g": (
+                component_best.sugar_g.value if component_best is not None else None
+            ),
+            "best_sugar_g_method": (
+                component_best.sugar_g.method if component_best is not None else None
+            ),
+            "best_sodium_mg": (
+                component_best.sodium_mg.value if component_best is not None else None
+            ),
+            "best_sodium_mg_method": (
+                component_best.sodium_mg.method if component_best is not None else None
+            ),
+            "best_fiber_g": (
+                component_best.fiber_g.value if component_best is not None else None
+            ),
+            "best_fiber_g_method": (
+                component_best.fiber_g.method if component_best is not None else None
+            ),
+            "source_trace_json": (
+                _json_dumps(macro_interval.source_trace.model_dump(mode="json"))
+                if macro_interval is not None
+                else None
+            ),
+            "component_estimate_json": _json_dumps(component.model_dump(mode="json")),
+        },
     )
 
 
 def _apply_migrations(
     connection: sqlite3.Connection,
     *,
-    target_version: int = _BASE_SCHEMA_VERSION,
+    target_version: int | None = None,
 ) -> None:
     connection.execute(
         """
@@ -982,7 +1247,8 @@ def _apply_migrations(
         )
         """
     )
-    if target_version <= 0:
+    resolved_target_version = _LATEST_SCHEMA_VERSION if target_version is None else target_version
+    if resolved_target_version <= 0:
         return
 
     applied_versions = {
@@ -990,7 +1256,7 @@ def _apply_migrations(
     }
 
     for migration in _MIGRATIONS:
-        if migration.version > target_version:
+        if migration.version > resolved_target_version:
             break
         if migration.version in applied_versions:
             continue
@@ -1018,6 +1284,18 @@ def _build_best_estimate_set_from_row(row: sqlite3.Row) -> MacroBestEstimateSet:
         fat_g=MacroBestEstimate(
             value=float(row["best_fat_g"]),
             method=str(row["best_fat_g_method"]),
+        ),
+        sugar_g=MacroBestEstimate(
+            value=float(row["best_sugar_g"]),
+            method=str(row["best_sugar_g_method"]),
+        ),
+        sodium_mg=MacroBestEstimate(
+            value=float(row["best_sodium_mg"]),
+            method=str(row["best_sodium_mg_method"]),
+        ),
+        fiber_g=MacroBestEstimate(
+            value=float(row["best_fiber_g"]),
+            method=str(row["best_fiber_g_method"]),
         ),
     )
 
@@ -1056,6 +1334,18 @@ def _build_meal_backup_row(
                 "min": float(row["fat_g_min"]),
                 "max": float(row["fat_g_max"]),
             },
+            "sugar_g": {
+                "min": float(row["sugar_g_min"]),
+                "max": float(row["sugar_g_max"]),
+            },
+            "sodium_mg": {
+                "min": float(row["sodium_mg_min"]),
+                "max": float(row["sodium_mg_max"]),
+            },
+            "fiber_g": {
+                "min": float(row["fiber_g_min"]),
+                "max": float(row["fiber_g_max"]),
+            },
         },
         "macro_best_estimate": {
             "kcal": {
@@ -1073,6 +1363,18 @@ def _build_meal_backup_row(
             "fat_g": {
                 "value": float(row["best_fat_g"]),
                 "method": str(row["best_fat_g_method"]),
+            },
+            "sugar_g": {
+                "value": float(row["best_sugar_g"]),
+                "method": str(row["best_sugar_g_method"]),
+            },
+            "sodium_mg": {
+                "value": float(row["best_sodium_mg"]),
+                "method": str(row["best_sodium_mg_method"]),
+            },
+            "fiber_g": {
+                "value": float(row["best_fiber_g"]),
+                "method": str(row["best_fiber_g_method"]),
             },
         },
         "source_traces": _json_loads(str(row["source_traces_json"])),
@@ -1117,6 +1419,18 @@ def _build_component_backup_row(row: sqlite3.Row) -> dict[str, object]:
                 "min": float(row["fat_g_min"]),
                 "max": float(row["fat_g_max"]),
             },
+            "sugar_g": {
+                "min": float(row["sugar_g_min"]),
+                "max": float(row["sugar_g_max"]),
+            },
+            "sodium_mg": {
+                "min": float(row["sodium_mg_min"]),
+                "max": float(row["sodium_mg_max"]),
+            },
+            "fiber_g": {
+                "min": float(row["fiber_g_min"]),
+                "max": float(row["fiber_g_max"]),
+            },
         }
         macro_best_estimate = {
             "kcal": {
@@ -1134,6 +1448,18 @@ def _build_component_backup_row(row: sqlite3.Row) -> dict[str, object]:
             "fat_g": {
                 "value": float(row["best_fat_g"]),
                 "method": str(row["best_fat_g_method"]),
+            },
+            "sugar_g": {
+                "value": float(row["best_sugar_g"]),
+                "method": str(row["best_sugar_g_method"]),
+            },
+            "sodium_mg": {
+                "value": float(row["best_sodium_mg"]),
+                "method": str(row["best_sodium_mg_method"]),
+            },
+            "fiber_g": {
+                "value": float(row["best_fiber_g"]),
+                "method": str(row["best_fiber_g_method"]),
             },
         }
 
@@ -1269,6 +1595,12 @@ def _is_existing_meal_idempotent(
             carbs_g_max,
             fat_g_min,
             fat_g_max,
+            sugar_g_min,
+            sugar_g_max,
+            sodium_mg_min,
+            sodium_mg_max,
+            fiber_g_min,
+            fiber_g_max,
             best_kcal,
             best_kcal_method,
             best_protein_g,
@@ -1277,6 +1609,12 @@ def _is_existing_meal_idempotent(
             best_carbs_g_method,
             best_fat_g,
             best_fat_g_method,
+            best_sugar_g,
+            best_sugar_g_method,
+            best_sodium_mg,
+            best_sodium_mg_method,
+            best_fiber_g,
+            best_fiber_g_method,
             source_traces_json,
             meal_estimate_json
         FROM meals
@@ -1301,6 +1639,12 @@ def _is_existing_meal_idempotent(
         and float(row["carbs_g_max"]) == macro_interval.carbs_g.max
         and float(row["fat_g_min"]) == macro_interval.fat_g.min
         and float(row["fat_g_max"]) == macro_interval.fat_g.max
+        and float(row["sugar_g_min"]) == macro_interval.sugar_g.min
+        and float(row["sugar_g_max"]) == macro_interval.sugar_g.max
+        and float(row["sodium_mg_min"]) == macro_interval.sodium_mg.min
+        and float(row["sodium_mg_max"]) == macro_interval.sodium_mg.max
+        and float(row["fiber_g_min"]) == macro_interval.fiber_g.min
+        and float(row["fiber_g_max"]) == macro_interval.fiber_g.max
         and float(row["best_kcal"]) == meal_macro_best.kcal.value
         and str(row["best_kcal_method"]) == meal_macro_best.kcal.method
         and float(row["best_protein_g"]) == meal_macro_best.protein_g.value
@@ -1309,6 +1653,12 @@ def _is_existing_meal_idempotent(
         and str(row["best_carbs_g_method"]) == meal_macro_best.carbs_g.method
         and float(row["best_fat_g"]) == meal_macro_best.fat_g.value
         and str(row["best_fat_g_method"]) == meal_macro_best.fat_g.method
+        and float(row["best_sugar_g"]) == meal_macro_best.sugar_g.value
+        and str(row["best_sugar_g_method"]) == meal_macro_best.sugar_g.method
+        and float(row["best_sodium_mg"]) == meal_macro_best.sodium_mg.value
+        and str(row["best_sodium_mg_method"]) == meal_macro_best.sodium_mg.method
+        and float(row["best_fiber_g"]) == meal_macro_best.fiber_g.value
+        and str(row["best_fiber_g_method"]) == meal_macro_best.fiber_g.method
         and str(row["source_traces_json"]) == source_traces_json
         and str(row["meal_estimate_json"]) == meal_estimate_json
     )

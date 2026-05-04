@@ -187,6 +187,10 @@ class MacroSourceTrace(BaseModel):
         return self
 
 
+def _zero_macro_range() -> MacroRange:
+    return MacroRange(min=0.0, max=0.0)
+
+
 class FoodMacroInterval(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -195,6 +199,9 @@ class FoodMacroInterval(BaseModel):
     protein_g: MacroRange
     carbs_g: MacroRange
     fat_g: MacroRange
+    sugar_g: MacroRange = Field(default_factory=_zero_macro_range)
+    sodium_mg: MacroRange = Field(default_factory=_zero_macro_range)
+    fiber_g: MacroRange = Field(default_factory=_zero_macro_range)
 
 
 class MealMacroInterval(BaseModel):
@@ -206,6 +213,9 @@ class MealMacroInterval(BaseModel):
     protein_g: MacroRange
     carbs_g: MacroRange
     fat_g: MacroRange
+    sugar_g: MacroRange = Field(default_factory=_zero_macro_range)
+    sodium_mg: MacroRange = Field(default_factory=_zero_macro_range)
+    fiber_g: MacroRange = Field(default_factory=_zero_macro_range)
 
 
 class MacroBestEstimate(BaseModel):
@@ -215,6 +225,10 @@ class MacroBestEstimate(BaseModel):
     method: Literal["percentile_p50", "geometric_midpoint", "arithmetic_midpoint"]
 
 
+def _zero_macro_best_estimate() -> MacroBestEstimate:
+    return MacroBestEstimate(value=0.0, method="arithmetic_midpoint")
+
+
 class MacroBestEstimateSet(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -222,6 +236,9 @@ class MacroBestEstimateSet(BaseModel):
     protein_g: MacroBestEstimate
     carbs_g: MacroBestEstimate
     fat_g: MacroBestEstimate
+    sugar_g: MacroBestEstimate = Field(default_factory=_zero_macro_best_estimate)
+    sodium_mg: MacroBestEstimate = Field(default_factory=_zero_macro_best_estimate)
+    fiber_g: MacroBestEstimate = Field(default_factory=_zero_macro_best_estimate)
 
 
 def calculate_food_macro_interval(
@@ -279,6 +296,33 @@ def calculate_food_macro_interval(
             normalized_range.grams_p90,
             percentiles_available=normalized_range.percentiles_available,
         ),
+        sugar_g=_build_macro_range(
+            entry.sugar_g_per_100g,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
+            normalized_range.grams_p10,
+            normalized_range.grams_p50,
+            normalized_range.grams_p90,
+            percentiles_available=normalized_range.percentiles_available,
+        ),
+        sodium_mg=_build_macro_range(
+            entry.sodium_mg_per_100g,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
+            normalized_range.grams_p10,
+            normalized_range.grams_p50,
+            normalized_range.grams_p90,
+            percentiles_available=normalized_range.percentiles_available,
+        ),
+        fiber_g=_build_macro_range(
+            entry.fiber_g_per_100g,
+            normalized_range.grams_min,
+            normalized_range.grams_max,
+            normalized_range.grams_p10,
+            normalized_range.grams_p50,
+            normalized_range.grams_p90,
+            percentiles_available=normalized_range.percentiles_available,
+        ),
     )
 
 
@@ -300,6 +344,9 @@ def aggregate_meal_macro_interval(
         and item.protein_g.percentiles_available
         and item.carbs_g.percentiles_available
         and item.fat_g.percentiles_available
+        and item.sugar_g.percentiles_available
+        and item.sodium_mg.percentiles_available
+        and item.fiber_g.percentiles_available
         for item in items
     )
     return MealMacroInterval(
@@ -335,6 +382,30 @@ def aggregate_meal_macro_interval(
             p10=_round_to_tenth(sum(item.fat_g.p10 for item in items)),
             p50=_round_to_tenth(sum(item.fat_g.p50 for item in items)),
             p90=_round_to_tenth(sum(item.fat_g.p90 for item in items)),
+            percentiles_available=percentile_support,
+        ),
+        sugar_g=MacroRange(
+            min=_round_to_tenth(sum(item.sugar_g.min for item in items)),
+            max=_round_to_tenth(sum(item.sugar_g.max for item in items)),
+            p10=_round_to_tenth(sum(item.sugar_g.p10 for item in items)),
+            p50=_round_to_tenth(sum(item.sugar_g.p50 for item in items)),
+            p90=_round_to_tenth(sum(item.sugar_g.p90 for item in items)),
+            percentiles_available=percentile_support,
+        ),
+        sodium_mg=MacroRange(
+            min=_round_to_tenth(sum(item.sodium_mg.min for item in items)),
+            max=_round_to_tenth(sum(item.sodium_mg.max for item in items)),
+            p10=_round_to_tenth(sum(item.sodium_mg.p10 for item in items)),
+            p50=_round_to_tenth(sum(item.sodium_mg.p50 for item in items)),
+            p90=_round_to_tenth(sum(item.sodium_mg.p90 for item in items)),
+            percentiles_available=percentile_support,
+        ),
+        fiber_g=MacroRange(
+            min=_round_to_tenth(sum(item.fiber_g.min for item in items)),
+            max=_round_to_tenth(sum(item.fiber_g.max for item in items)),
+            p10=_round_to_tenth(sum(item.fiber_g.p10 for item in items)),
+            p50=_round_to_tenth(sum(item.fiber_g.p50 for item in items)),
+            p90=_round_to_tenth(sum(item.fiber_g.p90 for item in items)),
             percentiles_available=percentile_support,
         ),
     )
@@ -380,6 +451,9 @@ def calculate_food_macro_best_estimate(
         protein_g=calculate_macro_best_estimate(food_interval.protein_g),
         carbs_g=calculate_macro_best_estimate(food_interval.carbs_g),
         fat_g=calculate_macro_best_estimate(food_interval.fat_g),
+        sugar_g=calculate_macro_best_estimate(food_interval.sugar_g),
+        sodium_mg=calculate_macro_best_estimate(food_interval.sodium_mg),
+        fiber_g=calculate_macro_best_estimate(food_interval.fiber_g),
     )
 
 
@@ -392,6 +466,9 @@ def calculate_meal_macro_best_estimate(
         protein_g=calculate_macro_best_estimate(meal_interval.protein_g),
         carbs_g=calculate_macro_best_estimate(meal_interval.carbs_g),
         fat_g=calculate_macro_best_estimate(meal_interval.fat_g),
+        sugar_g=calculate_macro_best_estimate(meal_interval.sugar_g),
+        sodium_mg=calculate_macro_best_estimate(meal_interval.sodium_mg),
+        fiber_g=calculate_macro_best_estimate(meal_interval.fiber_g),
     )
 
 

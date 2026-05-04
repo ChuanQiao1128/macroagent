@@ -32,10 +32,10 @@ Optional flags:
 - Passes the resulting `FoodComponent` objects through `services.meal`.
 - The CLI stays on the backward-compatible `analyze_meal_photo()` path, so the downstream meal pipeline still receives the legacy `FoodComponent` list.
 - Call `services.vision.analyze_meal_photo_structured()` directly if you need the richer uncertainty payload before meal estimation.
-- Computes meal-level macro ranges and best estimates with `services.accounting`.
+- Computes meal-level ranges and best estimates for `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g` with `services.accounting`.
 - Builds a deterministic user-facing explanation with `services.explainer.build_meal_result_explanation()` so the JSON output can show concise English and Chinese summaries without inventing new numbers.
 - Persists the meal to SQLite through `services.storage` unless `--dry-run` is set.
-- Prints a JSON object to stdout with the meal id, persistence status, estimate status, macro range label, trace versions, component estimates, macro ranges, best estimates, uncertainty signals, the recommended user question, and `result_explanation`.
+- Prints a JSON object to stdout with the meal id, persistence status, estimate status, macro range label, trace versions, component estimates, seven-metric ranges, best estimates, uncertainty signals, the recommended user question, and `result_explanation`.
 
 ## Offline Testing
 

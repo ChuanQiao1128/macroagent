@@ -19,7 +19,7 @@
   - image quality and usability issues
   - meal-level uncertainty flags
   - per-component ids, visible names, top-k food candidates, portion estimates, state hints, and hidden ingredient risks
-- Does not ask for kcal, protein, carbs, fat, or meal totals.
+- Does not ask for kcal, protein, carbs, fat, sugar, sodium, fiber, or meal totals.
 - Attaches stable trace version metadata to every structured response.
 - Retries once if the first structured response fails validation.
 - Accepts legacy `FoodComponent[]` responses and lifts them into the structured schema for compatibility.

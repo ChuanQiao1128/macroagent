@@ -1,6 +1,6 @@
-# Macro Interval Calculator
+# Nutrition Interval Calculator
 
-`services.accounting` provides deterministic macro interval and best-estimate calculators for turning a `MacroEntry` and a gram range into meal-level nutrition outputs.
+`services.accounting` provides deterministic nutrition interval and best-estimate calculators for turning a `NutritionEntry` and a gram range into meal-level nutrition outputs.
 
 ## Public API
 
@@ -25,22 +25,22 @@ The package exports:
 
 All public interval models are frozen Pydantic models:
 
-- `MacroRange` stores a `min` and `max` value for one macro.
-- `MacroSourceTrace` records the `MacroEntry` identity and the gram bounds used to compute the interval.
-- `FoodMacroInterval` stores the per-food ranges for `kcal`, `protein_g`, `carbs_g`, and `fat_g`.
+- `MacroRange` stores a `min` and `max` value for one nutrient metric.
+- `MacroSourceTrace` records the `NutritionEntry` identity and the gram bounds used to compute the interval.
+- `FoodMacroInterval` stores the per-food ranges for `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`.
 - `MealMacroInterval` stores the aggregated meal ranges, the ordered food items, and their source traces.
 - `MacroBestEstimate` stores a deterministic single-value estimate plus the estimation method used.
-- `MacroBestEstimateSet` stores per-macro best estimates for `kcal`, `protein_g`, `carbs_g`, and `fat_g`.
+- `MacroBestEstimateSet` stores per-metric best estimates for `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`.
 
 ## Behavior
 
-- The calculator uses only the per-100g values on `MacroEntry`.
+- The calculator uses only the per-100g values on `NutritionEntry`.
 - It accepts either `services.nutrition.PortionGramRange` or `PortionGramBounds`.
 - It rejects negative gram bounds and rejects ranges where `grams_min > grams_max`.
-- It rounds all macro outputs to one decimal place using half-up rounding.
+- It rounds all nutrition outputs to one decimal place using half-up rounding.
 - Meal aggregation sums the per-food `min` values and the per-food `max` values, then rounds the totals to one decimal place.
 - Best-estimate selection is deterministic and local.
-- For positive macro ranges, best estimates use the geometric midpoint, `sqrt(min * max)`.
+- For positive metric ranges, best estimates use the geometric midpoint, `sqrt(min * max)`.
 - If either bound is zero, best estimates fall back to the arithmetic midpoint, `(min + max) / 2`.
 - Equal positive bounds remain unchanged and are reported with `method="geometric_midpoint"`.
 

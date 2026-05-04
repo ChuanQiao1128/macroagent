@@ -25,7 +25,7 @@ FDC_API_KEY_ENV = "FDC_API_KEY"
 FDC_CACHE_PATH_ENV = "FDC_CACHE_PATH"
 FDC_LOOKUP_ENABLED_ENV = "FDC_LOOKUP_ENABLED"
 FDC_DEFAULT_CACHE_PATH = Path("local_outputs/fdc_search_cache.json")
-FDC_CACHE_SCHEMA_VERSION = "fdc_macro_search_cache_v1"
+FDC_CACHE_SCHEMA_VERSION = "fdc_nutrition_search_cache_core7_v2"
 FDC_DATA_TYPES = ("Survey (FNDDS)", "Foundation", "SR Legacy", "Branded")
 FDC_PAGE_SIZE = 12
 FDC_REQUEST_TIMEOUT_SECONDS = 10
@@ -130,7 +130,7 @@ class _QueryCandidate:
     confidence: float
 
 
-class MacroEntry(BaseModel):
+class NutritionEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(..., min_length=1)
@@ -142,6 +142,12 @@ class MacroEntry(BaseModel):
     protein_g_per_100g: float = Field(..., ge=0)
     carbs_g_per_100g: float = Field(..., ge=0)
     fat_g_per_100g: float = Field(..., ge=0)
+    sugar_g_per_100g: float = Field(default=0.0, ge=0)
+    sodium_mg_per_100g: float = Field(default=0.0, ge=0)
+    fiber_g_per_100g: float = Field(default=0.0, ge=0)
+
+
+MacroEntry = NutritionEntry
 
 
 class MacroMatchCandidate(BaseModel):
@@ -809,7 +815,7 @@ def match_food_name(
 
 
 def load_fdc_macro_entries_for_query(query: str) -> tuple[MacroEntry, ...]:
-    """Return USDA/FDC search results mapped to local MacroEntry objects."""
+    """Return USDA/FDC search results mapped to local NutritionEntry objects."""
     normalized_query = _normalize_lookup_key(query)
     if not normalized_query or not _fdc_lookup_enabled():
         return ()
@@ -1082,11 +1088,47 @@ def _fdc_food_to_macro_entry(food: Mapping[str, object]) -> MacroEntry | None:
             unit_names={"kj"},
         )
         kcal = None if energy_kj is None else energy_kj / 4.184
-    protein = _extract_fdc_nutrient(nutrients, nutrient_ids={1003}, nutrient_numbers={"203"})
-    carbs = _extract_fdc_nutrient(nutrients, nutrient_ids={1005}, nutrient_numbers={"205"})
-    fat = _extract_fdc_nutrient(nutrients, nutrient_ids={1004}, nutrient_numbers={"204"})
+    protein = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={1003},
+        nutrient_numbers={"203"},
+        target_unit="g",
+    )
+    carbs = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={1005},
+        nutrient_numbers={"205"},
+        target_unit="g",
+    )
+    fat = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={1004},
+        nutrient_numbers={"204"},
+        target_unit="g",
+    )
     if kcal is None or protein is None or carbs is None or fat is None:
         return None
+    sugar = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={2000},
+        nutrient_numbers={"269"},
+        nutrient_names={"sugars, total including nlea", "sugars, total", "total sugars"},
+        target_unit="g",
+    )
+    sodium = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={1093},
+        nutrient_numbers={"307"},
+        nutrient_names={"sodium, na", "sodium"},
+        target_unit="mg",
+    )
+    fiber = _extract_fdc_nutrient(
+        nutrients,
+        nutrient_ids={1079},
+        nutrient_numbers={"291"},
+        nutrient_names={"fiber, total dietary", "total dietary fiber", "dietary fiber"},
+        target_unit="g",
+    )
 
     aliases = _fdc_aliases(food)
     return MacroEntry(
@@ -1099,6 +1141,9 @@ def _fdc_food_to_macro_entry(food: Mapping[str, object]) -> MacroEntry | None:
         protein_g_per_100g=round(float(protein), 3),
         carbs_g_per_100g=round(float(carbs), 3),
         fat_g_per_100g=round(float(fat), 3),
+        sugar_g_per_100g=round(float(sugar or 0.0), 3),
+        sodium_mg_per_100g=round(float(sodium or 0.0), 3),
+        fiber_g_per_100g=round(float(fiber or 0.0), 3),
     )
 
 
@@ -1109,26 +1154,60 @@ def _extract_fdc_nutrient(
     nutrient_numbers: set[str] | None = None,
     nutrient_names: set[str] | None = None,
     unit_names: set[str] | None = None,
+    target_unit: Literal["g", "mg"] | None = None,
 ) -> float | None:
     for nutrient in nutrients:
         if not isinstance(nutrient, Mapping):
             continue
         value = nutrient.get("value")
         if value is None:
+            value = nutrient.get("amount")
+        if value is None:
             continue
 
-        nutrient_id = nutrient.get("nutrientId")
-        nutrient_number = str(nutrient.get("nutrientNumber", "")).strip()
-        nutrient_name = str(nutrient.get("nutrientName", "")).strip().casefold()
-        unit_name = str(nutrient.get("unitName", "")).strip().casefold()
+        nested_nutrient = nutrient.get("nutrient")
+        nested = nested_nutrient if isinstance(nested_nutrient, Mapping) else {}
+        nutrient_id = nutrient.get("nutrientId", nested.get("id"))
+        nutrient_number = str(
+            nutrient.get("nutrientNumber", nested.get("number", ""))
+        ).strip()
+        nutrient_name = str(nutrient.get("nutrientName", nested.get("name", ""))).strip().casefold()
+        unit_name = str(nutrient.get("unitName", nested.get("unitName", ""))).strip().casefold()
 
         if nutrient_ids is not None and nutrient_id in nutrient_ids:
-            return float(value)
+            return _convert_fdc_nutrient_unit(float(value), unit_name, target_unit)
         if nutrient_numbers is not None and nutrient_number in nutrient_numbers:
-            return float(value)
+            return _convert_fdc_nutrient_unit(float(value), unit_name, target_unit)
         if nutrient_names is not None and nutrient_name in nutrient_names:
             if unit_names is None or unit_name in unit_names:
-                return float(value)
+                return _convert_fdc_nutrient_unit(float(value), unit_name, target_unit)
+    return None
+
+
+def _convert_fdc_nutrient_unit(
+    value: float,
+    source_unit: str,
+    target_unit: Literal["g", "mg"] | None,
+) -> float:
+    if target_unit is None:
+        return value
+
+    normalized_source = _normalize_fdc_unit(source_unit)
+    if normalized_source == target_unit or normalized_source is None:
+        return value
+    if normalized_source == "mg" and target_unit == "g":
+        return value / 1000.0
+    if normalized_source == "g" and target_unit == "mg":
+        return value * 1000.0
+    return value
+
+
+def _normalize_fdc_unit(unit_name: str) -> Literal["g", "mg"] | None:
+    normalized = unit_name.strip().casefold()
+    if normalized in {"g", "gram", "grams"}:
+        return "g"
+    if normalized in {"mg", "milligram", "milligrams"}:
+        return "mg"
     return None
 
 
@@ -1206,6 +1285,8 @@ def _read_fdc_cache() -> dict[str, object]:
         return {"_schema": FDC_CACHE_SCHEMA_VERSION}
     if not isinstance(payload, dict):
         return {"_schema": FDC_CACHE_SCHEMA_VERSION}
+    if payload.get("_schema") != FDC_CACHE_SCHEMA_VERSION:
+        return {"_schema": FDC_CACHE_SCHEMA_VERSION}
     return dict(payload)
 
 
@@ -1220,12 +1301,12 @@ def find_macro_entry_candidates(
 
 
 def load_macro_entries() -> tuple[MacroEntry, ...]:
-    """Load all USDA seed entries as immutable MacroEntry instances."""
+    """Load all USDA seed entries as immutable NutritionEntry instances."""
     return _load_usda_seed_entries()
 
 
 def load_personal_macro_entries() -> tuple[MacroEntry, ...]:
-    """Load all personal seed entries as immutable MacroEntry instances."""
+    """Load all personal seed entries as immutable NutritionEntry instances."""
     return _load_personal_seed_entries()
 
 
@@ -1262,6 +1343,7 @@ def load_all_macro_entries() -> tuple[MacroEntry, ...]:
 __all__ = [
     "MacroEntry",
     "MacroMatchCandidate",
+    "NutritionEntry",
     "find_macro_entry",
     "find_macro_entry_candidates",
     "get_macro_entry",

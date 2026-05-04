@@ -11,15 +11,15 @@ VISION_PROMPT_TEXT = (
     "Return image-quality issues, meal uncertainty flags, and for each visible component include "
     "a component id, visible name, top food candidates with confidence and visual evidence, "
     "portion estimate with confidence and visual basis, visible state hints, and hidden ingredient "
-    "risks with likelihood and macro impact. Do not provide kcal, protein, carbs, fat, "
-    "or meal totals. "
+    "risks with likelihood and macro impact. Do not provide kcal, protein, carbs, fat, sugar, "
+    "sodium, fiber, or meal totals. "
     "Use the tool schema only."
 )
-NUTRITION_CATALOG_VERSION = "nutrition_catalog_seed_fdc_v2"
+NUTRITION_CATALOG_VERSION = "nutrition_catalog_seed_fdc_core7_v3"
 MATCHER_VERSION = "matcher_state_aware_fdc_v2"
 PORTION_ENGINE_VERSION = "portion_parser_v1"
-MACRO_CALCULATOR_VERSION = "macro_interval_v1"
-LEDGER_SCHEMA_VERSION = 2
+MACRO_CALCULATOR_VERSION = "nutrition_interval_core7_v2"
+LEDGER_SCHEMA_VERSION = 3
 
 
 class TraceVersionMetadata(BaseModel):

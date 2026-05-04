@@ -1,6 +1,6 @@
 # Seed Nutrition Catalog
 
-`services.nutrition` provides local seed nutrition catalogs used by Track A to map food names to macro entries without requiring a database or network access.
+`services.nutrition` provides local seed nutrition catalogs used by Track A to map food names to nutrition entries without requiring a database or network access.
 
 ## Data Store
 
@@ -12,7 +12,7 @@
 
 ## Entry Model
 
-The public model is `MacroEntry`, a frozen Pydantic model with stable fields:
+The preferred public model is `NutritionEntry`, a frozen Pydantic model with stable fields:
 
 - `id`
 - `name`
@@ -23,8 +23,12 @@ The public model is `MacroEntry`, a frozen Pydantic model with stable fields:
 - `protein_g_per_100g`
 - `carbs_g_per_100g`
 - `fat_g_per_100g`
+- `sugar_g_per_100g`
+- `sodium_mg_per_100g`
+- `fiber_g_per_100g`
 
-`MacroEntry.source` accepts either `USDA` or `PERSONAL`.
+`MacroEntry` remains as a backward-compatible alias for `NutritionEntry`.
+`NutritionEntry.source` accepts either `USDA` or `PERSONAL`.
 
 ## Match Result Model
 
@@ -68,8 +72,9 @@ Ranked matcher behavior:
 - It supports exact name matches, exact alias matches, token containment, and lightweight fuzzy matching.
 - Results are ranked by score, then personal entries are preferred over USDA entries when scores tie.
 - `find_macro_entry_candidates()` is an alias for `match_food_name()` for call-site readability.
-- If `FDC_API_KEY` is set and local matching misses or is low confidence, the matcher searches FoodData Central and maps results into the same `MacroEntry` shape with `source="USDA"` and ids like `fdc:171831`.
+- If `FDC_API_KEY` is set and local matching misses or is low confidence, the matcher searches FoodData Central and maps results into the same `NutritionEntry` shape with `source="USDA"` and ids like `fdc:171831`.
 - Confident local matches are not replaced by FDC results; FDC is a fallback/expansion path, not a blanket override.
+- FDC extraction supports the seven core output metrics: `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`.
 - FDC responses are cached in `local_outputs/fdc_search_cache.json` by default. Override with `FDC_CACHE_PATH`; disable lookup with `FDC_LOOKUP_ENABLED=0`.
 - FDC query cleaning removes package/weight noise such as `stick`, `packet`, and `~4 g` so visible items like sugar packets can resolve to nutrition entries.
 
@@ -82,7 +87,7 @@ Exact lookup behavior remains exact-match only:
 
 `get_macro_entry()`, `get_macro_entry_by_name()`, and `find_macro_entry()` continue to resolve against the USDA catalog only.
 
-The loader returns an immutable tuple of frozen `MacroEntry` instances, so callers cannot mutate the cached catalog.
+The loader returns an immutable tuple of frozen `NutritionEntry` instances, so callers cannot mutate the cached catalog.
 
 ## Portion Parser
 

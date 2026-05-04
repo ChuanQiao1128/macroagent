@@ -22,6 +22,9 @@ def _build_entry(
     protein_g_per_100g: float,
     carbs_g_per_100g: float,
     fat_g_per_100g: float,
+    sugar_g_per_100g: float = 0.0,
+    sodium_mg_per_100g: float = 0.0,
+    fiber_g_per_100g: float = 0.0,
 ) -> MacroEntry:
     return MacroEntry(
         id=entry_id,
@@ -33,6 +36,9 @@ def _build_entry(
         protein_g_per_100g=protein_g_per_100g,
         carbs_g_per_100g=carbs_g_per_100g,
         fat_g_per_100g=fat_g_per_100g,
+        sugar_g_per_100g=sugar_g_per_100g,
+        sodium_mg_per_100g=sodium_mg_per_100g,
+        fiber_g_per_100g=fiber_g_per_100g,
     )
 
 
@@ -45,6 +51,9 @@ def test_calculate_food_macro_interval_single_food_and_source_trace() -> None:
         protein_g_per_100g=31.0,
         carbs_g_per_100g=0.0,
         fat_g_per_100g=3.6,
+        sugar_g_per_100g=2.0,
+        sodium_mg_per_100g=74.0,
+        fiber_g_per_100g=1.5,
     )
     gram_range = PortionGramBounds(grams_min=75.0, grams_max=125.0)
 
@@ -58,6 +67,12 @@ def test_calculate_food_macro_interval_single_food_and_source_trace() -> None:
     assert interval.carbs_g.max == 0.0
     assert interval.fat_g.min == 2.7
     assert interval.fat_g.max == 4.5
+    assert interval.sugar_g.min == 1.5
+    assert interval.sugar_g.max == 2.5
+    assert interval.sodium_mg.min == 55.5
+    assert interval.sodium_mg.max == 92.5
+    assert interval.fiber_g.min == 1.1
+    assert interval.fiber_g.max == 1.9
 
     assert interval.source_trace.macro_entry_id == "seed_chicken"
     assert interval.source_trace.macro_entry_name == "Chicken Breast"
@@ -104,6 +119,9 @@ def test_calculate_meal_macro_interval_aggregates_items_and_source_traces() -> N
         protein_g_per_100g=1.1,
         carbs_g_per_100g=22.8,
         fat_g_per_100g=0.3,
+        sugar_g_per_100g=12.2,
+        sodium_mg_per_100g=1.0,
+        fiber_g_per_100g=2.6,
     )
 
     meal = calculate_meal_macro_interval(
@@ -121,6 +139,12 @@ def test_calculate_meal_macro_interval_aggregates_items_and_source_traces() -> N
     assert meal.carbs_g.max == 34.2
     assert meal.fat_g.min == 3.8
     assert meal.fat_g.max == 4.8
+    assert meal.sugar_g.min == 6.1
+    assert meal.sugar_g.max == 18.3
+    assert meal.sodium_mg.min == 0.5
+    assert meal.sodium_mg.max == 1.5
+    assert meal.fiber_g.min == 1.3
+    assert meal.fiber_g.max == 3.9
 
     assert len(meal.items) == 2
     assert [trace.macro_entry_id for trace in meal.source_traces] == [

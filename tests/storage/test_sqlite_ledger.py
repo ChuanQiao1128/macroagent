@@ -47,7 +47,7 @@ def test_initialize_sqlite_ledger_migration_replay_is_idempotent(tmp_path: Path)
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
         ).fetchall()
 
-    assert versions == [(1, 1)]
+    assert versions == [(1, 1), (2, 1), (3, 1)]
 
 
 def test_insert_and_fetch_meal_round_trip_with_component_trace_storage(tmp_path: Path) -> None:
@@ -214,6 +214,12 @@ def test_fetch_daily_totals_aggregates_only_requested_local_date(tmp_path: Path)
     expected_carbs_max = first.macro_interval.carbs_g.max + second.macro_interval.carbs_g.max
     expected_fat_min = first.macro_interval.fat_g.min + second.macro_interval.fat_g.min
     expected_fat_max = first.macro_interval.fat_g.max + second.macro_interval.fat_g.max
+    expected_sugar_min = first.macro_interval.sugar_g.min + second.macro_interval.sugar_g.min
+    expected_sugar_max = first.macro_interval.sugar_g.max + second.macro_interval.sugar_g.max
+    expected_sodium_min = first.macro_interval.sodium_mg.min + second.macro_interval.sodium_mg.min
+    expected_sodium_max = first.macro_interval.sodium_mg.max + second.macro_interval.sodium_mg.max
+    expected_fiber_min = first.macro_interval.fiber_g.min + second.macro_interval.fiber_g.min
+    expected_fiber_max = first.macro_interval.fiber_g.max + second.macro_interval.fiber_g.max
 
     assert totals.local_date == "2026-05-04"
     assert totals.meal_count == 2
@@ -233,6 +239,12 @@ def test_fetch_daily_totals_aggregates_only_requested_local_date(tmp_path: Path)
     assert totals.carbs_g.max == pytest.approx(expected_carbs_max)
     assert totals.fat_g.min == pytest.approx(expected_fat_min)
     assert totals.fat_g.max == pytest.approx(expected_fat_max)
+    assert totals.sugar_g.min == pytest.approx(expected_sugar_min)
+    assert totals.sugar_g.max == pytest.approx(expected_sugar_max)
+    assert totals.sodium_mg.min == pytest.approx(expected_sodium_min)
+    assert totals.sodium_mg.max == pytest.approx(expected_sodium_max)
+    assert totals.fiber_g.min == pytest.approx(expected_fiber_min)
+    assert totals.fiber_g.max == pytest.approx(expected_fiber_max)
 
     expected_kcal_best = calculate_macro_best_estimate(
         MacroRange(min=expected_kcal_min, max=expected_kcal_max)
@@ -246,11 +258,23 @@ def test_fetch_daily_totals_aggregates_only_requested_local_date(tmp_path: Path)
     expected_fat_best = calculate_macro_best_estimate(
         MacroRange(min=expected_fat_min, max=expected_fat_max)
     )
+    expected_sugar_best = calculate_macro_best_estimate(
+        MacroRange(min=expected_sugar_min, max=expected_sugar_max)
+    )
+    expected_sodium_best = calculate_macro_best_estimate(
+        MacroRange(min=expected_sodium_min, max=expected_sodium_max)
+    )
+    expected_fiber_best = calculate_macro_best_estimate(
+        MacroRange(min=expected_fiber_min, max=expected_fiber_max)
+    )
 
     assert totals.macro_best_estimate.kcal == expected_kcal_best
     assert totals.macro_best_estimate.protein_g == expected_protein_best
     assert totals.macro_best_estimate.carbs_g == expected_carbs_best
     assert totals.macro_best_estimate.fat_g == expected_fat_best
+    assert totals.macro_best_estimate.sugar_g == expected_sugar_best
+    assert totals.macro_best_estimate.sodium_mg == expected_sodium_best
+    assert totals.macro_best_estimate.fiber_g == expected_fiber_best
 
 
 def test_fetch_daily_totals_empty_day_returns_zero_ranges_and_arithmetic_midpoints(
@@ -273,14 +297,26 @@ def test_fetch_daily_totals_empty_day_returns_zero_ranges_and_arithmetic_midpoin
     assert totals.carbs_g.max == 0.0
     assert totals.fat_g.min == 0.0
     assert totals.fat_g.max == 0.0
+    assert totals.sugar_g.min == 0.0
+    assert totals.sugar_g.max == 0.0
+    assert totals.sodium_mg.min == 0.0
+    assert totals.sodium_mg.max == 0.0
+    assert totals.fiber_g.min == 0.0
+    assert totals.fiber_g.max == 0.0
     assert totals.macro_best_estimate.kcal.value == 0.0
     assert totals.macro_best_estimate.protein_g.value == 0.0
     assert totals.macro_best_estimate.carbs_g.value == 0.0
     assert totals.macro_best_estimate.fat_g.value == 0.0
+    assert totals.macro_best_estimate.sugar_g.value == 0.0
+    assert totals.macro_best_estimate.sodium_mg.value == 0.0
+    assert totals.macro_best_estimate.fiber_g.value == 0.0
     assert totals.macro_best_estimate.kcal.method == "arithmetic_midpoint"
     assert totals.macro_best_estimate.protein_g.method == "arithmetic_midpoint"
     assert totals.macro_best_estimate.carbs_g.method == "arithmetic_midpoint"
     assert totals.macro_best_estimate.fat_g.method == "arithmetic_midpoint"
+    assert totals.macro_best_estimate.sugar_g.method == "arithmetic_midpoint"
+    assert totals.macro_best_estimate.sodium_mg.method == "arithmetic_midpoint"
+    assert totals.macro_best_estimate.fiber_g.method == "arithmetic_midpoint"
 
 
 def test_insert_meal_estimate_repeated_same_payload_is_idempotent(tmp_path: Path) -> None:
@@ -385,7 +421,7 @@ def test_export_ledger_backup_empty_db_has_metadata_and_no_meals(tmp_path: Path)
     assert payload["meal_count"] == 0
     assert payload["meals"] == []
     migrations = payload["schema_migrations"]
-    assert [migration["version"] for migration in migrations] == [1, 2]
+    assert [migration["version"] for migration in migrations] == [1, 2, 3]
     assert all(isinstance(migration["applied_at"], str) for migration in migrations)
 
 
@@ -455,6 +491,14 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
     assert meal["macro_ranges"]["fat_g"]["max"] == pytest.approx(
         meal_estimate.macro_interval.fat_g.max
     )
+    for nutrient_name in ("sugar_g", "sodium_mg", "fiber_g"):
+        nutrient_range = getattr(meal_estimate.macro_interval, nutrient_name)
+        assert meal["macro_ranges"][nutrient_name]["min"] == pytest.approx(
+            nutrient_range.min
+        )
+        assert meal["macro_ranges"][nutrient_name]["max"] == pytest.approx(
+            nutrient_range.max
+        )
 
     assert meal["macro_best_estimate"]["kcal"]["value"] == pytest.approx(meal_best.kcal.value)
     assert meal["macro_best_estimate"]["kcal"]["method"] == meal_best.kcal.method
@@ -466,6 +510,12 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
     assert meal["macro_best_estimate"]["carbs_g"]["method"] == meal_best.carbs_g.method
     assert meal["macro_best_estimate"]["fat_g"]["value"] == pytest.approx(meal_best.fat_g.value)
     assert meal["macro_best_estimate"]["fat_g"]["method"] == meal_best.fat_g.method
+    for nutrient_name in ("sugar_g", "sodium_mg", "fiber_g"):
+        nutrient_best = getattr(meal_best, nutrient_name)
+        assert meal["macro_best_estimate"][nutrient_name]["value"] == pytest.approx(
+            nutrient_best.value
+        )
+        assert meal["macro_best_estimate"][nutrient_name]["method"] == nutrient_best.method
 
     components = meal["components"]
     assert isinstance(components, list)
@@ -481,6 +531,9 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
     assert matched_component["macro_best_estimate"] is not None
     assert matched_component["source_trace"] is not None
     assert matched_component["selected_macro_entry"] is not None
+    for nutrient_name in ("sugar_g", "sodium_mg", "fiber_g"):
+        assert nutrient_name in matched_component["macro_ranges"]
+        assert nutrient_name in matched_component["macro_best_estimate"]
 
     unmatched_component = next(
         component for component in components if component["status"] == "unmatched"

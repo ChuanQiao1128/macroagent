@@ -33,7 +33,7 @@
 - The highest-ranked candidate is selected only when its score meets `confident_match_score`.
 - Matched components are converted to `FoodMacroInterval` with `calculate_food_macro_interval()`.
 - Unmatched components stay in the result with `status="unmatched"` and an `unmatched_reason`.
-- Meal totals are produced by `aggregate_meal_macro_interval()` using only matched components.
+- Meal totals are produced by `aggregate_meal_macro_interval()` using only matched components. The interval carries `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`.
 
 ## Result Models
 

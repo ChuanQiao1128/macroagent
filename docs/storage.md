@@ -29,8 +29,8 @@ Each exported meal includes:
 
 - meal identifiers and timestamps
 - component counts
-- macro ranges
-- macro best estimates
+- nutrition ranges for `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`
+- nutrition best estimates for the same seven metrics
 - source traces
 - the serialized meal estimate payload
 - the serialized meal trace versions under `trace_versions`
@@ -42,7 +42,7 @@ Each exported component includes:
 - top candidate data
 - the selected macro entry when matched
 - portion range details
-- macro ranges and best estimates when available
+- nutrition ranges and best estimates when available
 - source trace data when available
 - the serialized component estimate payload
 
@@ -54,7 +54,7 @@ Each exported component includes:
 - Creates one row per meal component in `meal_component_estimates`.
 - Stores local date strings as `YYYY-MM-DD`.
 - Stores timestamps as ISO-formatted strings.
-- Persists macro ranges, best estimates, component traces, source trace JSON, and serialized meal estimate JSON.
+- Persists the seven core nutrition ranges, best estimates, component traces, source trace JSON, and serialized meal estimate JSON.
 - Round-trips `MealEstimate.trace_versions` through the stored `meal_estimate_json` payload.
 - Keeps the ledger local-first and does not require any cloud or network service.
 - Treats repeated inserts with the same `meal_id` and identical payload as idempotent.
