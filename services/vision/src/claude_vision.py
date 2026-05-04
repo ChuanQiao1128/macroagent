@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from PIL import Image, ImageOps
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError
 
 from services.vision.src.cache import VisionResultCache
 
@@ -48,7 +48,11 @@ class FoodComponentsResponse(BaseModel):
 class ImageQualityIssue(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    issue: str = Field(..., min_length=1)
+    issue: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("issue", "usability_issue", "description"),
+    )
     severity: Literal["low", "medium", "high"]
     impact: str | None = None
 
@@ -56,17 +60,32 @@ class ImageQualityIssue(BaseModel):
 class FoodCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1, validation_alias=AliasChoices("name", "food_name"))
     confidence: float = Field(..., ge=0.0, le=1.0)
-    visual_evidence: list[str] = Field(default_factory=list)
+    visual_evidence: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("visual_evidence", "evidence"),
+    )
 
 
 class PortionEstimate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    description: str = Field(..., min_length=1)
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    visual_basis: list[str] = Field(default_factory=list)
+    description: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("description", "portion_description"),
+    )
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        validation_alias=AliasChoices("confidence", "portion_confidence"),
+    )
+    visual_basis: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("visual_basis", "visual_evidence"),
+    )
 
 
 class StateHint(BaseModel):
@@ -89,19 +108,44 @@ class HiddenIngredientRisk(BaseModel):
 class StructuredFoodComponent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    component_id: str = Field(..., min_length=1)
-    visible_name: str = Field(..., min_length=1)
-    candidates: list[FoodCandidate] = Field(..., min_length=1, max_length=5)
-    portion: PortionEstimate
-    state_hints: list[StateHint] = Field(default_factory=list)
-    hidden_ingredient_risks: list[HiddenIngredientRisk] = Field(default_factory=list)
+    component_id: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("component_id", "id"),
+    )
+    visible_name: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("visible_name", "name"),
+    )
+    candidates: list[FoodCandidate] = Field(
+        ...,
+        min_length=1,
+        max_length=5,
+        validation_alias=AliasChoices("candidates", "top_candidates", "top_k_candidates"),
+    )
+    portion: PortionEstimate = Field(
+        ...,
+        validation_alias=AliasChoices("portion", "portion_estimate"),
+    )
+    state_hints: list[StateHint] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("state_hints", "state"),
+    )
+    hidden_ingredient_risks: list[HiddenIngredientRisk] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("hidden_ingredient_risks", "hidden_risks"),
+    )
 
 
 class VisionAnalysisResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     image_quality_issues: list[ImageQualityIssue] = Field(default_factory=list)
-    meal_uncertainty_flags: list[str] = Field(default_factory=list)
+    meal_uncertainty_flags: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("meal_uncertainty_flags", "uncertainty_flags"),
+    )
     components: list[StructuredFoodComponent]
 
     def to_food_components(self) -> list[FoodComponent]:
@@ -110,7 +154,7 @@ class VisionAnalysisResponse(BaseModel):
             top_candidate = component.candidates[0]
             results.append(
                 FoodComponent(
-                    name=component.visible_name,
+                    name=top_candidate.name,
                     confidence=top_candidate.confidence,
                     portion_hint=component.portion.description,
                 )
@@ -196,7 +240,7 @@ class ClaudeVisionClient:
             return prompt
         return (
             f"{prompt}\n\nThe previous response failed schema validation. "
-            "Call the tool again with only valid schema fields."
+            "Call the tool again with only valid schema fields and no nutrition totals or macros."
         )
 
     @staticmethod
