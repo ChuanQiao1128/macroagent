@@ -378,6 +378,12 @@ def insert_portion_correction(
         raise ValueError(
             "selected_macro_entry_id and selected_macro_entry_source must be set together"
         )
+    if original_portion_grams_p10 < 0:
+        raise ValueError("original_portion_grams_p10 must be >= 0")
+    if original_portion_grams_p50 < 0:
+        raise ValueError("original_portion_grams_p50 must be >= 0")
+    if original_portion_grams_p90 < 0:
+        raise ValueError("original_portion_grams_p90 must be >= 0")
     if original_portion_grams_p10 > original_portion_grams_p50:
         raise ValueError("original_portion_grams_p10 must be <= original_portion_grams_p50")
     if original_portion_grams_p50 > original_portion_grams_p90:

@@ -503,15 +503,20 @@ def _apply_portion_prior(
         return portion_range, None
 
     prior_p50 = _round_one_decimal(prior.grams_p50)
-    clamped_p50 = _round_one_decimal(
-        max(portion_range.grams_p10, min(prior_p50, portion_range.grams_p90))
-    )
+    applied_p10 = portion_range.grams_p10
+    applied_p90 = portion_range.grams_p90
+    if prior_p50 < portion_range.grams_p10 or prior_p50 > portion_range.grams_p90:
+        lower_spread = max(0.0, portion_range.grams_p50 - portion_range.grams_p10)
+        upper_spread = max(0.0, portion_range.grams_p90 - portion_range.grams_p50)
+        applied_p10 = _round_one_decimal(max(0.0, prior_p50 - lower_spread))
+        applied_p90 = _round_one_decimal(max(prior_p50, prior_p50 + upper_spread))
+
     applied_range = PortionGramRange(
-        grams_min=portion_range.grams_min,
-        grams_max=portion_range.grams_max,
-        grams_p10=portion_range.grams_p10,
-        grams_p50=clamped_p50,
-        grams_p90=portion_range.grams_p90,
+        grams_min=applied_p10,
+        grams_max=applied_p90,
+        grams_p10=applied_p10,
+        grams_p50=prior_p50,
+        grams_p90=applied_p90,
         percentiles_available=portion_range.percentiles_available,
         confidence=portion_range.confidence,
         source=portion_range.source,
@@ -527,7 +532,7 @@ def _apply_portion_prior(
         sample_count=prior.sample_count,
         prior_grams_p50=prior_p50,
         original_grams_p50=portion_range.grams_p50,
-        applied_grams_p50=clamped_p50,
+        applied_grams_p50=prior_p50,
     )
 
 
