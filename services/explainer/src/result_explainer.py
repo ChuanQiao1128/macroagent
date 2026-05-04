@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from decimal import Decimal, InvalidOperation
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -106,6 +107,7 @@ def build_meal_result_explanation(
         texts=(en_text, zh_text),
         meal_estimate=meal_estimate,
         best_estimate=best_estimate,
+        top_uncertainty_signals=selected_signals,
     )
     return MealResultExplanation(
         strategy=active_formatter.strategy,
@@ -144,14 +146,11 @@ def _format_uncertainty_driver(
     language: ExplanationLanguage,
     signal: MealUncertaintySignal,
 ) -> str:
+    detail = _build_uncertainty_driver_detail(language=language, signal=signal)
     if language == "zh":
-        return (
-            f"{signal.component_name} | 来源: {signal.source} | 影响: {signal.impact} | "
-            f"{signal.reason}"
-        )
+        return f"{signal.component_name} | 来源: {signal.source} | 影响: {signal.impact} | {detail}"
     return (
-        f"{signal.component_name} | source: {signal.source} | impact: {signal.impact} | "
-        f"{signal.reason}"
+        f"{signal.component_name} | source: {signal.source} | impact: {signal.impact} | {detail}"
     )
 
 
@@ -169,32 +168,73 @@ def _assert_no_new_numbers(
     texts: Sequence[MealExplanationText],
     meal_estimate: MealEstimate,
     best_estimate: MacroBestEstimateSet,
+    top_uncertainty_signals: Sequence[MealUncertaintySignal],
 ) -> None:
-    allowed_number_tokens = _collect_number_tokens_from_value(
-        {
-            "meal_estimate": meal_estimate.model_dump(mode="json"),
-            "best_estimate": best_estimate.model_dump(mode="json"),
-        }
+    summary_allowed_number_tokens = _collect_number_tokens_from_value(
+        (
+            meal_estimate.macro_interval.kcal.min,
+            meal_estimate.macro_interval.kcal.max,
+            best_estimate.kcal.value,
+        )
+    )
+    driver_allowed_number_tokens = _collect_number_tokens_from_value(
+        tuple(
+            {
+                "estimated_kcal_delta": signal.estimated_kcal_delta,
+                "estimated_fat_g_delta": signal.estimated_fat_g_delta,
+            }
+            for signal in top_uncertainty_signals
+        )
+    )
+    question_allowed_number_tokens = _collect_number_tokens_from_value(
+        tuple(
+            question
+            for question in (
+                meal_estimate.recommended_user_question,
+                *[signal.recommended_question for signal in top_uncertainty_signals],
+            )
+            if question
+        )
     )
 
-    rendered_text = {
-        "summary": [text.summary for text in texts],
-        "top_uncertainty_drivers": [
+    _assert_field_numbers_within_allowed(
+        field_name="summary",
+        values=tuple(text.summary for text in texts),
+        allowed_tokens=summary_allowed_number_tokens,
+    )
+    _assert_field_numbers_within_allowed(
+        field_name="top_uncertainty_drivers",
+        values=tuple(
             driver
             for text in texts
             for driver in text.top_uncertainty_drivers
-        ],
-        "recommended_user_question": [
-            text.recommended_user_question for text in texts if text.recommended_user_question
-        ],
-    }
-    used_number_tokens = _collect_number_tokens_from_value(rendered_text)
-    unexpected_tokens = sorted(
-        token for token in used_number_tokens if token not in allowed_number_tokens
+        ),
+        allowed_tokens=driver_allowed_number_tokens,
     )
+    _assert_field_numbers_within_allowed(
+        field_name="recommended_user_question",
+        values=tuple(
+            text.recommended_user_question
+            for text in texts
+            if text.recommended_user_question
+        ),
+        allowed_tokens=question_allowed_number_tokens,
+    )
+
+def _assert_field_numbers_within_allowed(
+    *,
+    field_name: str,
+    values: Sequence[str],
+    allowed_tokens: set[str],
+) -> None:
+    used_number_tokens = _collect_number_tokens_from_value(values)
+    unexpected_tokens = sorted(token for token in used_number_tokens if token not in allowed_tokens)
     if unexpected_tokens:
         joined = ", ".join(unexpected_tokens)
-        raise ValueError(f"explanation introduced numeric tokens not found in trace: {joined}")
+        raise ValueError(
+            "explanation introduced numeric tokens not allowed in "
+            f"{field_name}: {joined}"
+        )
 
 
 def _collect_number_tokens_from_value(value: object) -> set[str]:
@@ -203,10 +243,10 @@ def _collect_number_tokens_from_value(value: object) -> set[str]:
     if isinstance(value, bool) or value is None:
         return tokens
     if isinstance(value, (int, float)):
-        tokens.add(str(value))
+        tokens.add(_normalize_number_token(str(value)))
         return tokens
     if isinstance(value, str):
-        tokens.update(_NUMBER_PATTERN.findall(value))
+        tokens.update(_normalize_number_token(token) for token in _NUMBER_PATTERN.findall(value))
         return tokens
     if isinstance(value, Mapping):
         for nested in value.values():
@@ -217,6 +257,73 @@ def _collect_number_tokens_from_value(value: object) -> set[str]:
             tokens.update(_collect_number_tokens_from_value(nested))
         return tokens
     return tokens
+
+
+def _normalize_number_token(token: str) -> str:
+    normalized_input = token.strip()
+    if not normalized_input:
+        return normalized_input
+    try:
+        decimal_value = Decimal(normalized_input)
+    except InvalidOperation:
+        return normalized_input
+
+    normalized = format(decimal_value.normalize(), "f")
+    if "." in normalized:
+        normalized = normalized.rstrip("0").rstrip(".")
+    if normalized in {"-0", "+0", ""}:
+        return "0"
+    return normalized
+
+
+def _build_uncertainty_driver_detail(
+    *,
+    language: ExplanationLanguage,
+    signal: MealUncertaintySignal,
+) -> str:
+    zh_source = "隐藏配料风险" if signal.source == "hidden_ingredient_risk" else "未匹配食材"
+    zh_impact = "高" if signal.impact == "high" else "低"
+    if language == "zh":
+        if signal.source == "hidden_ingredient_risk":
+            return (
+                f"{zh_source}（{zh_impact}影响）；"
+                f"潜在增量约 {signal.estimated_kcal_delta} kcal，"
+                f"{signal.estimated_fat_g_delta} g 脂肪。"
+            )
+        if signal.impact == "high":
+            return (
+                f"{zh_source}（{zh_impact}影响）；"
+                f"潜在增量约 {signal.estimated_kcal_delta} kcal，"
+                f"{signal.estimated_fat_g_delta} g 脂肪。"
+            )
+        return (
+            f"{zh_source}（{zh_impact}影响）；"
+            f"潜在增量约 {signal.estimated_kcal_delta} kcal，"
+            f"{signal.estimated_fat_g_delta} g 脂肪。"
+        )
+
+    source_label = (
+        "hidden ingredient risk"
+        if signal.source == "hidden_ingredient_risk"
+        else "unmatched component"
+    )
+    if signal.source == "hidden_ingredient_risk":
+        return (
+            f"{source_label} ({signal.impact} impact); "
+            f"estimated delta about {signal.estimated_kcal_delta} kcal and "
+            f"{signal.estimated_fat_g_delta} g fat."
+        )
+    if signal.impact == "high":
+        return (
+            f"{source_label} ({signal.impact} impact); "
+            f"estimated delta about {signal.estimated_kcal_delta} kcal and "
+            f"{signal.estimated_fat_g_delta} g fat."
+        )
+    return (
+        f"{source_label} ({signal.impact} impact); "
+        f"estimated delta about {signal.estimated_kcal_delta} kcal and "
+        f"{signal.estimated_fat_g_delta} g fat."
+    )
 
 
 __all__ = [
