@@ -12,7 +12,7 @@
   - resizes the long side to 1024 px
 - Computes a stable SHA-256 hash from the normalized JPEG bytes.
 - Optionally checks a cache before making a Claude call.
-- Uses Claude Code subscription auth by default through `ClaudeCliVisionClient`, which shells out to `claude -p` and removes `ANTHROPIC_API_KEY` from the subprocess environment.
+- Uses Claude Code subscription auth by default through `ClaudeCliVisionClient`, which shells out to `claude -p`, removes `ANTHROPIC_API_KEY` from the subprocess environment, disables session persistence, and allows only the `Read` tool so image analysis cannot drift into repository commands.
 - Can still use the Anthropic SDK path by setting `VISION_PROVIDER=anthropic`.
 - Constrains Claude with a Pydantic-generated tool schema for `VisionAnalysisResponse`.
 - Requests uncertainty-aware perception only:

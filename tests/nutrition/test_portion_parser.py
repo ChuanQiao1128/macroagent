@@ -152,6 +152,22 @@ def test_parse_portion_range_uses_sushi_specific_piece_range() -> None:
     assert result.source == "portion_hint_household_unit"
 
 
+def test_parse_portion_range_prefers_explicit_condiment_unit_over_plate_context() -> None:
+    result = parse_portion_range(
+        component_name="wasabi paste",
+        portion_hint=(
+            "Small smear of wasabi on plate; estimated ~1-2 tsp, "
+            "though the amount consumed versus remaining is unknown"
+        ),
+    )
+
+    assert result.grams_p10 == 4.5
+    assert result.grams_p50 == 8.25
+    assert result.grams_p90 == 12.0
+    assert result.source == "portion_hint_household_unit"
+    assert "teaspoon" in result.reason
+
+
 @pytest.mark.parametrize(
     ("portion_hint", "expected_flags"),
     [

@@ -31,6 +31,8 @@ STRUCTURED_CACHE_FORMAT = VISION_SCHEMA_VERSION
 VISION_PROVIDER_ENV = "VISION_PROVIDER"
 VISION_PROVIDER_CLAUDE_CLI = "claude_cli"
 VISION_PROVIDER_ANTHROPIC = "anthropic"
+CLAUDE_CLI_MAX_BUDGET_USD_ENV = "CLAUDE_CLI_MAX_BUDGET_USD"
+DEFAULT_CLAUDE_CLI_MAX_BUDGET_USD = "0.50"
 
 
 class VisionParseError(ValueError):
@@ -449,6 +451,7 @@ class ClaudeVisionClient:
 
         raise VisionParseError(
             "Claude vision response did not match VisionAnalysisResponse schema"
+            + (f": {last_error}" if last_error is not None else "")
         ) from last_error
 
     @classmethod
@@ -658,6 +661,7 @@ class ClaudeCliVisionClient:
 
         raise VisionParseError(
             "Claude CLI vision response did not match VisionAnalysisResponse schema"
+            + (f": {last_error}" if last_error is not None else "")
         ) from last_error
 
     def _run_claude_cli(
@@ -669,6 +673,13 @@ class ClaudeCliVisionClient:
     ) -> VisionAnalysisResponse:
         env = dict(os.environ)
         env.pop("ANTHROPIC_API_KEY", None)
+        prompt_text = (
+            f"Analyze @{image_path} as a meal photo.\n\n"
+            f"{prompt}\n\n"
+            "Do not use Bash, edit files, inspect the repository, or run commands. "
+            "Use only the attached image. Return only the structured output fields "
+            "required by the JSON schema."
+        )
         command = [
             self.claude_binary,
             "-p",
@@ -676,22 +687,26 @@ class ClaudeCliVisionClient:
             self.model,
             "--permission-mode",
             "dontAsk",
+            "--tools",
+            "Read",
+            "--no-session-persistence",
+            "--max-budget-usd",
+            os.getenv(
+                CLAUDE_CLI_MAX_BUDGET_USD_ENV,
+                DEFAULT_CLAUDE_CLI_MAX_BUDGET_USD,
+            ),
             "--output-format",
             "json",
             "--json-schema",
             json.dumps(_claude_cli_vision_schema(), separators=(",", ":")),
             "--add-dir",
             str(add_dir),
-            (
-                f"Analyze @{image_path} as a meal photo.\n\n"
-                f"{prompt}\n\n"
-                "Return only the structured output fields required by the JSON schema."
-            ),
         ]
         completed = subprocess.run(
             command,
             cwd=self.cwd,
             env=env,
+            input=prompt_text,
             capture_output=True,
             text=True,
             timeout=self.timeout_seconds,

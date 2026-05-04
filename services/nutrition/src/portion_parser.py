@@ -327,6 +327,7 @@ def _parse_weight_hint(hint_text: str) -> tuple[str, float] | None:
 
 def _parse_household_hint(hint_text: str) -> tuple[str, float, bool] | None:
     tokens = hint_text.split()
+    implicit_match: tuple[str, float, bool] | None = None
     for index, token in enumerate(tokens):
         unit = _TOKEN_TO_UNIT.get(token)
         if unit is None or unit in _WEIGHT_UNITS:
@@ -334,8 +335,12 @@ def _parse_household_hint(hint_text: str) -> tuple[str, float, bool] | None:
         quantity, explicit_quantity = _extract_quantity(tokens, unit_index=index)
         if quantity is None:
             continue
-        return (unit, quantity, explicit_quantity)
-    return None
+        match = (unit, quantity, explicit_quantity)
+        if explicit_quantity:
+            return match
+        if implicit_match is None:
+            implicit_match = match
+    return implicit_match
 
 
 def _contains_approximate_language(hint_text: str) -> bool:
@@ -419,6 +424,7 @@ def _could_be_quantity_token(token: str) -> bool:
         or token in _FRACTION_WORDS
         or token in {"a", "an", "and"}
         or re.fullmatch(r"[+-]?\d+(?:\.\d+)?", token) is not None
+        or re.fullmatch(r"[+-]?\d+(?:\.\d+)?-[+-]?\d+(?:\.\d+)?", token) is not None
         or re.fullmatch(r"[+-]?\d+\s*/\s*\d+", token) is not None
     )
 
@@ -446,6 +452,14 @@ def _parse_quantity_text(quantity_text: str) -> float | None:
 
     if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", normalized):
         return float(normalized)
+
+    range_match = re.fullmatch(
+        r"([+-]?\d+(?:\.\d+)?)\s*-\s*([+-]?\d+(?:\.\d+)?)",
+        normalized,
+    )
+    if range_match is not None:
+        lower, upper = range_match.groups()
+        return (float(lower) + float(upper)) / 2.0
 
     return _parse_word_quantity(normalized)
 

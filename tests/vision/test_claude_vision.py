@@ -248,6 +248,8 @@ def test_claude_cli_vision_client_uses_subscription_auth_and_parses_structured_o
         env = kwargs["env"]
         assert isinstance(env, dict)
         assert "ANTHROPIC_API_KEY" not in env
+        assert isinstance(kwargs["input"], str)
+        assert "Analyze @" in kwargs["input"]
         return SimpleNamespace(
             returncode=0,
             stdout=json.dumps({"is_error": False, "structured_output": payload}),
@@ -264,6 +266,10 @@ def test_claude_cli_vision_client_uses_subscription_auth_and_parses_structured_o
     assert len(calls) == 1
     command = calls[0][0]
     assert command[:4] == ["claude", "-p", "--model", "sonnet"]
+    assert "--tools" in command
+    assert command[command.index("--tools") + 1] == "Read"
+    assert "--no-session-persistence" in command
+    assert "--max-budget-usd" in command
     assert "--json-schema" in command
     assert "--add-dir" in command
     assert result.trace_versions.vision_model_name == "claude-cli:sonnet"
