@@ -11,7 +11,7 @@ from services.accounting import (
     calculate_macro_best_estimate,
     calculate_meal_macro_best_estimate,
 )
-from services.meal import MealEstimate, analyze_meal_components
+from services.meal import MealEstimate, PortionCorrectionPrior, analyze_meal_components
 from services.storage import (
     export_ledger_backup,
     fetch_daily_totals,
@@ -110,6 +110,49 @@ def test_insert_and_fetch_meal_round_trip_with_component_trace_storage(tmp_path:
         trace_json is not None for status, trace_json in component_rows if status == "matched"
     )
     assert all(trace_json is None for status, trace_json in component_rows if status == "unmatched")
+
+
+def test_insert_and_fetch_meal_round_trip_preserves_applied_portion_prior_trace(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    def correction_prior_resolver(
+        _component_name: str,
+        _selected_macro_entry_id: str | None,
+        _selected_macro_entry_source: str | None,
+    ) -> PortionCorrectionPrior:
+        return PortionCorrectionPrior(
+            strategy="macro_entry",
+            reference="USDA:usda_seed_0001",
+            sample_count=3,
+            grams_p50=95.0,
+        )
+
+    meal_estimate = analyze_meal_components(
+        [FoodComponent(name="white rice", confidence=0.91, portion_hint="100 g")],
+        correction_prior_resolver=correction_prior_resolver,
+        correction_prior_minimum_samples=3,
+    )
+    meal_id = insert_meal_estimate(
+        db_path,
+        meal_estimate=meal_estimate,
+        meal_id="meal-prior-trace",
+        local_date="2026-05-04",
+        created_at="2026-05-04T09:30:00+12:00",
+    )
+
+    stored = fetch_meal_by_id(db_path, meal_id)
+    assert stored is not None
+    component = stored.meal_estimate.component_estimates[0]
+    assert component.applied_portion_prior is not None
+    assert component.applied_portion_prior.strategy == "macro_entry"
+    assert component.applied_portion_prior.reference == "USDA:usda_seed_0001"
+    assert component.applied_portion_prior.sample_count == 3
+    assert component.applied_portion_prior.prior_grams_p50 == 95.0
+    assert component.applied_portion_prior.original_grams_p50 == 100.0
+    assert component.applied_portion_prior.applied_grams_p50 == 95.0
 
 
 def test_fetch_daily_totals_aggregates_only_requested_local_date(tmp_path: Path) -> None:

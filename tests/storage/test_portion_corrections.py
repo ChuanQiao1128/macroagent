@@ -220,3 +220,40 @@ def test_fetch_portion_correction_priors_falls_back_to_normalized_component_when
     assert priors.applied_prior.reference == "fried rice"
     assert priors.applied_prior.sample_count == 3
     assert priors.applied_prior.grams_p50 == pytest.approx(120.0)
+
+
+def test_fetch_portion_correction_priors_no_applied_prior_before_threshold(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    for grams in (180.0, 200.0):
+        insert_portion_correction(
+            db_path,
+            component_name="white rice",
+            selected_macro_entry_id="usda_seed_0001",
+            selected_macro_entry_source="USDA",
+            original_portion_grams_p10=90.0,
+            original_portion_grams_p50=100.0,
+            original_portion_grams_p90=110.0,
+            corrected_grams=grams,
+        )
+
+    priors = fetch_portion_correction_priors(
+        db_path,
+        component_name="white rice",
+        selected_macro_entry_id="usda_seed_0001",
+        selected_macro_entry_source="USDA",
+        minimum_samples=3,
+    )
+
+    assert priors.macro_entry_prior is not None
+    assert priors.macro_entry_prior.sample_count == 2
+    assert priors.macro_entry_prior.grams_p50 == pytest.approx(190.0)
+
+    assert priors.normalized_component_prior is not None
+    assert priors.normalized_component_prior.sample_count == 2
+    assert priors.normalized_component_prior.grams_p50 == pytest.approx(190.0)
+
+    assert priors.applied_prior is None
