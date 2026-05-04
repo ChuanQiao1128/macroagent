@@ -252,3 +252,73 @@ def test_normalize_meal_components_preserves_hidden_risk_flags_after_duplicate_m
     assert risks[1].macro_impact == "low"
     assert risks[1].likelihood == pytest.approx(0.50)
     assert risks[1].rationales == ("visible crystals",)
+
+
+def test_normalize_meal_components_preserves_state_hints_after_duplicate_merge() -> None:
+    response = VisionAnalysisResponse(
+        components=[
+            StructuredFoodComponent(
+                component_id="tofu-a",
+                visible_name=" tofu ",
+                candidates=[
+                    FoodCandidate(
+                        name="fried tofu",
+                        confidence=0.62,
+                        visual_evidence=["crispy edge"],
+                    )
+                ],
+                portion=PortionEstimate(
+                    description="small block",
+                    confidence=0.51,
+                    visual_basis=["fork scale"],
+                ),
+                state_hints=[
+                    StateHint(
+                        state="fried",
+                        confidence=0.41,
+                        visual_evidence=["golden crust"],
+                    )
+                ],
+            ),
+            StructuredFoodComponent(
+                component_id="tofu-b",
+                visible_name="Tofu",
+                candidates=[
+                    FoodCandidate(
+                        name=" fried tofu ",
+                        confidence=0.78,
+                        visual_evidence=["browned side"],
+                    )
+                ],
+                portion=PortionEstimate(
+                    description="small block",
+                    confidence=0.68,
+                    visual_basis=["plate scale"],
+                ),
+                state_hints=[
+                    StateHint(
+                        state="fried",
+                        confidence=0.76,
+                        visual_evidence=["oil sheen"],
+                    ),
+                    StateHint(
+                        state="sauced",
+                        confidence=0.55,
+                        visual_evidence=["glaze"],
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    normalized = normalize_meal_components(response)
+    assert len(normalized.components) == 1
+
+    hints = normalized.components[0].state_hints
+    assert len(hints) == 2
+    assert hints[0].state == "fried"
+    assert hints[0].confidence == pytest.approx(0.76)
+    assert hints[0].visual_evidence == ("golden crust", "oil sheen")
+    assert hints[1].state == "sauced"
+    assert hints[1].confidence == pytest.approx(0.55)
+    assert hints[1].visual_evidence == ("glaze",)
