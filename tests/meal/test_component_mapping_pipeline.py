@@ -4,7 +4,18 @@ import pytest
 from pydantic import ValidationError
 
 from services.meal import analyze_meal_components, estimate_meal_from_components
-from services.nutrition.src.version_metadata import build_trace_version_metadata
+from services.nutrition.src.version_metadata import (
+    LEDGER_SCHEMA_VERSION,
+    MACRO_CALCULATOR_VERSION,
+    MATCHER_VERSION,
+    NUTRITION_CATALOG_VERSION,
+    PORTION_ENGINE_VERSION,
+    VISION_MODEL_NAME,
+    VISION_PROMPT_TEXT,
+    VISION_SCHEMA_VERSION,
+    build_trace_version_metadata,
+    prompt_sha256,
+)
 from services.vision import (
     FoodCandidate,
     FoodComponent,
@@ -54,6 +65,29 @@ def test_analyze_meal_components_returns_matched_component_with_trace_fields() -
     assert component.macro_interval.carbs_g.max == 31.0
     assert component.macro_interval.fat_g.min == 0.3
     assert component.macro_interval.fat_g.max == 0.3
+
+
+def test_analyze_meal_components_legacy_input_attaches_default_trace_versions() -> None:
+    meal = analyze_meal_components(
+        [
+            FoodComponent(
+                name="white rice",
+                confidence=0.91,
+                portion_hint="100 g",
+            )
+        ]
+    )
+
+    assert meal.trace_versions.model_dump(mode="json") == {
+        "vision_schema_version": VISION_SCHEMA_VERSION,
+        "vision_model_name": VISION_MODEL_NAME,
+        "vision_prompt_hash": prompt_sha256(VISION_PROMPT_TEXT),
+        "nutrition_catalog_version": NUTRITION_CATALOG_VERSION,
+        "matcher_version": MATCHER_VERSION,
+        "portion_engine_version": PORTION_ENGINE_VERSION,
+        "macro_calculator_version": MACRO_CALCULATOR_VERSION,
+        "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+    }
 
 
 def test_analyze_meal_components_marks_low_confidence_candidate_as_unmatched() -> None:
