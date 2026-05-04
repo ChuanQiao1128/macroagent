@@ -102,13 +102,24 @@ _HOUSEHOLD_UNIT_GRAMS = MappingProxyType(
 )
 
 _WEIGHT_UNITS = frozenset({"gram", "kilogram"})
+PortionUncertaintyFlag = Literal[
+    "missing_portion_hint",
+    "unknown_portion_hint",
+    "non_positive_quantity",
+    "implicit_quantity",
+    "approximate_quantity",
+]
 
 
 class PortionGramRange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    grams_min: float = Field(..., ge=0)
-    grams_max: float = Field(..., ge=0)
+    grams_min: float | None = Field(default=None, ge=0)
+    grams_max: float | None = Field(default=None, ge=0)
+    grams_p10: float | None = Field(default=None, ge=0)
+    grams_p50: float | None = Field(default=None, ge=0)
+    grams_p90: float | None = Field(default=None, ge=0)
+    percentiles_available: bool = False
     confidence: float = Field(..., ge=0, le=1)
     source: Literal[
         "portion_hint_weight_unit",
@@ -116,11 +127,49 @@ class PortionGramRange(BaseModel):
         "fallback_default",
     ]
     reason: str = Field(..., min_length=1)
+    uncertainty_flags: tuple[PortionUncertaintyFlag, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_bounds_and_percentiles(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        payload = dict(value)
+        grams_min = payload.get("grams_min")
+        grams_max = payload.get("grams_max")
+        grams_p10 = payload.get("grams_p10")
+        grams_p50 = payload.get("grams_p50")
+        grams_p90 = payload.get("grams_p90")
+
+        if grams_p10 is None and grams_min is not None:
+            payload["grams_p10"] = grams_min
+        if grams_p90 is None and grams_max is not None:
+            payload["grams_p90"] = grams_max
+        if grams_min is None and grams_p10 is not None:
+            payload["grams_min"] = grams_p10
+        if grams_max is None and grams_p90 is not None:
+            payload["grams_max"] = grams_p90
+
+        grams_p10 = payload.get("grams_p10")
+        grams_p90 = payload.get("grams_p90")
+        if grams_p50 is None and grams_p10 is not None and grams_p90 is not None:
+            payload["grams_p50"] = _round_grams((float(grams_p10) + float(grams_p90)) / 2.0)
+
+        return payload
 
     @model_validator(mode="after")
     def _validate_bounds(self) -> PortionGramRange:
+        if self.grams_min is None or self.grams_max is None:
+            raise ValueError("grams_min and grams_max must be provided")
+        if self.grams_p10 is None or self.grams_p50 is None or self.grams_p90 is None:
+            raise ValueError("grams_p10, grams_p50, and grams_p90 must be provided")
         if self.grams_min > self.grams_max:
             raise ValueError("grams_min must be less than or equal to grams_max")
+        if not self.grams_p10 <= self.grams_p50 <= self.grams_p90:
+            raise ValueError("grams_p10 must be less than or equal to grams_p50 and grams_p90")
+        if self.grams_min != self.grams_p10 or self.grams_max != self.grams_p90:
+            raise ValueError("grams_min/grams_max must align with grams_p10/grams_p90")
         return self
 
 
@@ -137,8 +186,10 @@ def parse_portion_range(
             portion_hint=portion_hint,
             reason_detail="portion hint missing",
             confidence=0.25,
+            uncertainty_flags=("missing_portion_hint",),
         )
 
+    has_approximate_language = _contains_approximate_language(hint_text)
     weight_parse = _parse_weight_hint(hint_text)
     if weight_parse is not None:
         unit_name, quantity = weight_parse
@@ -148,17 +199,27 @@ def parse_portion_range(
                 portion_hint=portion_hint,
                 reason_detail="parsed non-positive portion quantity",
                 confidence=0.20,
+                uncertainty_flags=("non_positive_quantity",),
             )
         grams = quantity * (1000.0 if unit_name == "kilogram" else 1.0)
         uncertainty = max(5.0, grams * 0.10)
+        grams_p10 = _round_grams(max(0.0, grams - uncertainty))
+        grams_p90 = _round_grams(grams + uncertainty)
         return PortionGramRange(
-            grams_min=_round_grams(max(0.0, grams - uncertainty)),
-            grams_max=_round_grams(grams + uncertainty),
+            grams_min=grams_p10,
+            grams_max=grams_p90,
+            grams_p10=grams_p10,
+            grams_p50=_round_grams(grams),
+            grams_p90=grams_p90,
+            percentiles_available=True,
             confidence=0.90,
             source="portion_hint_weight_unit",
             reason=(
                 f"parsed '{portion_hint}' as {quantity:g} {unit_name}"
                 f" for component '{component}'"
+            ),
+            uncertainty_flags=_build_uncertainty_flags(
+                "approximate_quantity" if has_approximate_language else None,
             ),
         )
 
@@ -171,17 +232,28 @@ def parse_portion_range(
                 portion_hint=portion_hint,
                 reason_detail="parsed non-positive portion quantity",
                 confidence=0.20,
+                uncertainty_flags=("non_positive_quantity",),
             )
 
         unit_min, unit_max = _HOUSEHOLD_UNIT_GRAMS[unit_name]
+        grams_p10 = _round_grams(unit_min * quantity)
+        grams_p90 = _round_grams(unit_max * quantity)
         return PortionGramRange(
-            grams_min=_round_grams(unit_min * quantity),
-            grams_max=_round_grams(unit_max * quantity),
+            grams_min=grams_p10,
+            grams_max=grams_p90,
+            grams_p10=grams_p10,
+            grams_p50=_round_grams((grams_p10 + grams_p90) / 2.0),
+            grams_p90=grams_p90,
+            percentiles_available=True,
             confidence=0.68 if explicit_quantity else 0.58,
             source="portion_hint_household_unit",
             reason=(
                 f"parsed '{portion_hint}' as {quantity:g} {unit_name}"
                 f" for component '{component}'"
+            ),
+            uncertainty_flags=_build_uncertainty_flags(
+                "implicit_quantity" if not explicit_quantity else None,
+                "approximate_quantity" if has_approximate_language else None,
             ),
         )
 
@@ -190,6 +262,10 @@ def parse_portion_range(
         portion_hint=portion_hint,
         reason_detail="portion hint could not be parsed",
         confidence=0.20,
+        uncertainty_flags=_build_uncertainty_flags(
+            "unknown_portion_hint",
+            "approximate_quantity" if has_approximate_language else None,
+        ),
     )
 
 
@@ -249,6 +325,22 @@ def _parse_household_hint(hint_text: str) -> tuple[str, float, bool] | None:
             continue
         return (unit, quantity, explicit_quantity)
     return None
+
+
+def _contains_approximate_language(hint_text: str) -> bool:
+    return any(token in _APPROX_WORDS for token in hint_text.split())
+
+
+def _build_uncertainty_flags(
+    *flags: PortionUncertaintyFlag | None,
+) -> tuple[PortionUncertaintyFlag, ...]:
+    deduped: list[PortionUncertaintyFlag] = []
+    for flag in flags:
+        if flag is None:
+            continue
+        if flag not in deduped:
+            deduped.append(flag)
+    return tuple(deduped)
 
 
 def _extract_quantity(tokens: list[str], *, unit_index: int) -> tuple[float | None, bool]:
@@ -355,16 +447,24 @@ def _build_fallback_result(
     portion_hint: str | None,
     reason_detail: str,
     confidence: float,
+    uncertainty_flags: tuple[PortionUncertaintyFlag, ...],
 ) -> PortionGramRange:
+    grams_p10 = _FALLBACK_RANGE_GRAMS[0]
+    grams_p90 = _FALLBACK_RANGE_GRAMS[1]
     return PortionGramRange(
-        grams_min=_FALLBACK_RANGE_GRAMS[0],
-        grams_max=_FALLBACK_RANGE_GRAMS[1],
+        grams_min=grams_p10,
+        grams_max=grams_p90,
+        grams_p10=grams_p10,
+        grams_p50=_round_grams((grams_p10 + grams_p90) / 2.0),
+        grams_p90=grams_p90,
+        percentiles_available=True,
         confidence=confidence,
         source="fallback_default",
         reason=(
             f"{reason_detail}; component='{component_name}', "
             f"portion_hint={portion_hint!r}"
         ),
+        uncertainty_flags=uncertainty_flags,
     )
 
 
