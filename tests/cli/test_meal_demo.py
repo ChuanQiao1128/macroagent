@@ -126,6 +126,10 @@ def test_main_dry_run_prints_json_and_skips_persistence(tmp_path: Path) -> None:
         "macro_calculator_version",
         "ledger_schema_version",
     }
+    result_explanation = payload["result_explanation"]
+    assert result_explanation["strategy"] == "deterministic_template_v1"
+    assert result_explanation["en"]["summary"].startswith("Complete estimate. kcal range ")
+    assert result_explanation["zh"]["summary"].startswith("估算完整。kcal 区间 ")
 
 
 def test_run_meal_demo_default_analyzer_preserves_structured_top_k(
