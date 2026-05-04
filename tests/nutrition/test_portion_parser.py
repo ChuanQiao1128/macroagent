@@ -128,6 +128,30 @@ def test_parse_portion_range_weight_hint_with_approximate_language_sets_flag() -
     assert result.uncertainty_flags == ("approximate_quantity",)
 
 
+def test_parse_portion_range_prefers_explicit_weight_near_later_unit() -> None:
+    result = parse_portion_range(
+        component_name="white sugar packet",
+        portion_hint="1 sugar stick packet (~4 g sugar), possibly unused",
+    )
+
+    assert result.grams_p10 == 3.6
+    assert result.grams_p50 == 4.0
+    assert result.grams_p90 == 4.4
+    assert result.source == "portion_hint_weight_unit"
+
+
+def test_parse_portion_range_uses_sushi_specific_piece_range() -> None:
+    result = parse_portion_range(
+        component_name="spicy tuna maki roll",
+        portion_hint="1 piece",
+    )
+
+    assert result.grams_p10 == 22.0
+    assert result.grams_p50 == 33.5
+    assert result.grams_p90 == 45.0
+    assert result.source == "portion_hint_household_unit"
+
+
 @pytest.mark.parametrize(
     ("portion_hint", "expected_flags"),
     [

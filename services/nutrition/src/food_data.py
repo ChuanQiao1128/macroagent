@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
-from collections.abc import Sequence
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -15,6 +19,38 @@ from pydantic import BaseModel, ConfigDict, Field
 USDA_DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "usda_seed.json"
 PERSONAL_DATA_FILE = (
     Path(__file__).resolve().parents[1] / "data" / "personal_seed.json"
+)
+FDC_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
+FDC_API_KEY_ENV = "FDC_API_KEY"
+FDC_CACHE_PATH_ENV = "FDC_CACHE_PATH"
+FDC_LOOKUP_ENABLED_ENV = "FDC_LOOKUP_ENABLED"
+FDC_DEFAULT_CACHE_PATH = Path("local_outputs/fdc_search_cache.json")
+FDC_CACHE_SCHEMA_VERSION = "fdc_macro_search_cache_v1"
+FDC_DATA_TYPES = ("Survey (FNDDS)", "Foundation", "SR Legacy", "Branded")
+FDC_PAGE_SIZE = 12
+FDC_REQUEST_TIMEOUT_SECONDS = 10
+FDC_MATCH_CONFIDENT_FLOOR = 0.70
+FDC_RANK_FALLBACK_BASE_SCORE = 0.74
+FDC_QUERY_CONFIDENCE_RANKING_WEIGHT = 0.15
+MIN_QUERY_CANDIDATE_CONFIDENCE = 0.15
+FDC_QUERY_STOPWORDS = frozenset(
+    {
+        "stick",
+        "packet",
+        "pack",
+        "single",
+        "serve",
+        "serving",
+        "possibly",
+        "unused",
+        "used",
+        "approximately",
+        "approx",
+        "about",
+        "g",
+        "gram",
+        "grams",
+    }
 )
 
 MatchType = Literal["exact_name", "exact_alias", "token_containment", "fuzzy"]
@@ -362,6 +398,8 @@ def _parse_query_candidate(raw_candidate: MatchInputCandidate) -> _QueryCandidat
     normalized = _normalize_lookup_key(text)
     if not normalized:
         return None
+    if confidence < MIN_QUERY_CANDIDATE_CONFIDENCE:
+        return None
     tokens = _tokenize(normalized)
     if not tokens:
         return None
@@ -704,15 +742,18 @@ def match_food_candidates(
             )
         )
 
-    ranked_matches.sort(
-        key=lambda item: (
-            -item[0],
-            -item[1],
-            MATCH_TYPE_PRIORITY[item[2].match_type],
-            item[2].entry.id,
-        )
-    )
-    return tuple(candidate for _, _, candidate in ranked_matches[:limit])
+    local_matches = _sorted_ranked_matches(ranked_matches, limit=limit)
+    if _should_search_fdc(local_matches=local_matches, limit=limit):
+        for query_candidate in normalized_candidates:
+            ranked_matches.extend(
+                _rank_fdc_matches_for_query(
+                    query_candidate=query_candidate,
+                    state_hints=hinted_states,
+                    min_score=min_score,
+                )
+            )
+
+    return _sorted_ranked_matches(ranked_matches, limit=limit)
 
 
 def match_food_name(
@@ -748,7 +789,424 @@ def match_food_name(
         matches.append(candidate)
 
     matches.sort(key=_legacy_match_sort_key)
+    if _should_search_fdc(local_matches=tuple(matches[:limit]), limit=limit):
+        fdc_matches = [
+            candidate
+            for _, _, candidate in _rank_fdc_matches_for_query(
+                query_candidate=_QueryCandidate(
+                    text=query_normalized,
+                    normalized=query_normalized,
+                    tokens=query_tokens,
+                    confidence=1.0,
+                ),
+                state_hints=frozenset(),
+                min_score=min_score,
+            )
+        ]
+        matches = _dedupe_candidates((*matches, *fdc_matches))
+        matches.sort(key=_legacy_match_sort_key)
     return tuple(matches[:limit])
+
+
+def load_fdc_macro_entries_for_query(query: str) -> tuple[MacroEntry, ...]:
+    """Return USDA/FDC search results mapped to local MacroEntry objects."""
+    normalized_query = _normalize_lookup_key(query)
+    if not normalized_query or not _fdc_lookup_enabled():
+        return ()
+
+    cached = _read_fdc_cache_entry(normalized_query)
+    if cached is not None:
+        return cached
+
+    api_key = os.getenv(FDC_API_KEY_ENV)
+    if not api_key:
+        return ()
+
+    try:
+        payload = _fetch_fdc_search_payload(query=normalized_query, api_key=api_key)
+    except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError):
+        return ()
+
+    entries = _fdc_payload_to_macro_entries(payload)
+    _write_fdc_cache_entry(normalized_query, entries)
+    return entries
+
+
+def _should_search_fdc(
+    *,
+    local_matches: Sequence[MacroMatchCandidate],
+    limit: int,
+) -> bool:
+    if not _fdc_lookup_enabled():
+        return False
+    if not local_matches:
+        return True
+    return local_matches[0].score < FDC_MATCH_CONFIDENT_FLOOR
+
+
+def _fdc_lookup_enabled() -> bool:
+    configured = os.getenv(FDC_LOOKUP_ENABLED_ENV)
+    if configured is not None:
+        return configured.strip().casefold() not in {"0", "false", "no", "off"}
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return False
+    return bool(os.getenv(FDC_API_KEY_ENV))
+
+
+def _rank_fdc_matches_for_query(
+    *,
+    query_candidate: _QueryCandidate,
+    state_hints: frozenset[StateLabel],
+    min_score: float,
+) -> tuple[tuple[float, float, MacroMatchCandidate], ...]:
+    ranked: list[tuple[float, float, MacroMatchCandidate]] = []
+    for search_query in _fdc_query_variants(query_candidate.text):
+        search_candidate = _parse_query_candidate((search_query, query_candidate.confidence))
+        if search_candidate is None:
+            continue
+        entries = load_fdc_macro_entries_for_query(search_candidate.text)
+        for rank, entry in enumerate(entries):
+            scored = _score_fdc_entry_match(
+                query_candidate=search_candidate,
+                entry=entry,
+                fdc_rank=rank,
+                min_score=min_score,
+            )
+            if scored is None:
+                continue
+
+            candidate_states = _derived_candidate_state_signals(query_candidate)
+            observed_states, state_signal_reason = _merge_observed_states(
+                state_hints=state_hints,
+                candidate_states=candidate_states,
+            )
+            entry_states = _extract_entry_states(entry)
+            state_adjustment, state_reason, _ = _evaluate_state_alignment(
+                observed_states=observed_states,
+                entry_states=entry_states,
+            )
+            final_score = _clamp_score(scored.score + state_adjustment)
+            if final_score < min_score:
+                continue
+
+            reason = (
+                f"{scored.reason}; matched via FDC query '{search_candidate.text}' "
+                f"for vision candidate '{query_candidate.text}' "
+                f"(confidence={query_candidate.confidence:.2f}); "
+                f"{state_signal_reason}; {state_reason}"
+            )
+            ranked.append(
+                (
+                    final_score
+                    + (FDC_QUERY_CONFIDENCE_RANKING_WEIGHT * query_candidate.confidence),
+                    query_candidate.confidence,
+                    MacroMatchCandidate(
+                        entry=entry,
+                        score=final_score,
+                        matched_on=scored.matched_on,
+                        match_type=scored.match_type,
+                        reason=reason,
+                    ),
+                )
+            )
+    return tuple(ranked)
+
+
+def _fdc_query_variants(query: str) -> tuple[str, ...]:
+    normalized = _normalize_lookup_key(query)
+    variants: list[str] = []
+
+    def add(value: str) -> None:
+        cleaned = _normalize_lookup_key(value)
+        if cleaned and cleaned not in variants:
+            variants.append(cleaned)
+
+    add(normalized)
+    without_parentheticals = re.sub(r"\([^)]*\)", " ", normalized)
+    add(without_parentheticals)
+    tokens = [
+        token
+        for token in _tokenize(without_parentheticals)
+        if token not in FDC_QUERY_STOPWORDS and not token.isdigit()
+    ]
+    add(" ".join(tokens))
+    token_set = set(tokens)
+    if "sugar" in token_set or "sugars" in token_set:
+        if "granulated" in token_set:
+            add("granulated sugar")
+        add("sugar")
+    if token_set & {"maki", "sushi"} and "roll" in token_set:
+        add("sushi roll")
+    if token_set & {"americano", "espresso", "coffee"}:
+        add("coffee")
+    return tuple(variants)
+
+
+def _score_fdc_entry_match(
+    *,
+    query_candidate: _QueryCandidate,
+    entry: MacroEntry,
+    fdc_rank: int,
+    min_score: float,
+) -> MacroMatchCandidate | None:
+    text_match = _score_entry_match(
+        query_normalized=query_candidate.normalized,
+        query_tokens=query_candidate.tokens,
+        entry=entry,
+    )
+    if text_match is not None and text_match.score >= min_score:
+        return MacroMatchCandidate(
+            entry=entry,
+            score=text_match.score,
+            matched_on=text_match.matched_on,
+            match_type=text_match.match_type,
+            reason=f"{text_match.reason}; FDC search rank {fdc_rank + 1}",
+        )
+
+    entry_tokens = set(_tokenize(" ".join((entry.name, *entry.aliases))))
+    query_tokens = set(query_candidate.tokens)
+    overlap = entry_tokens & query_tokens
+    if not overlap:
+        return None
+
+    overlap_ratio = len(overlap) / max(len(query_tokens), 1)
+    if overlap_ratio < 0.25:
+        return None
+
+    score = max(
+        min_score,
+        FDC_RANK_FALLBACK_BASE_SCORE - (0.03 * min(fdc_rank, 4)) + (0.05 * overlap_ratio),
+    )
+    return MacroMatchCandidate(
+        entry=entry,
+        score=_clamp_score(score),
+        matched_on=entry.name,
+        match_type="token_containment",
+        reason=(
+            "FDC search fallback match "
+            f"(rank {fdc_rank + 1}, token overlap {len(overlap)}/{len(query_tokens)})"
+        ),
+    )
+
+
+def _sorted_ranked_matches(
+    ranked_matches: Sequence[tuple[float, float, MacroMatchCandidate]],
+    *,
+    limit: int,
+) -> tuple[MacroMatchCandidate, ...]:
+    deduped: dict[str, tuple[float, float, MacroMatchCandidate]] = {}
+    for ranking_score, confidence, candidate in ranked_matches:
+        existing = deduped.get(candidate.entry.id)
+        if existing is None or (ranking_score, confidence) > (existing[0], existing[1]):
+            deduped[candidate.entry.id] = (ranking_score, confidence, candidate)
+
+    ranked = list(deduped.values())
+    ranked.sort(
+        key=lambda item: (
+            -item[0],
+            -item[1],
+            MATCH_TYPE_PRIORITY[item[2].match_type],
+            item[2].entry.id,
+        )
+    )
+    return tuple(candidate for _, _, candidate in ranked[:limit])
+
+
+def _dedupe_candidates(
+    candidates: Sequence[MacroMatchCandidate],
+) -> list[MacroMatchCandidate]:
+    deduped: dict[str, MacroMatchCandidate] = {}
+    for candidate in candidates:
+        existing = deduped.get(candidate.entry.id)
+        if existing is None or candidate.score > existing.score:
+            deduped[candidate.entry.id] = candidate
+    return list(deduped.values())
+
+
+def _fetch_fdc_search_payload(*, query: str, api_key: str) -> Mapping[str, object]:
+    params = urllib.parse.urlencode({"api_key": api_key})
+    body = json.dumps(
+        {
+            "query": query,
+            "pageSize": FDC_PAGE_SIZE,
+            "dataType": list(FDC_DATA_TYPES),
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"{FDC_SEARCH_URL}?{params}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=FDC_REQUEST_TIMEOUT_SECONDS) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, Mapping):
+        return {}
+    return payload
+
+
+def _fdc_payload_to_macro_entries(payload: Mapping[str, object]) -> tuple[MacroEntry, ...]:
+    foods = payload.get("foods")
+    if not isinstance(foods, Sequence) or isinstance(foods, (str, bytes)):
+        return ()
+
+    entries: list[MacroEntry] = []
+    seen_ids: set[str] = set()
+    for food in foods:
+        if not isinstance(food, Mapping):
+            continue
+        entry = _fdc_food_to_macro_entry(food)
+        if entry is None or entry.id in seen_ids:
+            continue
+        seen_ids.add(entry.id)
+        entries.append(entry)
+    return tuple(entries)
+
+
+def _fdc_food_to_macro_entry(food: Mapping[str, object]) -> MacroEntry | None:
+    fdc_id = food.get("fdcId")
+    description = food.get("description")
+    if not isinstance(fdc_id, int) or not isinstance(description, str):
+        return None
+
+    nutrients = food.get("foodNutrients")
+    if not isinstance(nutrients, Sequence) or isinstance(nutrients, (str, bytes)):
+        return None
+
+    kcal = _extract_fdc_nutrient(nutrients, nutrient_ids={1008}, nutrient_numbers={"208"})
+    if kcal is None:
+        energy_kj = _extract_fdc_nutrient(
+            nutrients,
+            nutrient_ids={1062},
+            nutrient_names={"energy"},
+            unit_names={"kj"},
+        )
+        kcal = None if energy_kj is None else energy_kj / 4.184
+    protein = _extract_fdc_nutrient(nutrients, nutrient_ids={1003}, nutrient_numbers={"203"})
+    carbs = _extract_fdc_nutrient(nutrients, nutrient_ids={1005}, nutrient_numbers={"205"})
+    fat = _extract_fdc_nutrient(nutrients, nutrient_ids={1004}, nutrient_numbers={"204"})
+    if kcal is None or protein is None or carbs is None or fat is None:
+        return None
+
+    aliases = _fdc_aliases(food)
+    return MacroEntry(
+        id=f"fdc:{fdc_id}",
+        name=" ".join(description.split()),
+        aliases=aliases,
+        category=_infer_category_from_text(" ".join((description, *aliases))),
+        source="USDA",
+        kcal_per_100g=round(float(kcal), 3),
+        protein_g_per_100g=round(float(protein), 3),
+        carbs_g_per_100g=round(float(carbs), 3),
+        fat_g_per_100g=round(float(fat), 3),
+    )
+
+
+def _extract_fdc_nutrient(
+    nutrients: Sequence[object],
+    *,
+    nutrient_ids: set[int] | None = None,
+    nutrient_numbers: set[str] | None = None,
+    nutrient_names: set[str] | None = None,
+    unit_names: set[str] | None = None,
+) -> float | None:
+    for nutrient in nutrients:
+        if not isinstance(nutrient, Mapping):
+            continue
+        value = nutrient.get("value")
+        if value is None:
+            continue
+
+        nutrient_id = nutrient.get("nutrientId")
+        nutrient_number = str(nutrient.get("nutrientNumber", "")).strip()
+        nutrient_name = str(nutrient.get("nutrientName", "")).strip().casefold()
+        unit_name = str(nutrient.get("unitName", "")).strip().casefold()
+
+        if nutrient_ids is not None and nutrient_id in nutrient_ids:
+            return float(value)
+        if nutrient_numbers is not None and nutrient_number in nutrient_numbers:
+            return float(value)
+        if nutrient_names is not None and nutrient_name in nutrient_names:
+            if unit_names is None or unit_name in unit_names:
+                return float(value)
+    return None
+
+
+def _fdc_aliases(food: Mapping[str, object]) -> tuple[str, ...]:
+    aliases: list[str] = []
+    for key in ("lowercaseDescription", "additionalDescriptions", "brandOwner", "brandName"):
+        value = food.get(key)
+        if isinstance(value, str):
+            normalized = " ".join(value.split())
+            if normalized:
+                aliases.append(normalized)
+    return tuple(dict.fromkeys(aliases))
+
+
+def _infer_category_from_text(text: str) -> str:
+    normalized = _normalize_lookup_key(text)
+    tokens = set(_tokenize(normalized))
+    if tokens & {"sushi", "maki", "roll"}:
+        return "prepared_meal"
+    if tokens & {"coffee", "espresso", "americano"}:
+        return "beverages"
+    if tokens & {"sugar", "syrup", "sweetener"}:
+        return "sugars"
+    if tokens & {"wasabi", "soy", "sauce", "mayo", "mayonnaise"}:
+        return "sauces"
+    if tokens & {"rice", "noodle", "pasta", "bread", "cereal"}:
+        return "grains"
+    if tokens & {"fish", "salmon", "tuna", "shrimp", "beef", "chicken", "pork"}:
+        return "protein"
+    if tokens & {"milk", "cheese", "yogurt", "cream"}:
+        return "dairy"
+    if tokens & {"apple", "banana", "fruit"}:
+        return "fruit"
+    if tokens & {"broccoli", "vegetable", "vegetables", "salad"}:
+        return "vegetables"
+    if tokens & {"oil", "butter"}:
+        return "oils"
+    return "fdc"
+
+
+def _fdc_cache_path() -> Path:
+    configured = os.getenv(FDC_CACHE_PATH_ENV)
+    return Path(configured) if configured else FDC_DEFAULT_CACHE_PATH
+
+
+def _read_fdc_cache_entry(query: str) -> tuple[MacroEntry, ...] | None:
+    cache = _read_fdc_cache()
+    record = cache.get(query)
+    if not isinstance(record, Sequence) or isinstance(record, (str, bytes)):
+        return None
+    try:
+        return tuple(MacroEntry.model_validate(item) for item in record)
+    except (TypeError, ValueError):
+        return None
+
+
+def _write_fdc_cache_entry(query: str, entries: Sequence[MacroEntry]) -> None:
+    cache_path = _fdc_cache_path()
+    cache = _read_fdc_cache()
+    cache[query] = [entry.model_dump(mode="json") for entry in entries]
+    cache["_schema"] = FDC_CACHE_SCHEMA_VERSION
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(cache, sort_keys=True), encoding="utf-8")
+    tmp_path.replace(cache_path)
+
+
+def _read_fdc_cache() -> dict[str, object]:
+    cache_path = _fdc_cache_path()
+    if not cache_path.exists():
+        return {"_schema": FDC_CACHE_SCHEMA_VERSION}
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"_schema": FDC_CACHE_SCHEMA_VERSION}
+    if not isinstance(payload, dict):
+        return {"_schema": FDC_CACHE_SCHEMA_VERSION}
+    return dict(payload)
 
 
 def find_macro_entry_candidates(
@@ -809,6 +1267,7 @@ __all__ = [
     "get_macro_entry",
     "get_macro_entry_by_name",
     "load_all_macro_entries",
+    "load_fdc_macro_entries_for_query",
     "load_macro_entries",
     "load_personal_macro_entries",
     "match_food_candidates",

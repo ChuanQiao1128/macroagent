@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -9,6 +11,7 @@ from services.nutrition import (
     get_macro_entry,
     get_macro_entry_by_name,
     load_all_macro_entries,
+    load_fdc_macro_entries_for_query,
     load_macro_entries,
     load_personal_macro_entries,
     match_food_candidates,
@@ -534,6 +537,136 @@ def test_match_food_candidates_falls_back_to_later_top_k_vision_candidate() -> N
     assert "matched via vision candidate 'banana' (confidence=0.62)" in matches[0].reason
 
 
+def test_match_food_candidates_ignores_very_low_confidence_vision_candidates() -> None:
+    matches = match_food_candidates([("avocado residue", 0.05)], limit=3, min_score=0.6)
+
+    assert matches == ()
+
+
+def test_match_food_candidates_uses_fdc_when_local_catalog_misses(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
+    monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
+
+    def fake_fetch_fdc_search_payload(*, query: str, api_key: str) -> dict[str, object]:
+        assert api_key == "fdc-test-key"
+        return _fdc_sushi_payload() if query == "spicy tuna maki roll" else {"foods": []}
+
+    monkeypatch.setattr(
+        food_data_module,
+        "_fetch_fdc_search_payload",
+        fake_fetch_fdc_search_payload,
+    )
+
+    matches = match_food_candidates(
+        [("spicy tuna maki roll", 0.68)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert matches
+    assert matches[0].entry.id == "fdc:234567"
+    assert matches[0].entry.source == "USDA"
+    assert matches[0].entry.kcal_per_100g == pytest.approx(145.0)
+    assert matches[0].entry.protein_g_per_100g == pytest.approx(5.2)
+    assert matches[0].score >= 0.70
+    assert "matched via FDC query 'spicy tuna maki roll'" in matches[0].reason
+
+
+def test_match_food_candidates_cleans_fdc_query_for_sugar_packet(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
+    monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
+    seen_queries: list[str] = []
+
+    def fake_fetch_fdc_search_payload(*, query: str, api_key: str) -> dict[str, object]:
+        del api_key
+        seen_queries.append(query)
+        return _fdc_sugar_payload() if query == "granulated sugar" else {"foods": []}
+
+    monkeypatch.setattr(
+        food_data_module,
+        "_fetch_fdc_search_payload",
+        fake_fetch_fdc_search_payload,
+    )
+
+    matches = match_food_candidates(
+        [("White granulated sugar stick (~4 g)", 0.95)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert "granulated sugar" in seen_queries
+    assert matches
+    assert matches[0].entry.id == "fdc:999001"
+    assert matches[0].entry.name == "Sugars, granulated"
+    assert "matched via FDC query 'granulated sugar'" in matches[0].reason
+
+
+def test_match_food_candidates_does_not_search_fdc_when_local_match_is_confident(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
+    monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
+
+    def fail_fetch_fdc_search_payload(*, query: str, api_key: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected FDC lookup for {query} with {api_key}")
+
+    monkeypatch.setattr(
+        food_data_module,
+        "_fetch_fdc_search_payload",
+        fail_fetch_fdc_search_payload,
+    )
+
+    matches = match_food_candidates(
+        [("americano", 0.90), ("drip coffee", 0.20)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert matches
+    assert matches[0].entry.id == "personal_seed_0005"
+    assert matches[0].entry.name == "Coffee, brewed, black"
+
+
+def test_load_fdc_macro_entries_for_query_uses_persistent_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("FDC_LOOKUP_ENABLED", "1")
+    monkeypatch.setenv("FDC_API_KEY", "fdc-test-key")
+    monkeypatch.setenv("FDC_CACHE_PATH", str(tmp_path / "fdc_cache.json"))
+    calls = {"count": 0}
+
+    def fake_fetch_fdc_search_payload(*, query: str, api_key: str) -> dict[str, object]:
+        del query, api_key
+        calls["count"] += 1
+        return _fdc_sugar_payload()
+
+    monkeypatch.setattr(
+        food_data_module,
+        "_fetch_fdc_search_payload",
+        fake_fetch_fdc_search_payload,
+    )
+
+    first = load_fdc_macro_entries_for_query("white sugar packet")
+    second = load_fdc_macro_entries_for_query("white sugar packet")
+
+    assert calls["count"] == 1
+    assert first == second
+    assert first[0].id == "fdc:999001"
+    assert first[0].name == "Sugars, granulated"
+    assert (tmp_path / "fdc_cache.json").exists()
+
+
 def test_match_food_candidates_reason_includes_state_and_candidate_trace() -> None:
     matches = match_food_candidates(
         [("chicken breast", 0.90)],
@@ -561,3 +694,89 @@ def test_match_food_name_legacy_behavior_does_not_include_state_aware_reason_tra
     assert matches[0].match_type == "exact_alias"
     assert "matched via vision candidate" not in matches[0].reason
     assert "state hints observed:" not in matches[0].reason
+
+
+def _fdc_sushi_payload() -> dict[str, object]:
+    return {
+        "foods": [
+            {
+                "fdcId": 234567,
+                "description": "Sushi roll, tuna",
+                "lowercaseDescription": "sushi roll tuna",
+                "dataType": "Survey (FNDDS)",
+                "foodNutrients": [
+                    {
+                        "nutrientId": 1008,
+                        "nutrientNumber": "208",
+                        "nutrientName": "Energy",
+                        "unitName": "KCAL",
+                        "value": 145.0,
+                    },
+                    {
+                        "nutrientId": 1003,
+                        "nutrientNumber": "203",
+                        "nutrientName": "Protein",
+                        "unitName": "G",
+                        "value": 5.2,
+                    },
+                    {
+                        "nutrientId": 1005,
+                        "nutrientNumber": "205",
+                        "nutrientName": "Carbohydrate, by difference",
+                        "unitName": "G",
+                        "value": 27.8,
+                    },
+                    {
+                        "nutrientId": 1004,
+                        "nutrientNumber": "204",
+                        "nutrientName": "Total lipid (fat)",
+                        "unitName": "G",
+                        "value": 2.1,
+                    },
+                ],
+            }
+        ]
+    }
+
+
+def _fdc_sugar_payload() -> dict[str, object]:
+    return {
+        "foods": [
+            {
+                "fdcId": 999001,
+                "description": "Sugars, granulated",
+                "lowercaseDescription": "sugars granulated",
+                "dataType": "SR Legacy",
+                "foodNutrients": [
+                    {
+                        "nutrientId": 1008,
+                        "nutrientNumber": "208",
+                        "nutrientName": "Energy",
+                        "unitName": "KCAL",
+                        "value": 387.0,
+                    },
+                    {
+                        "nutrientId": 1003,
+                        "nutrientNumber": "203",
+                        "nutrientName": "Protein",
+                        "unitName": "G",
+                        "value": 0.0,
+                    },
+                    {
+                        "nutrientId": 1005,
+                        "nutrientNumber": "205",
+                        "nutrientName": "Carbohydrate, by difference",
+                        "unitName": "G",
+                        "value": 100.0,
+                    },
+                    {
+                        "nutrientId": 1004,
+                        "nutrientNumber": "204",
+                        "nutrientName": "Total lipid (fat)",
+                        "unitName": "G",
+                        "value": 0.0,
+                    },
+                ],
+            }
+        ]
+    }

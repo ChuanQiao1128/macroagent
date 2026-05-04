@@ -15,8 +15,8 @@ VISION_PROMPT_TEXT = (
     "or meal totals. "
     "Use the tool schema only."
 )
-NUTRITION_CATALOG_VERSION = "nutrition_catalog_seed_v1"
-MATCHER_VERSION = "matcher_state_aware_v1"
+NUTRITION_CATALOG_VERSION = "nutrition_catalog_seed_fdc_v2"
+MATCHER_VERSION = "matcher_state_aware_fdc_v2"
 PORTION_ENGINE_VERSION = "portion_parser_v1"
 MACRO_CALCULATOR_VERSION = "macro_interval_v1"
 LEDGER_SCHEMA_VERSION = 2

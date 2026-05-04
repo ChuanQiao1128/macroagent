@@ -100,6 +100,7 @@ _HOUSEHOLD_UNIT_GRAMS = MappingProxyType(
         "palm": (75.0, 150.0),
     }
 )
+_SUSHI_PIECE_RANGE_GRAMS = (22.0, 45.0)
 
 _WEIGHT_UNITS = frozenset({"gram", "kilogram"})
 PortionUncertaintyFlag = Literal[
@@ -208,7 +209,7 @@ def parse_portion_range(
                 uncertainty_flags=("non_positive_quantity",),
             )
         grams = quantity * (1000.0 if unit_name == "kilogram" else 1.0)
-        uncertainty = max(5.0, grams * 0.10)
+        uncertainty = grams * 0.10
         grams_p10 = _round_grams(max(0.0, grams - uncertainty))
         grams_p90 = _round_grams(grams + uncertainty)
         return PortionGramRange(
@@ -241,7 +242,10 @@ def parse_portion_range(
                 uncertainty_flags=("non_positive_quantity",),
             )
 
-        unit_min, unit_max = _HOUSEHOLD_UNIT_GRAMS[unit_name]
+        unit_min, unit_max = _household_unit_grams(
+            unit_name=unit_name,
+            component_name=component,
+        )
         grams_p10 = _round_grams(unit_min * quantity)
         grams_p90 = _round_grams(unit_max * quantity)
         return PortionGramRange(
@@ -309,7 +313,8 @@ def _normalize_hint_text(value: str | None) -> str | None:
 
 def _parse_weight_hint(hint_text: str) -> tuple[str, float] | None:
     tokens = hint_text.split()
-    for index, token in enumerate(tokens):
+    for index in range(len(tokens) - 1, -1, -1):
+        token = tokens[index]
         unit = _TOKEN_TO_UNIT.get(token)
         if unit not in _WEIGHT_UNITS:
             continue
@@ -337,6 +342,17 @@ def _contains_approximate_language(hint_text: str) -> bool:
     return any(token in _APPROX_WORDS for token in hint_text.split())
 
 
+def _household_unit_grams(*, unit_name: str, component_name: str) -> tuple[float, float]:
+    if unit_name == "piece" and _looks_like_sushi_piece(component_name):
+        return _SUSHI_PIECE_RANGE_GRAMS
+    return _HOUSEHOLD_UNIT_GRAMS[unit_name]
+
+
+def _looks_like_sushi_piece(component_name: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", component_name.casefold()))
+    return bool(tokens & {"sushi", "maki", "nigiri"})
+
+
 def _build_uncertainty_flags(
     *flags: PortionUncertaintyFlag | None,
 ) -> tuple[PortionUncertaintyFlag, ...]:
@@ -360,6 +376,12 @@ def _extract_quantity(tokens: list[str], *, unit_index: int) -> tuple[float | No
     if filtered in (["a"], ["an"]):
         return (1.0, False)
 
+    quantity_suffix = _quantity_suffix(filtered)
+    if quantity_suffix:
+        quantity = _parse_quantity_text(" ".join(quantity_suffix))
+        if quantity is not None:
+            return (quantity, True)
+
     quantity = _parse_quantity_window(filtered)
     if quantity is not None:
         return (quantity, True)
@@ -378,6 +400,27 @@ def _parse_quantity_window(tokens: list[str]) -> float | None:
             if quantity is not None:
                 return quantity
     return None
+
+
+def _quantity_suffix(tokens: list[str]) -> list[str]:
+    suffix: list[str] = []
+    for token in reversed(tokens):
+        if _could_be_quantity_token(token):
+            suffix.append(token)
+            continue
+        break
+    suffix.reverse()
+    return suffix
+
+
+def _could_be_quantity_token(token: str) -> bool:
+    return (
+        token in _NUMBER_WORDS
+        or token in _FRACTION_WORDS
+        or token in {"a", "an", "and"}
+        or re.fullmatch(r"[+-]?\d+(?:\.\d+)?", token) is not None
+        or re.fullmatch(r"[+-]?\d+\s*/\s*\d+", token) is not None
+    )
 
 
 def _parse_quantity_text(quantity_text: str) -> float | None:

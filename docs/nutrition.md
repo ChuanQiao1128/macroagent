@@ -48,6 +48,7 @@ The module exports these helpers:
 
 - `load_macro_entries()`
 - `load_personal_macro_entries()`
+- `load_fdc_macro_entries_for_query(query)`
 - `load_all_macro_entries()`
 - `get_macro_entry(name_or_alias)`
 - `get_macro_entry_by_name(name_or_alias)`
@@ -67,6 +68,10 @@ Ranked matcher behavior:
 - It supports exact name matches, exact alias matches, token containment, and lightweight fuzzy matching.
 - Results are ranked by score, then personal entries are preferred over USDA entries when scores tie.
 - `find_macro_entry_candidates()` is an alias for `match_food_name()` for call-site readability.
+- If `FDC_API_KEY` is set and local matching misses or is low confidence, the matcher searches FoodData Central and maps results into the same `MacroEntry` shape with `source="USDA"` and ids like `fdc:171831`.
+- Confident local matches are not replaced by FDC results; FDC is a fallback/expansion path, not a blanket override.
+- FDC responses are cached in `local_outputs/fdc_search_cache.json` by default. Override with `FDC_CACHE_PATH`; disable lookup with `FDC_LOOKUP_ENABLED=0`.
+- FDC query cleaning removes package/weight noise such as `stick`, `packet`, and `~4 g` so visible items like sugar packets can resolve to nutrition entries.
 
 Exact lookup behavior remains exact-match only:
 
@@ -107,6 +112,7 @@ Behavior:
 
 - Returns a frozen Pydantic model.
 - Enforces `grams_min <= grams_max` and non-negative bounds.
+- Uses food-specific household overrides where generic units are too broad, such as one sushi/maki piece.
 - Uses a conservative fallback range when the hint is missing, invalid, or unrecognized.
 - Runs locally only; it does not call an LLM or any network service.
 
