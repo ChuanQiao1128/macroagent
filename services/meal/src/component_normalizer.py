@@ -239,7 +239,8 @@ def _merge_components(
     merged: dict[str, _ComponentAccumulator] = {}
 
     for component in extracted_components:
-        accumulator = merged.get(component.name)
+        merge_key = _normalize_name(component.source_name) or component.name
+        accumulator = merged.get(merge_key)
         if accumulator is None:
             accumulator = _ComponentAccumulator(
                 component_id=component.component_id,
@@ -250,7 +251,7 @@ def _merge_components(
                 source_component_ids=[],
                 source_component_names=[],
             )
-            merged[component.name] = accumulator
+            merged[merge_key] = accumulator
         else:
             accumulator.confidence = max(accumulator.confidence, component.confidence)
             if component.portion_hint is not None and (
