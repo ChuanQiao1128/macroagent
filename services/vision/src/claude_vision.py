@@ -194,17 +194,31 @@ class ClaudeVisionClient:
         prepared = self._prepare_image(image)
         image_hash = self._image_hash(prepared.data)
         cache_key = self._cache_key(image_hash=image_hash, model=self.model, prompt=prompt)
+        structured_cache_key = self._structured_cache_key(
+            image_hash=image_hash,
+            model=self.model,
+            prompt=prompt,
+        )
         if self._cache is not None:
             cached_components = self._cache.get(cache_key)
             if cached_components is not None:
                 return FoodComponentsResponse.model_validate(
                     {"components": cached_components}
                 ).components
+            cached_structured = self._deserialize_structured_cache_payload(
+                self._cache.get(structured_cache_key)
+            )
+            if cached_structured is not None:
+                return cached_structured.to_food_components()
 
         structured = self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
         components = structured.to_food_components()
 
         if self._cache is not None:
+            self._cache.set(
+                structured_cache_key,
+                self._serialize_structured_cache_payload(structured),
+            )
             self._cache.set(
                 cache_key,
                 [component.model_dump(mode="json") for component in components],
@@ -434,75 +448,11 @@ class ClaudeVisionClient:
         try:
             return VisionAnalysisResponse.model_validate(payload)
         except ValidationError:
-            structured_legacy = cls._structured_payload_to_legacy_components(payload)
-            if structured_legacy is not None:
-                return cls._legacy_components_to_structured(structured_legacy)
             legacy = FoodComponentsResponse.model_validate(payload)
             return cls._legacy_components_to_structured(legacy.components)
         except TypeError:
             legacy = FoodComponentsResponse.model_validate({"components": payload})
             return cls._legacy_components_to_structured(legacy.components)
-
-    @staticmethod
-    def _structured_payload_to_legacy_components(payload: Any) -> list[FoodComponent] | None:
-        if not isinstance(payload, dict):
-            return None
-        raw_components = payload.get("components")
-        if not isinstance(raw_components, list):
-            return None
-
-        components: list[FoodComponent] = []
-        for raw_component in raw_components:
-            if not isinstance(raw_component, dict):
-                return None
-
-            try:
-                components.append(FoodComponent.model_validate(raw_component))
-                continue
-            except ValidationError:
-                pass
-
-            raw_candidates = (
-                raw_component.get("candidates")
-                or raw_component.get("top_candidates")
-                or raw_component.get("top_k_candidates")
-            )
-            if not isinstance(raw_candidates, list) or len(raw_candidates) == 0:
-                return None
-            top_candidate = raw_candidates[0]
-            if not isinstance(top_candidate, dict):
-                return None
-
-            candidate_name = (
-                top_candidate.get("name")
-                or top_candidate.get("food_name")
-                or raw_component.get("visible_name")
-                or raw_component.get("name")
-            )
-            candidate_confidence = top_candidate.get("confidence")
-            portion = raw_component.get("portion") or raw_component.get("portion_estimate")
-            portion_hint: str | None = None
-            if isinstance(portion, dict):
-                raw_portion_hint = portion.get("description") or portion.get("portion_description")
-                if isinstance(raw_portion_hint, str):
-                    portion_hint = raw_portion_hint
-
-            if not isinstance(candidate_name, str) or len(candidate_name.strip()) == 0:
-                return None
-            if not isinstance(candidate_confidence, int | float):
-                return None
-
-            try:
-                components.append(
-                    FoodComponent(
-                        name=candidate_name,
-                        confidence=float(candidate_confidence),
-                        portion_hint=portion_hint,
-                    )
-                )
-            except ValidationError:
-                return None
-        return components
 
     @staticmethod
     def _legacy_components_to_structured(

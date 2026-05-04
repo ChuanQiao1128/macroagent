@@ -236,15 +236,20 @@ def test_analyze_meal_photo_cache_miss_calls_anthropic_once_and_writes_cache() -
         FoodComponent(name="beans", confidence=0.67, portion_hint="three quarters cup")
     ]
     assert len(fake.messages.calls) == 1
-    assert len(cache.get_calls) == 1
-    assert len(cache.set_calls) == 1
+    assert len(cache.get_calls) == 2
+    assert len(cache.set_calls) == 2
 
-    set_key, set_payload = cache.set_calls[0]
-    assert set_key == cache.get_calls[0]
-    assert set_payload == [
+    structured_set_key, structured_set_payload = cache.set_calls[0]
+    legacy_set_key, legacy_set_payload = cache.set_calls[1]
+    assert structured_set_key == cache.get_calls[1]
+    assert legacy_set_key == cache.get_calls[0]
+    assert legacy_set_payload == [
         {"name": "beans", "confidence": 0.67, "portion_hint": "three quarters cup"}
     ]
-    cache_key_data = json.loads(set_key)
+    assert structured_set_payload[0]["_cache_format"] == "vision_analysis_response_v1"
+    assert structured_set_payload[0]["payload"]["components"][0]["visible_name"] == "beans"
+
+    cache_key_data = json.loads(legacy_set_key)
     assert cache_key_data["model"] == model
     assert cache_key_data["prompt"] == prompt
     assert len(cache_key_data["image_hash"]) == 64
@@ -467,11 +472,17 @@ def test_analyze_meal_photo_structured_retries_on_invalid_structured_payload() -
                     {
                         "component_id": "component_1",
                         "visible_name": "chicken",
-                        "candidates": [{"name": "chicken breast", "confidence": 0.86}],
+                        "candidates": [
+                            {
+                                "name": "chicken breast",
+                                "confidence": 0.86,
+                                "visual_evidence": ["white cooked meat"],
+                            }
+                        ],
                         "portion": {
                             "description": "one piece",
                             "confidence": 0.6,
-                            "visual_basis": [],
+                            "visual_basis": ["single visible cutlet"],
                         },
                         "state_hints": [],
                         "hidden_ingredient_risks": [],
@@ -489,6 +500,80 @@ def test_analyze_meal_photo_structured_retries_on_invalid_structured_payload() -
     assert first_prompt == second_prompt.split("\n\n", maxsplit=1)[0]
     assert "previous response failed schema validation" in second_prompt
     assert structured.components[0].candidates[0].confidence == 0.86
+
+
+def test_malformed_structured_payload_is_not_downgraded_to_legacy_response() -> None:
+    malformed_structured_payload = {
+        "components": [
+            {
+                "component_id": "component_1",
+                "visible_name": "chicken",
+                "candidates": [{"name": "chicken breast", "confidence": 0.86}],
+                "portion": {
+                    "description": "one piece",
+                    "confidence": 0.6,
+                    "visual_basis": [],
+                },
+                "state_hints": [],
+                "hidden_ingredient_risks": [],
+            }
+        ]
+    }
+    fake = FakeAnthropicClient([malformed_structured_payload, malformed_structured_payload])
+
+    with pytest.raises(VisionParseError):
+        ClaudeVisionClient(client=fake).analyze_meal_photo_structured(png_bytes(256, 256))
+
+    assert len(fake.messages.calls) == 2
+
+
+def test_default_analyzer_populates_structured_cache_for_later_structured_calls(
+    tmp_path: Path,
+) -> None:
+    cache = JsonFileVisionCache(tmp_path / "vision-cache.json")
+    payload = {
+        "components": [
+            {
+                "component_id": "component_1",
+                "visible_name": "grain bowl base",
+                "candidates": [
+                    {
+                        "name": "brown rice",
+                        "confidence": 0.77,
+                        "visual_evidence": ["small whole grains"],
+                    }
+                ],
+                "portion": {
+                    "description": "around three quarters cup",
+                    "confidence": 0.7,
+                    "visual_basis": ["fills base of bowl"],
+                },
+                "state_hints": [],
+                "hidden_ingredient_risks": [],
+            }
+        ]
+    }
+    image = png_bytes(500, 500)
+    first_fake = FakeAnthropicClient([payload])
+
+    components = ClaudeVisionClient(client=first_fake, cache=cache).analyze_meal_photo(image)
+
+    assert components == [
+        FoodComponent(
+            name="brown rice",
+            confidence=0.77,
+            portion_hint="around three quarters cup",
+        )
+    ]
+    assert len(first_fake.messages.calls) == 1
+
+    second_fake = FakeAnthropicClient([])
+    structured = ClaudeVisionClient(client=second_fake, cache=cache).analyze_meal_photo_structured(
+        image
+    )
+
+    assert second_fake.messages.calls == []
+    assert structured.components[0].candidates[0].name == "brown rice"
 
 
 def test_hidden_ingredient_risk_alias_fields_are_parsed() -> None:
