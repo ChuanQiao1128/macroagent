@@ -63,7 +63,8 @@ class FoodCandidate(BaseModel):
     name: str = Field(..., min_length=1, validation_alias=AliasChoices("name", "food_name"))
     confidence: float = Field(..., ge=0.0, le=1.0)
     visual_evidence: list[str] = Field(
-        default_factory=list,
+        ...,
+        min_length=1,
         validation_alias=AliasChoices("visual_evidence", "evidence"),
     )
 
@@ -83,7 +84,8 @@ class PortionEstimate(BaseModel):
         validation_alias=AliasChoices("confidence", "portion_confidence"),
     )
     visual_basis: list[str] = Field(
-        default_factory=list,
+        ...,
+        min_length=1,
         validation_alias=AliasChoices("visual_basis", "visual_evidence"),
     )
 
@@ -216,7 +218,27 @@ class ClaudeVisionClient:
         prompt: str = DEFAULT_PROMPT,
     ) -> VisionAnalysisResponse:
         prepared = self._prepare_image(image)
-        return self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
+        image_hash = self._image_hash(prepared.data)
+        cache_key = self._cache_key(image_hash=image_hash, model=self.model, prompt=prompt)
+
+        if self._cache is not None:
+            cached_components = self._cache.get(cache_key)
+            if cached_components is not None:
+                legacy = FoodComponentsResponse.model_validate({"components": cached_components})
+                return self._legacy_components_to_structured(legacy.components)
+
+        structured = self._analyze_meal_photo_structured(prepared=prepared, prompt=prompt)
+
+        if self._cache is not None:
+            self._cache.set(
+                cache_key,
+                [
+                    component.model_dump(mode="json")
+                    for component in structured.to_food_components()
+                ],
+            )
+
+        return structured
 
     @staticmethod
     def _build_default_client() -> Any:
@@ -363,11 +385,78 @@ class ClaudeVisionClient:
         try:
             return VisionAnalysisResponse.model_validate(payload)
         except ValidationError:
+            normalized_payload = cls._normalize_structured_payload(payload)
+            if normalized_payload is not payload:
+                try:
+                    return VisionAnalysisResponse.model_validate(normalized_payload)
+                except ValidationError:
+                    pass
             legacy = FoodComponentsResponse.model_validate(payload)
             return cls._legacy_components_to_structured(legacy.components)
         except TypeError:
             legacy = FoodComponentsResponse.model_validate({"components": payload})
             return cls._legacy_components_to_structured(legacy.components)
+
+    @staticmethod
+    def _normalize_structured_payload(payload: Any) -> Any:
+        if not isinstance(payload, dict):
+            return payload
+
+        raw_components = payload.get("components")
+        if not isinstance(raw_components, list):
+            return payload
+
+        changed = False
+        normalized_components: list[Any] = []
+
+        for raw_component in raw_components:
+            if not isinstance(raw_component, dict):
+                normalized_components.append(raw_component)
+                continue
+
+            component = dict(raw_component)
+            component_changed = False
+
+            for key in ("candidates", "top_candidates", "top_k_candidates"):
+                raw_candidates = component.get(key)
+                if not isinstance(raw_candidates, list):
+                    continue
+                normalized_candidates: list[Any] = []
+                for raw_candidate in raw_candidates:
+                    if not isinstance(raw_candidate, dict):
+                        normalized_candidates.append(raw_candidate)
+                        continue
+                    candidate = dict(raw_candidate)
+                    evidence = candidate.get("visual_evidence") or candidate.get("evidence")
+                    if not isinstance(evidence, list) or len(evidence) == 0:
+                        candidate["visual_evidence"] = [
+                            "not_provided_in_model_response",
+                        ]
+                        component_changed = True
+                    normalized_candidates.append(candidate)
+                component[key] = normalized_candidates
+
+            for key in ("portion", "portion_estimate"):
+                raw_portion = component.get(key)
+                if not isinstance(raw_portion, dict):
+                    continue
+                portion = dict(raw_portion)
+                visual_basis = portion.get("visual_basis") or portion.get("visual_evidence")
+                if not isinstance(visual_basis, list) or len(visual_basis) == 0:
+                    portion["visual_basis"] = ["not_provided_in_model_response"]
+                    component_changed = True
+                component[key] = portion
+
+            if component_changed:
+                changed = True
+            normalized_components.append(component)
+
+        if not changed:
+            return payload
+
+        normalized_payload = dict(payload)
+        normalized_payload["components"] = normalized_components
+        return normalized_payload
 
     @staticmethod
     def _legacy_components_to_structured(
@@ -384,13 +473,13 @@ class ClaudeVisionClient:
                         FoodCandidate(
                             name=component.name,
                             confidence=component.confidence,
-                            visual_evidence=[],
+                            visual_evidence=["legacy_simple_response_no_visual_evidence"],
                         )
                     ],
                     portion=PortionEstimate(
                         description=portion_description,
                         confidence=component.confidence,
-                        visual_basis=[],
+                        visual_basis=["legacy_simple_response_no_visual_basis"],
                     ),
                     state_hints=[],
                     hidden_ingredient_risks=[],
@@ -424,5 +513,7 @@ def analyze_meal_photo_structured(
     *,
     client: Any | None = None,
     model: str | None = None,
+    cache: VisionResultCache | None = None,
 ) -> VisionAnalysisResponse:
-    return ClaudeVisionClient(client=client, model=model).analyze_meal_photo_structured(image)
+    vision_client = ClaudeVisionClient(client=client, model=model, cache=cache)
+    return vision_client.analyze_meal_photo_structured(image)
