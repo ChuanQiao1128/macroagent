@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from services.nutrition.src import food_data as food_data_module
 from services.nutrition import (
     MacroEntry,
     find_macro_entry,
@@ -11,6 +12,7 @@ from services.nutrition import (
     load_all_macro_entries,
     load_macro_entries,
     load_personal_macro_entries,
+    match_food_candidates,
     match_food_name,
 )
 
@@ -214,3 +216,139 @@ def test_match_food_name_supports_fuzzy_typo_match() -> None:
 def test_match_food_name_applies_min_score_threshold() -> None:
     assert match_food_name("brocoli", min_score=0.7, limit=3)
     assert match_food_name("brocoli", min_score=0.8, limit=3) == ()
+
+
+def test_match_food_candidates_personal_high_score_tie_gets_priority_bonus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    usda_entry = MacroEntry.model_validate(
+        {
+            "id": "usda_test_0001",
+            "name": "banana standard",
+            "aliases": [],
+            "category": "fruit",
+            "source": "USDA",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    personal_entry = MacroEntry.model_validate(
+        {
+            "id": "personal_test_0001",
+            "name": "banana personal",
+            "aliases": [],
+            "category": "fruit",
+            "source": "PERSONAL",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    monkeypatch.setattr(
+        food_data_module,
+        "_load_all_entries",
+        lambda: (usda_entry, personal_entry),
+    )
+
+    matches = match_food_candidates([("banana", 0.93)], limit=2, min_score=0.6)
+
+    assert len(matches) == 2
+    assert matches[0].entry.id == "personal_test_0001"
+    assert matches[0].entry.source == "PERSONAL"
+    assert matches[0].score == pytest.approx(matches[1].score)
+    assert "personal priority bonus +0.015 applied" in matches[0].reason
+
+
+def test_match_food_candidates_personal_state_conflict_loses_to_usda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    usda_entry = MacroEntry.model_validate(
+        {
+            "id": "usda_test_0002",
+            "name": "Chicken breast, grilled",
+            "aliases": ["chicken breast"],
+            "category": "chicken",
+            "source": "USDA",
+            "kcal_per_100g": 170,
+            "protein_g_per_100g": 31.0,
+            "carbs_g_per_100g": 0.0,
+            "fat_g_per_100g": 4.0,
+        }
+    )
+    personal_entry = MacroEntry.model_validate(
+        {
+            "id": "personal_test_0002",
+            "name": "Chicken breast, fried",
+            "aliases": ["chicken breast"],
+            "category": "chicken",
+            "source": "PERSONAL",
+            "kcal_per_100g": 230,
+            "protein_g_per_100g": 28.0,
+            "carbs_g_per_100g": 4.0,
+            "fat_g_per_100g": 12.0,
+        }
+    )
+    monkeypatch.setattr(
+        food_data_module,
+        "_load_all_entries",
+        lambda: (usda_entry, personal_entry),
+    )
+
+    matches = match_food_candidates(
+        [("chicken breast", 0.95)],
+        state_hints=[("grilled", 0.95)],
+        limit=2,
+        min_score=0.6,
+    )
+
+    assert len(matches) == 2
+    assert matches[0].entry.id == "usda_test_0002"
+    assert matches[0].entry.source == "USDA"
+    assert matches[1].entry.id == "personal_test_0002"
+    assert "state conflict:" in matches[1].reason
+    assert "personal priority bonus skipped (state conflict)" in matches[1].reason
+
+
+def test_match_food_candidates_falls_back_to_later_top_k_vision_candidate() -> None:
+    matches = match_food_candidates(
+        [("mystery foam", 0.98), ("banana", 0.62)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert matches
+    assert matches[0].entry.id == "personal_seed_0012"
+    assert matches[0].matched_on == "banana"
+    assert "matched via vision candidate 'banana' (confidence=0.62)" in matches[0].reason
+
+
+def test_match_food_candidates_reason_includes_state_and_candidate_trace() -> None:
+    matches = match_food_candidates(
+        [("chicken breast", 0.90)],
+        state_hints=[("grilled", 0.92)],
+        limit=3,
+        min_score=0.6,
+    )
+
+    assert matches
+    reason = matches[0].reason
+    assert "matched via vision candidate 'chicken breast' (confidence=0.90)" in reason
+    assert "state hints observed: grilled" in reason
+    assert (
+        "state aligned on " in reason
+        or "state conflict:" in reason
+        or "no state adjustment" in reason
+    )
+
+
+def test_match_food_name_legacy_behavior_does_not_include_state_aware_reason_trace() -> None:
+    matches = match_food_name("banana", limit=2, min_score=0.6)
+
+    assert len(matches) == 2
+    assert matches[0].entry.id == "personal_seed_0012"
+    assert matches[0].match_type == "exact_alias"
+    assert "matched via vision candidate" not in matches[0].reason
+    assert "state hints observed:" not in matches[0].reason

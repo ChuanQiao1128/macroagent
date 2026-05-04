@@ -4,7 +4,13 @@ import pytest
 from pydantic import ValidationError
 
 from services.meal import analyze_meal_components, estimate_meal_from_components
-from services.vision import FoodComponent
+from services.vision import (
+    FoodCandidate,
+    FoodComponent,
+    PortionEstimate,
+    StructuredFoodComponent,
+    VisionAnalysisResponse,
+)
 
 
 def test_analyze_meal_components_returns_matched_component_with_trace_fields() -> None:
@@ -144,3 +150,44 @@ def test_estimate_meal_from_components_alias_matches_primary_and_returns_immutab
 
     with pytest.raises(ValidationError):
         alias.component_estimates[0].status = "unmatched"
+
+
+def test_analyze_meal_components_uses_top_k_vision_candidate_fallback_with_reason_trace() -> None:
+    response = VisionAnalysisResponse(
+        components=[
+            StructuredFoodComponent(
+                component_id="comp-1",
+                visible_name="mystery bowl",
+                candidates=[
+                    FoodCandidate(
+                        name="mystery foam",
+                        confidence=0.95,
+                        visual_evidence=["blurry texture"],
+                    ),
+                    FoodCandidate(
+                        name="banana",
+                        confidence=0.72,
+                        visual_evidence=["yellow fruit"],
+                    ),
+                ],
+                portion=PortionEstimate(
+                    description="100 g",
+                    confidence=0.81,
+                    visual_basis=["plate size"],
+                ),
+            )
+        ]
+    )
+
+    meal = analyze_meal_components(response, candidate_limit=2)
+
+    assert meal.matched_component_count == 1
+    assert meal.unmatched_component_count == 0
+    component = meal.component_estimates[0]
+
+    assert component.component_name == "mystery foam"
+    assert component.status == "matched"
+    assert component.selected_macro_entry_id == "personal_seed_0012"
+    assert len(component.top_candidates) == 2
+    assert component.top_candidates[0].matched_on == "banana"
+    assert "matched via vision candidate 'banana' (confidence=0.72)" in component.top_candidates[0].reason
