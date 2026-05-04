@@ -7,6 +7,7 @@ import pytest
 
 from services.meal import analyze_meal_components
 from services.storage import (
+    build_portion_correction_prior_resolver,
     fetch_meal_by_id,
     fetch_portion_correction_by_id,
     fetch_portion_correction_priors,
@@ -220,6 +221,44 @@ def test_fetch_portion_correction_priors_falls_back_to_normalized_component_when
     assert priors.applied_prior.reference == "fried rice"
     assert priors.applied_prior.sample_count == 3
     assert priors.applied_prior.grams_p50 == pytest.approx(120.0)
+
+
+def test_sqlite_portion_prior_resolver_applies_persisted_prior_to_future_estimate(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    for grams in (180.0, 200.0, 220.0):
+        insert_portion_correction(
+            db_path,
+            component_name="white rice",
+            selected_macro_entry_id="usda_seed_0001",
+            selected_macro_entry_source="USDA",
+            original_portion_grams_p10=90.0,
+            original_portion_grams_p50=100.0,
+            original_portion_grams_p90=110.0,
+            corrected_grams=grams,
+        )
+
+    resolver = build_portion_correction_prior_resolver(db_path, minimum_samples=3)
+    meal = analyze_meal_components(
+        [FoodComponent(name="white rice", confidence=0.91, portion_hint="100 g")],
+        correction_prior_resolver=resolver,
+        correction_prior_minimum_samples=3,
+    )
+
+    component = meal.component_estimates[0]
+    assert component.portion_range.grams_p10 == 190.0
+    assert component.portion_range.grams_p50 == pytest.approx(200.0)
+    assert component.portion_range.grams_p90 == 210.0
+    assert component.applied_portion_prior is not None
+    assert component.applied_portion_prior.strategy == "macro_entry"
+    assert component.applied_portion_prior.reference == "USDA:usda_seed_0001"
+    assert component.applied_portion_prior.sample_count == 3
+    assert component.applied_portion_prior.prior_grams_p50 == pytest.approx(200.0)
+    assert component.applied_portion_prior.original_grams_p50 == 100.0
+    assert component.applied_portion_prior.applied_grams_p50 == pytest.approx(200.0)
 
 
 def test_fetch_portion_correction_priors_no_applied_prior_before_threshold(

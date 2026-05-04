@@ -18,6 +18,7 @@ from services.storage import (
     fetch_meal_by_id,
     initialize_sqlite_ledger,
     insert_meal_estimate,
+    insert_portion_correction,
 )
 from services.vision import FoodComponent
 
@@ -372,13 +373,15 @@ def test_export_ledger_backup_empty_db_has_metadata_and_no_meals(tmp_path: Path)
     payload = export_ledger_backup(db_path)
 
     assert payload["format"] == "macroagent.sqlite_ledger_backup"
-    assert payload["export_schema_version"] == 1
-    assert payload["ledger_schema_version"] == 1
+    assert payload["export_schema_version"] == 2
+    assert payload["ledger_schema_version"] == 2
+    assert payload["portion_correction_count"] == 0
+    assert payload["portion_corrections"] == []
     assert payload["meal_count"] == 0
     assert payload["meals"] == []
-    assert payload["schema_migrations"] == [
-        {"version": 1, "applied_at": payload["schema_migrations"][0]["applied_at"]}
-    ]
+    migrations = payload["schema_migrations"]
+    assert [migration["version"] for migration in migrations] == [1, 2]
+    assert all(isinstance(migration["applied_at"], str) for migration in migrations)
 
 
 def test_export_ledger_backup_populated_includes_meals_components_and_traces(
@@ -405,6 +408,8 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
 
     payload = export_ledger_backup(db_path)
 
+    assert payload["portion_correction_count"] == 0
+    assert payload["portion_corrections"] == []
     assert payload["meal_count"] == 1
     meals = payload["meals"]
     assert isinstance(meals, list)
@@ -478,6 +483,51 @@ def test_export_ledger_backup_populated_includes_meals_components_and_traces(
     assert unmatched_component["macro_best_estimate"] is None
     assert unmatched_component["source_trace"] is None
     assert unmatched_component["selected_macro_entry"] is None
+
+
+def test_export_ledger_backup_includes_portion_corrections(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.sqlite3"
+    initialize_sqlite_ledger(db_path)
+
+    insert_portion_correction(
+        db_path,
+        correction_id="corr-002",
+        component_name="white rice",
+        selected_macro_entry_id="usda_seed_0001",
+        selected_macro_entry_source="USDA",
+        original_portion_grams_p10=90.0,
+        original_portion_grams_p50=100.0,
+        original_portion_grams_p90=110.0,
+        corrected_grams=210.0,
+        note="full bowl",
+        created_at="2026-05-04T10:00:00+12:00",
+    )
+    insert_portion_correction(
+        db_path,
+        correction_id="corr-001",
+        component_name="white rice",
+        original_portion_grams_p10=90.0,
+        original_portion_grams_p50=100.0,
+        original_portion_grams_p90=110.0,
+        corrected_serving_label="1 cup",
+        created_at="2026-05-04T09:00:00+12:00",
+    )
+
+    payload = export_ledger_backup(db_path)
+
+    assert payload["portion_correction_count"] == 2
+    corrections = payload["portion_corrections"]
+    assert isinstance(corrections, list)
+    assert [row["correction_id"] for row in corrections] == ["corr-001", "corr-002"]
+    assert corrections[0]["component_name_normalized"] == "white rice"
+    assert corrections[0]["selected_macro_entry_id"] is None
+    assert corrections[0]["selected_macro_entry_source"] is None
+    assert corrections[0]["corrected_serving_label"] == "1 cup"
+    assert corrections[0]["corrected_grams_p50"] == pytest.approx(190.0)
+    assert corrections[1]["selected_macro_entry_id"] == "usda_seed_0001"
+    assert corrections[1]["selected_macro_entry_source"] == "USDA"
+    assert corrections[1]["corrected_grams"] == pytest.approx(210.0)
+    assert corrections[1]["note"] == "full bowl"
 
 
 def test_export_ledger_backup_is_deterministic_and_sorted(tmp_path: Path) -> None:

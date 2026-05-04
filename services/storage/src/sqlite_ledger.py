@@ -20,7 +20,14 @@ from services.accounting import (
     calculate_macro_best_estimate,
     calculate_meal_macro_best_estimate,
 )
-from services.meal import MealComponentEstimate, MealEstimate
+from services.meal import (
+    MealComponentEstimate,
+    MealEstimate,
+    PortionPriorResolver,
+)
+from services.meal import (
+    PortionCorrectionPrior as MealPortionCorrectionPrior,
+)
 from services.nutrition import parse_portion_range
 
 
@@ -224,7 +231,7 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
-_EXPORT_SCHEMA_VERSION = 1
+_EXPORT_SCHEMA_VERSION = 2
 _BASE_SCHEMA_VERSION = _MIGRATIONS[0].version if _MIGRATIONS else 0
 _LATEST_SCHEMA_VERSION = _MIGRATIONS[-1].version if _MIGRATIONS else 0
 
@@ -563,6 +570,42 @@ def fetch_portion_correction_priors(
     )
 
 
+def build_portion_correction_prior_resolver(
+    database_path: str | Path,
+    *,
+    minimum_samples: int = 3,
+) -> PortionPriorResolver:
+    """Build a SQLite-backed portion prior resolver for meal analysis."""
+    if minimum_samples <= 0:
+        raise ValueError("minimum_samples must be greater than 0")
+
+    normalized_db_path = _normalize_database_path(database_path)
+
+    def _resolve(
+        component_name: str,
+        selected_macro_entry_id: str | None,
+        selected_macro_entry_source: Literal["USDA", "PERSONAL"] | None,
+    ) -> MealPortionCorrectionPrior | None:
+        priors = fetch_portion_correction_priors(
+            normalized_db_path,
+            component_name=component_name,
+            selected_macro_entry_id=selected_macro_entry_id,
+            selected_macro_entry_source=selected_macro_entry_source,
+            minimum_samples=minimum_samples,
+        )
+        applied_prior = priors.applied_prior
+        if applied_prior is None:
+            return None
+        return MealPortionCorrectionPrior(
+            strategy=applied_prior.strategy,
+            reference=applied_prior.reference,
+            sample_count=applied_prior.sample_count,
+            grams_p50=applied_prior.grams_p50,
+        )
+
+    return _resolve
+
+
 def fetch_meal_by_id(database_path: str | Path, meal_id: str) -> StoredMealEstimate | None:
     """Return one persisted meal by id, or None when it does not exist."""
     with _connect(_normalize_database_path(database_path)) as connection:
@@ -683,7 +726,7 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
     restore API until atomic restore semantics are defined and tested.
     """
     with _connect(_normalize_database_path(database_path)) as connection:
-        _apply_migrations(connection, target_version=_BASE_SCHEMA_VERSION)
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
         schema_rows = connection.execute(
             """
             SELECT version, applied_at
@@ -764,6 +807,26 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
             ORDER BY meal_id ASC, component_index ASC
             """
         ).fetchall()
+        correction_rows = connection.execute(
+            """
+            SELECT
+                correction_id,
+                created_at,
+                component_name,
+                component_name_normalized,
+                selected_macro_entry_id,
+                selected_macro_entry_source,
+                original_portion_grams_p10,
+                original_portion_grams_p50,
+                original_portion_grams_p90,
+                corrected_grams,
+                corrected_serving_label,
+                corrected_grams_p50,
+                note
+            FROM portion_corrections
+            ORDER BY created_at ASC, correction_id ASC
+            """
+        ).fetchall()
 
     ledger_schema_version = max((int(row["version"]) for row in schema_rows), default=0)
 
@@ -782,6 +845,11 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
             )
         )
 
+    portion_corrections_payload = [
+        _build_portion_correction_record(row).model_dump(mode="json")
+        for row in correction_rows
+    ]
+
     return {
         "format": _EXPORT_FORMAT,
         "export_schema_version": _EXPORT_SCHEMA_VERSION,
@@ -793,6 +861,8 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
             }
             for row in schema_rows
         ],
+        "portion_correction_count": len(portion_corrections_payload),
+        "portion_corrections": portion_corrections_payload,
         "meal_count": len(meals_payload),
         "meals": meals_payload,
     }
@@ -1300,6 +1370,7 @@ __all__ = [
     "PortionCorrectionPriors",
     "PortionCorrectionRecord",
     "StoredMealEstimate",
+    "build_portion_correction_prior_resolver",
     "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
