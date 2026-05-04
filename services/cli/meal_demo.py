@@ -11,6 +11,7 @@ from typing import TextIO
 from pydantic import ValidationError
 
 from services.accounting import calculate_meal_macro_best_estimate
+from services.explainer import build_meal_result_explanation
 from services.meal import analyze_meal_components
 from services.storage import initialize_sqlite_ledger, insert_meal_estimate
 from services.vision import (
@@ -81,6 +82,10 @@ def run_meal_demo(
 
     meal_estimate = analyze_meal_components(components)
     best_estimates = calculate_meal_macro_best_estimate(meal_estimate.macro_interval)
+    result_explanation = build_meal_result_explanation(
+        meal_estimate=meal_estimate,
+        best_estimate=best_estimates,
+    )
 
     meal_id = str(uuid.uuid4())
     persisted = False
@@ -106,6 +111,7 @@ def run_meal_demo(
         ],
         "macro_ranges": meal_estimate.macro_interval.model_dump(mode="json"),
         "best_estimates": best_estimates.model_dump(mode="json"),
+        "result_explanation": result_explanation.model_dump(mode="json"),
         "uncertainty_signals": [
             signal.model_dump(mode="json") for signal in meal_estimate.uncertainty_signals
         ],
