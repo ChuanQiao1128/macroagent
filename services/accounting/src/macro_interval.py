@@ -80,6 +80,9 @@ class MacroRange(BaseModel):
             return value
 
         payload = dict(value)
+        explicit_percentiles = any(
+            key in payload and payload.get(key) is not None for key in ("p10", "p50", "p90")
+        )
         min_value = payload.get("min")
         max_value = payload.get("max")
         p10 = payload.get("p10")
@@ -99,6 +102,8 @@ class MacroRange(BaseModel):
         p90 = payload.get("p90")
         if p50 is None and p10 is not None and p90 is not None:
             payload["p50"] = _round_to_tenth((float(p10) + float(p90)) / 2.0)
+        if "percentiles_available" not in payload:
+            payload["percentiles_available"] = explicit_percentiles
 
         return payload
 
@@ -129,6 +134,41 @@ class MacroSourceTrace(BaseModel):
     grams_p50: float = Field(..., ge=0)
     grams_p90: float = Field(..., ge=0)
     percentiles_available: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hydrate_bounds_and_percentiles(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        payload = dict(value)
+        explicit_percentiles = any(
+            key in payload and payload.get(key) is not None
+            for key in ("grams_p10", "grams_p50", "grams_p90")
+        )
+        grams_min = payload.get("grams_min")
+        grams_max = payload.get("grams_max")
+        grams_p10 = payload.get("grams_p10")
+        grams_p50 = payload.get("grams_p50")
+        grams_p90 = payload.get("grams_p90")
+
+        if grams_p10 is None and grams_min is not None:
+            payload["grams_p10"] = grams_min
+        if grams_p90 is None and grams_max is not None:
+            payload["grams_p90"] = grams_max
+        if grams_min is None and grams_p10 is not None:
+            payload["grams_min"] = grams_p10
+        if grams_max is None and grams_p90 is not None:
+            payload["grams_max"] = grams_p90
+
+        grams_p10 = payload.get("grams_p10")
+        grams_p90 = payload.get("grams_p90")
+        if grams_p50 is None and grams_p10 is not None and grams_p90 is not None:
+            payload["grams_p50"] = _round_to_tenth((float(grams_p10) + float(grams_p90)) / 2.0)
+        if "percentiles_available" not in payload:
+            payload["percentiles_available"] = explicit_percentiles
+
+        return payload
 
     @model_validator(mode="after")
     def _validate_bounds(self) -> MacroSourceTrace:
