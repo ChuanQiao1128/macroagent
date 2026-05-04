@@ -312,6 +312,109 @@ def test_match_food_candidates_personal_state_conflict_loses_to_usda(
     assert "personal priority bonus skipped (state conflict)" in matches[1].reason
 
 
+@pytest.mark.parametrize(
+    ("personal_name", "personal_aliases"),
+    (
+        ("banana low confidence tracker", ["banana"]),
+        ("banana archived tracker", ["banana"]),
+    ),
+)
+def test_match_food_candidates_personal_low_confidence_or_stale_skips_priority_bonus(
+    monkeypatch: pytest.MonkeyPatch,
+    personal_name: str,
+    personal_aliases: list[str],
+) -> None:
+    usda_entry = MacroEntry.model_validate(
+        {
+            "id": "a_usda_test_0003",
+            "name": "banana usda tracker",
+            "aliases": ["banana"],
+            "category": "fruit",
+            "source": "USDA",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    personal_entry = MacroEntry.model_validate(
+        {
+            "id": "z_personal_test_0003",
+            "name": personal_name,
+            "aliases": personal_aliases,
+            "category": "fruit",
+            "source": "PERSONAL",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    monkeypatch.setattr(
+        food_data_module,
+        "_load_all_entries",
+        lambda: (usda_entry, personal_entry),
+    )
+
+    matches = match_food_candidates([("banana", 0.95)], limit=2, min_score=0.6)
+
+    assert len(matches) == 2
+    assert matches[0].entry.id == "a_usda_test_0003"
+    assert matches[1].entry.id == "z_personal_test_0003"
+    assert matches[1].match_type == "exact_alias"
+    assert matches[1].score == pytest.approx(0.99)
+    assert "personal priority bonus skipped (entry marked low confidence or stale)" in matches[
+        1
+    ].reason
+    assert "personal priority bonus +0.015 applied" not in matches[1].reason
+
+
+def test_match_food_candidates_personal_low_text_score_skips_priority_bonus(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    usda_entry = MacroEntry.model_validate(
+        {
+            "id": "a_usda_test_0004",
+            "name": "banana usda tracker",
+            "aliases": [],
+            "category": "fruit",
+            "source": "USDA",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    personal_entry = MacroEntry.model_validate(
+        {
+            "id": "z_personal_test_0004",
+            "name": "banana personal tracker",
+            "aliases": [],
+            "category": "fruit",
+            "source": "PERSONAL",
+            "kcal_per_100g": 89,
+            "protein_g_per_100g": 1.1,
+            "carbs_g_per_100g": 22.8,
+            "fat_g_per_100g": 0.3,
+        }
+    )
+    monkeypatch.setattr(
+        food_data_module,
+        "_load_all_entries",
+        lambda: (usda_entry, personal_entry),
+    )
+
+    matches = match_food_candidates([("banana", 0.91)], limit=2, min_score=0.6)
+
+    assert len(matches) == 2
+    assert matches[0].entry.id == "a_usda_test_0004"
+    assert matches[1].entry.id == "z_personal_test_0004"
+    assert matches[1].match_type == "token_containment"
+    assert matches[1].score == pytest.approx(0.8333333333, abs=1e-10)
+    assert "personal priority bonus skipped (text score 0.833 below 0.86)" in matches[1].reason
+    assert "personal priority bonus +0.015 applied" not in matches[1].reason
+
+
 def test_match_food_candidates_falls_back_to_later_top_k_vision_candidate() -> None:
     matches = match_food_candidates(
         [("mystery foam", 0.98), ("banana", 0.62)],
