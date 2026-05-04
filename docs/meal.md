@@ -26,7 +26,7 @@
   - preserves source component ids and names
   - preserves top-k candidates, visual evidence, state hints, hidden ingredient risks, and meal uncertainty flags
 - For each component, `parse_portion_range()` converts `portion_hint` into a conservative `PortionGramRange`.
-- `match_food_name()` ranks local USDA and personal catalog entries.
+- `match_food_candidates()` ranks local USDA and personal catalog entries across top-k vision candidates and state hints.
 - The top `candidate_limit` matches are retained in `top_candidates`.
 - The highest-ranked candidate is selected only when its score meets `confident_match_score`.
 - Matched components are converted to `FoodMacroInterval` with `calculate_food_macro_interval()`.
@@ -61,6 +61,7 @@ Each `ComponentMatchCandidate` records:
 - `score`
 - `matched_on`
 - `match_type`
+- `reason`
 
 `MealEstimate` includes:
 
@@ -71,7 +72,7 @@ Each `ComponentMatchCandidate` records:
 
 ## Notes
 
-- The local matcher prefers `PERSONAL` entries over `USDA` entries when scores are tied.
+- The local matcher gives `PERSONAL` entries a small priority bonus only when the text match is strong, the entry is not marked low confidence or stale, and state/preparation hints do not conflict.
 - The pipeline is deterministic and local; it does not call Claude, OpenAI, or any network service.
 - For an end-to-end local demo that includes vision analysis and SQLite persistence, see [docs/cli.md](cli.md).
 

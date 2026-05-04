@@ -13,9 +13,15 @@ from pydantic import ValidationError
 from services.accounting import calculate_meal_macro_best_estimate
 from services.meal import analyze_meal_components
 from services.storage import initialize_sqlite_ledger, insert_meal_estimate
-from services.vision import FoodComponent, JsonFileVisionCache, analyze_meal_photo
+from services.vision import (
+    FoodComponent,
+    JsonFileVisionCache,
+    VisionAnalysisResponse,
+    analyze_meal_photo_structured,
+)
 
-VisionAnalyzeFn = Callable[[Path, Path | None], list[FoodComponent]]
+VisionAnalysisInput = list[FoodComponent] | VisionAnalysisResponse
+VisionAnalyzeFn = Callable[[Path, Path | None], VisionAnalysisInput]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -143,13 +149,24 @@ def _validate_image_path(path: str | Path) -> Path:
 def _analyze_with_claude_vision(
     image_path: Path,
     cache_path: Path | None,
-) -> list[FoodComponent]:
+) -> VisionAnalysisResponse:
     cache = JsonFileVisionCache(cache_path) if cache_path is not None else None
-    return analyze_meal_photo(str(image_path), cache=cache)
+    return analyze_meal_photo_structured(str(image_path), cache=cache)
 
 
-def _load_components_from_path(path: str | Path) -> list[FoodComponent]:
+def _load_components_from_path(path: str | Path) -> VisionAnalysisInput:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        try:
+            return VisionAnalysisResponse.model_validate(payload)
+        except ValidationError:
+            payload = payload.get("components")
+    elif isinstance(payload, list):
+        try:
+            return VisionAnalysisResponse.model_validate({"components": payload})
+        except ValidationError:
+            pass
+
     if isinstance(payload, dict):
         payload = payload.get("components")
     if not isinstance(payload, list):

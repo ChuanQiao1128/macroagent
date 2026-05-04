@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from services.nutrition.src import food_data as food_data_module
 from services.nutrition import (
     MacroEntry,
     find_macro_entry,
@@ -15,6 +14,7 @@ from services.nutrition import (
     match_food_candidates,
     match_food_name,
 )
+from services.nutrition.src import food_data as food_data_module
 
 REQUIRED_CATEGORIES = {
     "rice",

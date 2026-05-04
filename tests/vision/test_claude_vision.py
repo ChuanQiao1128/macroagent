@@ -14,6 +14,7 @@ from services.vision import (
     ClaudeVisionClient,
     FoodComponent,
     JsonFileVisionCache,
+    StateHint,
     VisionParseError,
     analyze_meal_photo,
 )
@@ -379,6 +380,17 @@ def test_analyze_meal_photo_structured_parses_full_uncertainty_response() -> Non
     assert component.portion.description == "about one cup"
     assert component.state_hints[0].state == "sauced"
     assert component.hidden_ingredient_risks[0].ingredient == "added sugar in sauce"
+
+
+def test_state_hint_accepts_boiled_state() -> None:
+    hint = StateHint(
+        state="boiled",
+        confidence=0.9,
+        visual_evidence=["submerged in water-based broth"],
+    )
+
+    assert hint.state == "boiled"
+    assert hint.confidence == 0.9
 
 
 def test_default_analyzer_maps_structured_response_to_legacy_food_components() -> None:

@@ -94,7 +94,7 @@ class PortionEstimate(BaseModel):
 class StateHint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    state: Literal["cooked", "raw", "fried", "grilled", "plain", "sauced"]
+    state: Literal["cooked", "raw", "fried", "grilled", "boiled", "plain", "sauced"]
     confidence: float = Field(..., ge=0.0, le=1.0)
     visual_evidence: list[str] = Field(default_factory=list)
 
