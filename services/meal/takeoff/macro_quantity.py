@@ -151,7 +151,7 @@ def compute_component_macros(
     multiplier_best = quantity_model.quantity_best / 100.0
     multiplier_max = quantity_model.quantity_max / 100.0
 
-    if distribution_shape is None:
+    if distribution_shape in (None, "unknown"):
         distribution_shape = quantity_model.distribution_shape
     final_skew_hint = skew_hint if skew_hint is not None else quantity_model.skew_hint
 
