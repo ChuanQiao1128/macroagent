@@ -72,6 +72,21 @@ def test_log_anyway_writes_low_confidence_with_user_acceptance_flag() -> None:
     assert payload["user_accepted_wide_range"] is True
 
 
+def test_clarify_decline_reason_without_log_anyway_does_not_write_ledger() -> None:
+    result = apply_ledger_gate(
+        kcal_min=60.0,
+        kcal_best=100.0,
+        kcal_max=130.0,
+        log_anyway=False,
+        user_decline_clarify_reason="need_fast_logging",
+    )
+
+    assert result.decision == "CLARIFY"
+    assert result.should_write_ledger is False
+    assert result.user_accepted_wide_range is False
+    assert result.user_decline_clarify_reason == "need_fast_logging"
+
+
 def test_contract_violation_is_block_and_never_writes() -> None:
     result = apply_ledger_gate(
         kcal_min=80.0,
@@ -86,3 +101,14 @@ def test_contract_violation_is_block_and_never_writes() -> None:
     assert result.should_write_ledger is False
     assert result.confidence_label == "low"
 
+
+def test_invalid_interval_contract_is_block_without_explicit_flag() -> None:
+    result = apply_ledger_gate(
+        kcal_min=120.0,
+        kcal_best=100.0,
+        kcal_max=130.0,
+    )
+
+    assert result.decision == "BLOCK"
+    assert result.decision_reason == "contract_violation"
+    assert result.should_write_ledger is False
