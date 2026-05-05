@@ -28,10 +28,13 @@ class LedgerGateResult(StrictModel):
 
     @model_validator(mode="after")
     def _validate_decline_reason_pairing(self) -> LedgerGateResult:
-        if self.user_decline_clarify_reason and self.user_accepted_wide_range is not False:
-            raise ValueError(
-                "user_decline_clarify_reason requires user_accepted_wide_range=False"
-            )
+        if self.user_decline_clarify_reason:
+            if self.decision != "CLARIFY":
+                raise ValueError("user_decline_clarify_reason is only valid for CLARIFY")
+            if self.user_accepted_wide_range is None:
+                raise ValueError(
+                    "user_decline_clarify_reason requires explicit user acceptance state"
+                )
         return self
 
 
@@ -122,6 +125,7 @@ def apply_ledger_gate(
             should_write_ledger=True,
             confidence_label="low",
             user_accepted_wide_range=True,
+            user_decline_clarify_reason=user_decline_clarify_reason,
             policy_refs=[f"{Path(policy_path).name}#range_decision"],
         )
 
