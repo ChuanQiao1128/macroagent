@@ -50,6 +50,8 @@ Web is still useful, but mainly for internal QA:
 Create strict Pydantic schemas for iOS capture metadata and photo analysis
 requests/responses. This is the stable contract between the phone app and backend.
 
+Status: verified in `services/capture/src/schemas.py` and `tests/capture/test_photo_capture_contract.py`.
+
 Expected output:
 
 - no raw image bytes or base64 in traceable request models;
