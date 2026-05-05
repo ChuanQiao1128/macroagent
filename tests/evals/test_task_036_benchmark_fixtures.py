@@ -6,8 +6,10 @@ import pytest
 
 from services.cli.benchmark_report import generate_benchmark_report
 from services.meal import (
+    V0_3_BENCHMARK_FIXTURES,
     V0_3_REQUIRED_FIXTURE_IDS,
     build_fixture_group_index,
+    generate_executable_fixture_results,
     load_fixture_results_jsonl,
 )
 
@@ -45,6 +47,11 @@ def fixture_rows() -> list[dict[str, object]]:
         f"Missing TASK-036 fixture results: {FIXTURE_RESULTS_PATH}"
     )
     return load_fixture_results_jsonl(FIXTURE_RESULTS_PATH)
+
+
+@pytest.fixture(scope="module")
+def executable_rows() -> list[dict[str, object]]:
+    return generate_executable_fixture_results()
 
 
 def test_task_036_fixture_results_cover_all_required_fixture_ids(
@@ -98,6 +105,66 @@ def test_task_036_fixture_catalog_covers_required_v0_3_gate_fixtures() -> None:
     assert set(V0_3_REQUIRED_FIXTURE_IDS) == expected_ids
 
 
+def test_task_036_fixtures_are_executable_gate_cases(
+    executable_rows: list[dict[str, object]],
+) -> None:
+    by_id = {row["fixture_id"]: row for row in executable_rows}
+
+    assert by_id["plate_visible_unknown_size"]["decision"] == "CLARIFY"
+    assert by_id["plate_visible_unknown_size"]["clarify_trigger_cause"] == "missing_scale"
+
+    assert by_id["dry_rice_incorrectly_used_for_cooked_rice"]["decision"] == "CLARIFY"
+    assert (
+        by_id["dry_rice_incorrectly_used_for_cooked_rice"]["clarify_trigger_cause"]
+        == "density_outlier"
+    )
+
+    assert by_id["incompatible_macro_values_conflict"]["decision"] == "CLARIFY"
+    assert (
+        by_id["incompatible_macro_values_conflict"]["clarify_trigger_cause"]
+        == "macro_conflict"
+    )
+
+    assert by_id["llm_raw_macro_blocks"]["decision"] == "BLOCK"
+    assert by_id["llm_raw_macro_blocks"]["high_conflict"] is True
+
+    for fixture in V0_3_BENCHMARK_FIXTURES:
+        assert fixture.case, f"{fixture.fixture_id} must carry executable gate inputs"
+        if fixture.gate == "scale_evidence":
+            assert {"kcal_min", "kcal_best", "kcal_max"} <= set(fixture.case)
+        elif fixture.gate == "energy_density":
+            assert {"components", "meal"} <= set(fixture.case)
+        elif fixture.gate == "evidence_arbitration":
+            assert "claims" in fixture.case
+
+
+def test_task_036_canonical_rows_match_executable_fixture_outcomes(
+    fixture_rows: list[dict[str, object]],
+    executable_rows: list[dict[str, object]],
+) -> None:
+    canonical_by_id = {row["fixture_id"]: row for row in fixture_rows}
+
+    for executable in executable_rows:
+        fixture_id = executable["fixture_id"]
+        canonical = canonical_by_id[fixture_id]
+
+        assert canonical["decision"] == executable["decision"]
+        assert canonical["high_conflict"] == executable["high_conflict"]
+        assert (
+            canonical["user_accepted_wide_range"]
+            == executable["user_accepted_wide_range"]
+        )
+        assert canonical["correction_within_range"] == executable["correction_within_range"]
+        assert canonical["relative_range_width"] == pytest.approx(
+            executable["relative_range_width"]
+        )
+        if executable["decision"] == "CLARIFY":
+            assert (
+                canonical["clarify_trigger_cause"]
+                == executable["clarify_trigger_cause"]
+            )
+
+
 def test_task_036_benchmark_report_separates_segments_and_measures_conflict_rates() -> None:
     report = generate_benchmark_report(FIXTURE_RESULTS_PATH)
 
@@ -122,7 +189,17 @@ def test_task_036_benchmark_report_emits_clarify_trigger_distribution() -> None:
     assert distribution["overall"]["rows"] == 16
     assert distribution["overall"]["triggered"] == 3
     assert distribution["overall"]["trigger_rate"] == pytest.approx(3 / 16)
+    assert distribution["overall"]["by_cause"] == {
+        "density_outlier": 1,
+        "macro_conflict": 1,
+        "missing_scale": 1,
+    }
 
     assert distribution["friendly"]["triggered"] == 0
     assert distribution["regression"]["triggered"] == 3
+    assert distribution["regression"]["by_cause"] == {
+        "density_outlier": 1,
+        "macro_conflict": 1,
+        "missing_scale": 1,
+    }
     assert distribution["adversarial"]["triggered"] == 0

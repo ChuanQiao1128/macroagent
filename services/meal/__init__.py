@@ -4,7 +4,9 @@ from services.meal.src.benchmark_fixtures import (
     BenchmarkFixture,
     BenchmarkFixtureResult,
     build_fixture_group_index,
+    generate_executable_fixture_results,
     load_fixture_results_jsonl,
+    run_executable_fixture,
     summarize_benchmark_results,
 )
 from services.meal.src.component_mapping import (
@@ -55,7 +57,9 @@ __all__ = [
     "analyze_meal_components",
     "build_fixture_group_index",
     "estimate_meal_from_components",
+    "generate_executable_fixture_results",
     "load_fixture_results_jsonl",
     "normalize_meal_components",
+    "run_executable_fixture",
     "summarize_benchmark_results",
 ]

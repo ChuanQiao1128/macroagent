@@ -10,8 +10,13 @@ from typing import Any, Literal
 
 import yaml
 
+from services.meal.takeoff.energy_density import run_energy_density_checks
 from services.meal.takeoff.evidence_arbitration import arbitrate_evidence_claims
-from services.meal.takeoff.schemas import EvidenceClaim, MacroValueClaim
+from services.meal.takeoff.schemas import (
+    EvidenceClaim,
+    MacroValueClaim,
+    PortionQuantityClaim,
+)
 
 FixtureSegment = Literal["friendly", "regression", "adversarial"]
 FixtureFamily = Literal["scale_evidence", "cross_cultural", "barcode_label_stub"]
@@ -30,6 +35,7 @@ class BenchmarkFixture:
     gate: GateName
     segment: FixtureSegment
     groups: tuple[FixtureGroup, ...]
+    case: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +44,7 @@ class BenchmarkFixtureResult:
     segment: FixtureSegment | None
     decision: str | None
     clarify_triggered: bool
+    clarify_trigger_cause: str | None
     high_conflict: bool
     silent_high_conflict: bool
     row: Mapping[str, Any]
@@ -48,6 +55,7 @@ def _fixture(
     title: str,
     gate: GateName,
     segment: FixtureSegment,
+    case: Mapping[str, Any],
     *families: FixtureFamily,
 ) -> BenchmarkFixture:
     return BenchmarkFixture(
@@ -56,6 +64,87 @@ def _fixture(
         gate=gate,
         segment=segment,
         groups=(segment, *families),
+        case=case,
+    )
+
+
+def _scale_case(
+    *,
+    kcal_min: float,
+    kcal_best: float,
+    kcal_max: float,
+    correction_within_range: bool,
+    user_accepted_wide_range: bool = False,
+    high_conflict: bool = False,
+    contract_violation: bool = False,
+    clarify_trigger_cause: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "kcal_min": kcal_min,
+        "kcal_best": kcal_best,
+        "kcal_max": kcal_max,
+        "correction_within_range": correction_within_range,
+        "user_accepted_wide_range": user_accepted_wide_range,
+        "high_conflict": high_conflict,
+        "contract_violation": contract_violation,
+        "clarify_trigger_cause": clarify_trigger_cause,
+    }
+
+
+def _energy_density_case(
+    *,
+    components: Sequence[Mapping[str, Any]],
+    meal: Mapping[str, Any],
+    correction_within_range: bool,
+    relative_range_width: float,
+    user_accepted_wide_range: bool = False,
+    high_conflict: bool = False,
+    clarify_trigger_cause: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "components": tuple(dict(component) for component in components),
+        "meal": dict(meal),
+        "correction_within_range": correction_within_range,
+        "relative_range_width": relative_range_width,
+        "user_accepted_wide_range": user_accepted_wide_range,
+        "high_conflict": high_conflict,
+        "clarify_trigger_cause": clarify_trigger_cause,
+    }
+
+
+def _evidence_case(
+    *,
+    claims: Sequence[EvidenceClaim],
+    correction_within_range: bool,
+    relative_range_width: float,
+    user_accepted_wide_range: bool = False,
+    clarify_trigger_cause: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "claims": tuple(claims),
+        "correction_within_range": correction_within_range,
+        "relative_range_width": relative_range_width,
+        "user_accepted_wide_range": user_accepted_wide_range,
+        "clarify_trigger_cause": clarify_trigger_cause,
+    }
+
+
+def _claim(
+    claim_id: str,
+    payload: MacroValueClaim | PortionQuantityClaim,
+    *,
+    source_type: str = "vision",
+    confidence_label: str = "medium",
+    confidence_score: float = 0.60,
+) -> EvidenceClaim:
+    return EvidenceClaim(
+        claim_id=claim_id,
+        source_type=source_type,
+        confidence_label=confidence_label,
+        confidence_score=confidence_score,
+        evidence_refs=[f"evidence:{claim_id}"],
+        evidence_timestamp="2026-05-05T00:00:00Z",
+        payload=payload,
     )
 
 
@@ -65,6 +154,12 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "No reference with low impact meal",
         "scale_evidence",
         "friendly",
+        _scale_case(
+            kcal_min=91.0,
+            kcal_best=100.0,
+            kcal_max=109.0,
+            correction_within_range=True,
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -72,6 +167,13 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "No reference with high-impact bowl",
         "scale_evidence",
         "adversarial",
+        _scale_case(
+            kcal_min=72.0,
+            kcal_best=100.0,
+            kcal_max=128.0,
+            correction_within_range=False,
+            high_conflict=True,
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -79,6 +181,12 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Spoon visible near plate",
         "scale_evidence",
         "friendly",
+        _scale_case(
+            kcal_min=89.0,
+            kcal_best=100.0,
+            kcal_max=111.0,
+            correction_within_range=True,
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -86,6 +194,12 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Fork visible far from plate",
         "scale_evidence",
         "regression",
+        _scale_case(
+            kcal_min=72.0,
+            kcal_best=100.0,
+            kcal_max=128.0,
+            correction_within_range=True,
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -93,6 +207,12 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Saved bowl calibration detected",
         "scale_evidence",
         "friendly",
+        _scale_case(
+            kcal_min=90.0,
+            kcal_best=100.0,
+            kcal_max=110.0,
+            correction_within_range=True,
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -100,6 +220,12 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Barcode for packaged food",
         "scale_evidence",
         "friendly",
+        _scale_case(
+            kcal_min=80.0,
+            kcal_best=100.0,
+            kcal_max=120.0,
+            correction_within_range=True,
+        ),
         "scale_evidence",
         "barcode_label_stub",
     ),
@@ -108,6 +234,13 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Card-like object with PII should be rejected",
         "scale_evidence",
         "adversarial",
+        _scale_case(
+            kcal_min=81.0,
+            kcal_best=100.0,
+            kcal_max=119.0,
+            correction_within_range=True,
+            contract_violation=True,
+        ),
         "scale_evidence",
         "barcode_label_stub",
     ),
@@ -116,6 +249,13 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Plate visible with unknown physical size",
         "scale_evidence",
         "regression",
+        _scale_case(
+            kcal_min=64.0,
+            kcal_best=100.0,
+            kcal_max=136.0,
+            correction_within_range=False,
+            clarify_trigger_cause="missing_scale",
+        ),
         "scale_evidence",
     ),
     _fixture(
@@ -123,6 +263,24 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Cooked rice uses cooked density",
         "energy_density",
         "friendly",
+        _energy_density_case(
+            components=[
+                {
+                    "component_id": "component-rice",
+                    "category": "cooked_grain",
+                    "kcal_best": 130.0,
+                    "quantity_best": 100.0,
+                }
+            ],
+            meal={
+                "meal_id": "meal-cooked-rice",
+                "meal_type": "plated_meal",
+                "kcal_best": 130.0,
+                "quantity_best": 100.0,
+            },
+            correction_within_range=True,
+            relative_range_width=0.19,
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -130,6 +288,26 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Dry rice density incorrectly used for cooked rice",
         "energy_density",
         "regression",
+        _energy_density_case(
+            components=[
+                {
+                    "component_id": "component-rice",
+                    "category": "cooked_grain",
+                    "kcal_best": 320.0,
+                    "quantity_best": 100.0,
+                }
+            ],
+            meal={
+                "meal_id": "meal-dry-rice-error",
+                "meal_type": "plated_meal",
+                "kcal_best": 320.0,
+                "quantity_best": 100.0,
+            },
+            correction_within_range=False,
+            relative_range_width=0.67,
+            user_accepted_wide_range=True,
+            clarify_trigger_cause="density_outlier",
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -137,6 +315,24 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Sauce mapped to oil density policy",
         "energy_density",
         "regression",
+        _energy_density_case(
+            components=[
+                {
+                    "component_id": "component-sauce",
+                    "category": "oil_pure",
+                    "kcal_best": 700.0,
+                    "quantity_best": 100.0,
+                }
+            ],
+            meal={
+                "meal_id": "meal-oil-sauce",
+                "meal_type": "fried_meal",
+                "kcal_best": 500.0,
+                "quantity_best": 100.0,
+            },
+            correction_within_range=True,
+            relative_range_width=0.49,
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -144,6 +340,31 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Mixed bowl aggregate passes but a component fails",
         "energy_density",
         "adversarial",
+        _energy_density_case(
+            components=[
+                {
+                    "component_id": "component-rice",
+                    "category": "cooked_grain",
+                    "kcal_best": 210.0,
+                    "quantity_best": 100.0,
+                },
+                {
+                    "component_id": "component-chicken",
+                    "category": "lean_meat",
+                    "kcal_best": 170.0,
+                    "quantity_best": 100.0,
+                },
+            ],
+            meal={
+                "meal_id": "meal-mixed-component-fail",
+                "meal_type": "mixed_bowl",
+                "kcal_best": 640.0,
+                "quantity_best": 100.0,
+            },
+            correction_within_range=False,
+            relative_range_width=0.74,
+            high_conflict=True,
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -151,6 +372,38 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Compatible portion ranges merge",
         "evidence_arbitration",
         "friendly",
+        _evidence_case(
+            claims=[
+                _claim(
+                    "portion-vision",
+                    PortionQuantityClaim(
+                        claim_type="portion_quantity",
+                        component_id="component-rice",
+                        quantity_min=160.0,
+                        quantity_best=190.0,
+                        quantity_max=220.0,
+                        quantity_unit="g",
+                    ),
+                    source_type="vision",
+                    confidence_score=0.58,
+                ),
+                _claim(
+                    "portion-container",
+                    PortionQuantityClaim(
+                        claim_type="portion_quantity",
+                        component_id="component-rice",
+                        quantity_min=180.0,
+                        quantity_best=205.0,
+                        quantity_max=230.0,
+                        quantity_unit="g",
+                    ),
+                    source_type="personal_prior",
+                    confidence_score=0.75,
+                ),
+            ],
+            correction_within_range=True,
+            relative_range_width=0.28,
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -158,6 +411,33 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "Incompatible macro values conflict",
         "evidence_arbitration",
         "regression",
+        _evidence_case(
+            claims=[
+                _claim(
+                    "macro-database",
+                    MacroValueClaim(
+                        claim_type="macro_value",
+                        component_id="component-rice",
+                        kcal=100.0,
+                        value_basis="database_source",
+                    ),
+                    source_type="nutrition_database",
+                ),
+                _claim(
+                    "macro-recompute",
+                    MacroValueClaim(
+                        claim_type="macro_value",
+                        component_id="component-rice",
+                        kcal=170.0,
+                        value_basis="deterministic_recompute",
+                    ),
+                    source_type="deterministic_calculator",
+                ),
+            ],
+            correction_within_range=False,
+            relative_range_width=0.63,
+            clarify_trigger_cause="macro_conflict",
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -165,6 +445,39 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "User correction beats default prior",
         "evidence_arbitration",
         "friendly",
+        _evidence_case(
+            claims=[
+                _claim(
+                    "portion-user-correction",
+                    PortionQuantityClaim(
+                        claim_type="portion_quantity",
+                        component_id="component-noodles",
+                        quantity_min=220.0,
+                        quantity_best=240.0,
+                        quantity_max=260.0,
+                        quantity_unit="g",
+                    ),
+                    source_type="user_correction",
+                    confidence_label="high",
+                    confidence_score=0.95,
+                ),
+                _claim(
+                    "portion-personal-prior",
+                    PortionQuantityClaim(
+                        claim_type="portion_quantity",
+                        component_id="component-noodles",
+                        quantity_min=210.0,
+                        quantity_best=235.0,
+                        quantity_max=270.0,
+                        quantity_unit="g",
+                    ),
+                    source_type="personal_prior",
+                    confidence_score=0.70,
+                ),
+            ],
+            correction_within_range=True,
+            relative_range_width=0.24,
+        ),
         "cross_cultural",
     ),
     _fixture(
@@ -172,6 +485,24 @@ V0_3_BENCHMARK_FIXTURES: tuple[BenchmarkFixture, ...] = (
         "LLM raw macro claim is blocked by arbitration",
         "evidence_arbitration",
         "adversarial",
+        _evidence_case(
+            claims=[
+                _claim(
+                    "macro-llm-raw",
+                    MacroValueClaim(
+                        claim_type="macro_value",
+                        component_id="component-1",
+                        kcal=500.0,
+                        value_basis="llm_raw",
+                    ),
+                    source_type="vision",
+                    confidence_label="low",
+                    confidence_score=0.20,
+                )
+            ],
+            correction_within_range=True,
+            relative_range_width=0.31,
+        ),
         "cross_cultural",
     ),
 )
@@ -193,6 +524,22 @@ def load_fixture_results_jsonl(path: str | Path) -> list[dict[str, Any]]:
                 raise ValueError(f"{path}:{line_number} must contain a JSON object")
             rows.append(payload)
     return rows
+
+
+def generate_executable_fixture_results(
+    fixtures: Sequence[BenchmarkFixture] = V0_3_BENCHMARK_FIXTURES,
+) -> list[dict[str, Any]]:
+    return [run_executable_fixture(fixture) for fixture in fixtures]
+
+
+def run_executable_fixture(fixture: BenchmarkFixture) -> dict[str, Any]:
+    if fixture.gate == "scale_evidence":
+        return _run_scale_evidence_fixture(fixture)
+    if fixture.gate == "energy_density":
+        return _run_energy_density_fixture(fixture)
+    if fixture.gate == "evidence_arbitration":
+        return _run_evidence_arbitration_fixture(fixture)
+    raise ValueError(f"unsupported benchmark fixture gate: {fixture.gate}")
 
 
 def summarize_benchmark_results(
@@ -280,6 +627,13 @@ def _normalize_result_row(
         gate=fixture.gate if fixture is not None else None,
     )
     high_conflict = _extract_high_conflict(row)
+    clarify_trigger_cause = _extract_clarify_trigger_cause(
+        row,
+        decision,
+        clarify_triggered,
+        fixture=fixture,
+        high_conflict=high_conflict,
+    )
     silent_high_conflict = high_conflict and not clarify_triggered and not _is_block(decision)
 
     segment = _extract_segment(row, fixture)
@@ -288,10 +642,109 @@ def _normalize_result_row(
         segment=segment,
         decision=decision,
         clarify_triggered=clarify_triggered,
+        clarify_trigger_cause=clarify_trigger_cause,
         high_conflict=high_conflict,
         silent_high_conflict=silent_high_conflict,
         row=row,
     )
+
+
+def _run_scale_evidence_fixture(fixture: BenchmarkFixture) -> dict[str, Any]:
+    from services.meal.takeoff.ledger_gate import apply_ledger_gate
+
+    case = fixture.case
+    result = apply_ledger_gate(
+        kcal_min=float(case["kcal_min"]),
+        kcal_best=float(case["kcal_best"]),
+        kcal_max=float(case["kcal_max"]),
+        contract_violation=bool(case.get("contract_violation", False)),
+        log_anyway=bool(case.get("user_accepted_wide_range", False)),
+        user_decline_clarify_reason=(
+            "no_reference_available"
+            if bool(case.get("user_accepted_wide_range", False))
+            else None
+        ),
+    )
+    row = _base_executable_result_row(fixture)
+    row.update(
+        {
+            "decision": result.decision,
+            "correction_within_range": bool(case["correction_within_range"]),
+            "relative_range_width": result.relative_range_width,
+            "user_accepted_wide_range": bool(case.get("user_accepted_wide_range", False)),
+            "high_conflict": bool(case.get("high_conflict", False)),
+        }
+    )
+    _maybe_add_clarify_cause(row, case, result.decision)
+    return row
+
+
+def _run_energy_density_fixture(fixture: BenchmarkFixture) -> dict[str, Any]:
+    case = fixture.case
+    audit = run_energy_density_checks(
+        components=case["components"],
+        meal=case["meal"],
+    )
+    row = _base_executable_result_row(fixture)
+    row.update(
+        {
+            "decision": audit.overall_decision,
+            "correction_within_range": bool(case["correction_within_range"]),
+            "relative_range_width": float(case["relative_range_width"]),
+            "user_accepted_wide_range": bool(case.get("user_accepted_wide_range", False)),
+            "high_conflict": bool(case.get("high_conflict", False)),
+        }
+    )
+    _maybe_add_clarify_cause(row, case, audit.overall_decision)
+    return row
+
+
+def _run_evidence_arbitration_fixture(fixture: BenchmarkFixture) -> dict[str, Any]:
+    case = fixture.case
+    arbitration = arbitrate_evidence_claims(case["claims"])
+    decision = _arbitration_decision(arbitration.conflicts)
+    high_conflict = any(conflict.severity == "high" for conflict in arbitration.conflicts)
+
+    row = _base_executable_result_row(fixture)
+    row.update(
+        {
+            "decision": decision,
+            "correction_within_range": bool(case["correction_within_range"]),
+            "relative_range_width": float(case["relative_range_width"]),
+            "user_accepted_wide_range": bool(case.get("user_accepted_wide_range", False)),
+            "high_conflict": high_conflict,
+        }
+    )
+    _maybe_add_clarify_cause(row, case, decision)
+    return row
+
+
+def _base_executable_result_row(fixture: BenchmarkFixture) -> dict[str, Any]:
+    return {
+        "fixture_id": fixture.fixture_id,
+        "gate": fixture.gate,
+        "segment": fixture.segment,
+    }
+
+
+def _maybe_add_clarify_cause(
+    row: dict[str, Any],
+    case: Mapping[str, Any],
+    decision: str,
+) -> None:
+    if decision != "CLARIFY":
+        return
+    cause = case.get("clarify_trigger_cause")
+    if isinstance(cause, str) and cause.strip():
+        row["clarify_trigger_cause"] = cause.strip().lower()
+
+
+def _arbitration_decision(conflicts: Sequence[Any]) -> str:
+    if any(conflict.decision == "block_ledger_write" for conflict in conflicts):
+        return "BLOCK"
+    if conflicts:
+        return "CLARIFY"
+    return "ACCEPT"
 
 
 def _extract_fixture_id(row: Mapping[str, Any]) -> str | None:
@@ -344,6 +797,35 @@ def _extract_clarify_triggered(
         return relative_range_width > policy_threshold
 
     return False
+
+
+def _extract_clarify_trigger_cause(
+    row: Mapping[str, Any],
+    decision: str | None,
+    clarify_triggered: bool,
+    *,
+    fixture: BenchmarkFixture | None,
+    high_conflict: bool,
+) -> str | None:
+    for key in ("clarify_trigger_cause", "clarify_cause", "trigger_cause"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower() if clarify_triggered else None
+
+    if not clarify_triggered:
+        return None
+
+    if fixture is not None:
+        if fixture.gate == "scale_evidence":
+            return "missing_scale"
+        if fixture.gate == "energy_density":
+            return "density_outlier"
+        if fixture.gate == "evidence_arbitration":
+            return "macro_conflict" if high_conflict else "evidence_conflict"
+
+    if decision == "CLARIFY":
+        return "range_width"
+    return "unknown"
 
 
 def _extract_relative_range_width(row: Mapping[str, Any]) -> float | None:
@@ -512,11 +994,17 @@ def _clarify_distribution(results: Sequence[BenchmarkFixtureResult]) -> dict[str
     total = len(results)
     triggered = sum(1 for result in results if result.clarify_triggered)
     not_triggered = total - triggered
+    cause_counter = Counter(
+        result.clarify_trigger_cause or "unknown"
+        for result in results
+        if result.clarify_triggered
+    )
     return {
         "rows": total,
         "triggered": triggered,
         "not_triggered": not_triggered,
         "trigger_rate": _safe_rate(triggered, total),
+        "by_cause": dict(sorted(cause_counter.items())),
     }
 
 
@@ -557,6 +1045,8 @@ __all__ = [
     "V0_3_BENCHMARK_FIXTURES",
     "V0_3_REQUIRED_FIXTURE_IDS",
     "build_fixture_group_index",
+    "generate_executable_fixture_results",
     "load_fixture_results_jsonl",
+    "run_executable_fixture",
     "summarize_benchmark_results",
 ]
