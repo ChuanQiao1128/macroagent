@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -277,3 +278,27 @@ class MealSignature(StrictModel):
     container_id: str | None = None
     restaurant_or_brand: str | None = None
     embedding_ref: str | None = None
+
+
+class TraceEvent(StrictModel):
+    trace_id: str = Field(..., min_length=1)
+    stage: str = Field(..., min_length=1)
+    event_name: str = Field(..., min_length=1)
+    event_at: str = Field(
+        default_factory=lambda: datetime.now().astimezone().isoformat(timespec="seconds")
+    )
+    pii_safe: bool = True
+    image_sha256: str | None = None
+    meal_id: str | None = None
+    component_id: str | None = None
+    user_accepted_wide_range: bool | None = None
+    user_decline_clarify_reason: str | None = None
+    payload: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_decline_reason_pairing(self) -> TraceEvent:
+        if self.user_decline_clarify_reason and self.user_accepted_wide_range is not False:
+            raise ValueError(
+                "user_decline_clarify_reason requires user_accepted_wide_range=False"
+            )
+        return self

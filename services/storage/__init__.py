@@ -1,4 +1,5 @@
 from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
+from services.storage.ledger import AppendOnlyLedger, LedgerEntry, LedgerVersionMatrix
 from services.storage.src.sqlite_ledger import (
     DailyLedgerTotals,
     PortionCorrectionPrior,
@@ -15,13 +16,18 @@ from services.storage.src.sqlite_ledger import (
     insert_meal_estimate,
     insert_portion_correction,
 )
+from services.storage.trace_store import TraceStore
 
 __all__ = [
+    "AppendOnlyLedger",
     "DailyLedgerTotals",
+    "LedgerEntry",
+    "LedgerVersionMatrix",
     "PortionCorrectionPrior",
     "PortionCorrectionPriors",
     "PortionCorrectionRecord",
     "StoredMealEstimate",
+    "TraceStore",
     "LEDGER_SCHEMA_VERSION",
     "build_portion_correction_prior_resolver",
     "export_ledger_backup",
