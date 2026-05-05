@@ -111,7 +111,7 @@ export default function MealDetailPage(): JSX.Element {
           <button
             type="button"
             onClick={handleLogMeal}
-            disabled={reviewState === "LOGGED"}
+            disabled={reviewState !== "READY"}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Log Meal
