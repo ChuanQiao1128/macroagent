@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
@@ -263,9 +264,24 @@ def calculate_relative_range_width(
 ) -> float | None:
     if kcal_min is None or kcal_best is None or kcal_max is None:
         return None
+    if not _is_valid_kcal_interval(kcal_min=kcal_min, kcal_best=kcal_best, kcal_max=kcal_max):
+        return None
     if kcal_best == 0:
-        return 0.0 if kcal_min == 0 and kcal_max == 0 else float("inf")
-    return max(0.0, (kcal_max - kcal_min) / kcal_best)
+        return 0.0
+    return (kcal_max - kcal_min) / kcal_best
+
+
+def _is_valid_kcal_interval(
+    *,
+    kcal_min: float,
+    kcal_best: float,
+    kcal_max: float,
+) -> bool:
+    if not all(math.isfinite(value) for value in (kcal_min, kcal_best, kcal_max)):
+        return False
+    if kcal_min < 0 or kcal_best < 0 or kcal_max < 0:
+        return False
+    return kcal_min <= kcal_best <= kcal_max
 
 
 def calculate_meal_macros(

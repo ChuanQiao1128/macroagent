@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from services.meal.takeoff.macro_quantity import MealMacroEstimate, calculate_relative_range_width
 from services.meal.takeoff.portion_refiner import (
@@ -24,6 +25,14 @@ class LedgerGateResult(StrictModel):
     user_accepted_wide_range: bool | None = None
     user_decline_clarify_reason: str | None = None
     policy_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_decline_reason_pairing(self) -> LedgerGateResult:
+        if self.user_decline_clarify_reason and self.user_accepted_wide_range is not False:
+            raise ValueError(
+                "user_decline_clarify_reason requires user_accepted_wide_range=False"
+            )
+        return self
 
 
 class RangeDecisionThresholds(StrictModel):
@@ -66,13 +75,18 @@ def apply_ledger_gate(
         kcal_max if kcal_max is not None else _extract_meal_value(meal, "kcal_max")
     )
 
+    interval_contract_violation = _has_interval_contract_violation(
+        kcal_min=resolved_kcal_min,
+        kcal_best=resolved_kcal_best,
+        kcal_max=resolved_kcal_max,
+    )
     relative_width = calculate_relative_range_width(
         kcal_min=resolved_kcal_min,
         kcal_best=resolved_kcal_best,
         kcal_max=resolved_kcal_max,
     )
 
-    if contract_violation:
+    if contract_violation or interval_contract_violation:
         return LedgerGateResult(
             decision="BLOCK",
             decision_reason="contract_violation",
@@ -89,12 +103,15 @@ def apply_ledger_gate(
 
     if decision == "CLARIFY":
         if not log_anyway:
+            user_accepted_wide_range = False if user_decline_clarify_reason is not None else None
             return LedgerGateResult(
                 decision=decision,
                 decision_reason=reason,
                 relative_range_width=relative_width,
                 should_write_ledger=False,
                 confidence_label="low",
+                user_accepted_wide_range=user_accepted_wide_range,
+                user_decline_clarify_reason=user_decline_clarify_reason,
                 policy_refs=[f"{Path(policy_path).name}#range_decision"],
             )
 
@@ -105,7 +122,6 @@ def apply_ledger_gate(
             should_write_ledger=True,
             confidence_label="low",
             user_accepted_wide_range=True,
-            user_decline_clarify_reason=user_decline_clarify_reason,
             policy_refs=[f"{Path(policy_path).name}#range_decision"],
         )
 
@@ -159,13 +175,25 @@ def build_log_anyway_ledger_payload(
     user_decline_clarify_reason: str | None = None,
 ) -> dict[str, object]:
     """Build log-anyway metadata compatible with current ledger/trace pairing rules."""
-    payload: dict[str, object] = {
+    return {
         "confidence_label": "low",
         "user_accepted_wide_range": True,
     }
-    if user_decline_clarify_reason is not None:
-        payload["user_decline_clarify_reason"] = user_decline_clarify_reason
-    return payload
+
+
+def _has_interval_contract_violation(
+    *,
+    kcal_min: float | None,
+    kcal_best: float | None,
+    kcal_max: float | None,
+) -> bool:
+    if kcal_min is None or kcal_best is None or kcal_max is None:
+        return False
+    if not all(math.isfinite(value) for value in (kcal_min, kcal_best, kcal_max)):
+        return True
+    if kcal_min < 0 or kcal_best < 0 or kcal_max < 0:
+        return True
+    return not (kcal_min <= kcal_best <= kcal_max)
 
 
 evaluate_ledger_gate = apply_ledger_gate
