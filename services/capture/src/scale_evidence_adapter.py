@@ -16,9 +16,20 @@ _POLICY_REFS = ["scale_evidence_policy_v0.3", "capture_metadata_v0.1"]
 _CARD_PII_TOKENS = {
     "credit card",
     "debit card",
+    "bank card",
+    "visa card",
+    "mastercard",
+    "amex",
+    "american express",
     "driver license",
     "driver's license",
+    "driver licence",
+    "drivers license",
+    "drivers licence",
     "id card",
+    "id badge",
+    "student id",
+    "identity card",
     "passport",
 }
 _REFERENCE_MEDIUM_TOKENS = {
@@ -158,7 +169,7 @@ def _build_reference_candidate(metadata: DeviceCaptureMetadata) -> ScaleEvidence
     if not hint:
         return None
 
-    if any(token in hint for token in _CARD_PII_TOKENS):
+    if _is_pii_card_like_reference(hint):
         return ScaleEvidenceCandidate(
             evidence_id="scale:reference_object:1",
             evidence_type="reference_object",
@@ -311,3 +322,18 @@ def _select_preferred_usable_candidate(
 def _contains_any(snippets: Iterable[str], tokens: set[str]) -> bool:
     lowered = " ".join(snippets).lower()
     return any(token in lowered for token in tokens)
+
+
+def _is_pii_card_like_reference(hint: str) -> bool:
+    # Keep deterministic safe exceptions for explicit non-PII calibration objects.
+    if "calibration card" in hint:
+        return False
+
+    if any(token in hint for token in _CARD_PII_TOKENS):
+        return True
+
+    card_pii_context_tokens = {"id", "identity", "bank", "visa", "master", "amex"}
+    if "card" in hint and any(token in hint for token in card_pii_context_tokens):
+        return True
+
+    return False
