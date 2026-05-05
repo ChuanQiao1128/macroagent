@@ -1,3 +1,12 @@
+from services.meal.src.benchmark_fixtures import (
+    V0_3_BENCHMARK_FIXTURES,
+    V0_3_REQUIRED_FIXTURE_IDS,
+    BenchmarkFixture,
+    BenchmarkFixtureResult,
+    build_fixture_group_index,
+    load_fixture_results_jsonl,
+    summarize_benchmark_results,
+)
 from services.meal.src.component_mapping import (
     DEFAULT_CANDIDATE_LIMIT,
     DEFAULT_CONFIDENT_MATCH_SCORE,
@@ -24,6 +33,8 @@ from services.meal.src.component_normalizer import (
 
 __all__ = [
     "AppliedPortionPriorTrace",
+    "BenchmarkFixture",
+    "BenchmarkFixtureResult",
     "ComponentMatchCandidate",
     "DEFAULT_CANDIDATE_LIMIT",
     "DEFAULT_CORRECTION_PRIOR_MINIMUM_SAMPLES",
@@ -39,7 +50,12 @@ __all__ = [
     "NormalizedStateHint",
     "PortionCorrectionPrior",
     "PortionPriorResolver",
+    "V0_3_BENCHMARK_FIXTURES",
+    "V0_3_REQUIRED_FIXTURE_IDS",
     "analyze_meal_components",
+    "build_fixture_group_index",
     "estimate_meal_from_components",
+    "load_fixture_results_jsonl",
     "normalize_meal_components",
+    "summarize_benchmark_results",
 ]
