@@ -297,8 +297,16 @@ class TraceEvent(StrictModel):
 
     @model_validator(mode="after")
     def _validate_decline_reason_pairing(self) -> TraceEvent:
-        if self.user_decline_clarify_reason and self.user_accepted_wide_range is not False:
-            raise ValueError(
-                "user_decline_clarify_reason requires user_accepted_wide_range=False"
-            )
-        return self
+        if not self.user_decline_clarify_reason:
+            return self
+        if self.user_accepted_wide_range is False:
+            return self
+        if (
+            self.user_accepted_wide_range is True
+            and self.user_decline_clarify_reason == "in_a_hurry"
+        ):
+            return self
+        raise ValueError(
+            "user_decline_clarify_reason requires user_accepted_wide_range=False"
+            " (or accepted log-anyway reason code)"
+        )

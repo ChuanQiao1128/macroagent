@@ -43,9 +43,17 @@ class LedgerEntry(_StrictModel):
             raise ValueError("supersedes_id must not reference the same entry_id")
         if self.corrected_grams is None and self.corrected_serving_label is None:
             raise ValueError("either corrected_grams or corrected_serving_label is required")
-        if self.user_decline_clarify_reason and self.user_accepted_wide_range is not False:
+        if self.user_decline_clarify_reason:
+            if self.user_accepted_wide_range is False:
+                return self
+            if (
+                self.user_accepted_wide_range is True
+                and self.user_decline_clarify_reason == "in_a_hurry"
+            ):
+                return self
             raise ValueError(
                 "user_decline_clarify_reason requires user_accepted_wide_range=False"
+                " (or accepted log-anyway reason code)"
             )
         return self
 

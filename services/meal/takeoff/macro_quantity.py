@@ -147,6 +147,7 @@ def compute_component_macros(
         unknown_component=unknown_component,
         policy_path=uncertainty_policy_path,
     )
+    _validate_supported_quantity_unit(quantity_model.quantity_unit)
 
     multiplier_min = quantity_model.quantity_min / 100.0
     multiplier_best = quantity_model.quantity_best / 100.0
@@ -267,7 +268,9 @@ def calculate_relative_range_width(
     if not _is_valid_kcal_interval(kcal_min=kcal_min, kcal_best=kcal_best, kcal_max=kcal_max):
         return None
     if kcal_best == 0:
-        return 0.0
+        if kcal_min == 0 and kcal_max == 0:
+            return 0.0
+        return None
     return (kcal_max - kcal_min) / kcal_best
 
 
@@ -424,6 +427,13 @@ def _dedupe(values: Iterable[str]) -> list[str]:
         seen.add(value)
         deduped.append(value)
     return deduped
+
+
+def _validate_supported_quantity_unit(quantity_unit: str) -> None:
+    if quantity_unit not in {"g", "ml"}:
+        raise ValueError(
+            "quantity_unit requires explicit gram-equivalent conversion before macro calculation"
+        )
 
 
 compute_component_interval = compute_component_macros
