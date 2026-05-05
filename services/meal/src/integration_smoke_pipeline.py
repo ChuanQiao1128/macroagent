@@ -12,6 +12,7 @@ from services.meal.takeoff.schemas import (
     EvidenceClaim,
     MacroValueClaim,
     PortionRange,
+    ScaleEvidenceResolution,
     SourceMatchClaim,
     StrictModel,
 )
@@ -201,17 +202,23 @@ def _run_fixture(
         payload=source_critic_result,
     )
 
-    scale_resolution = {
-        "resolution_id": f"resolution:{meal_case.fixture_id}",
-        "status": "confirmed",
-        "scale_confidence": "high",
-    }
+    scale_resolution = ScaleEvidenceResolution(
+        resolution_id=f"resolution:{meal_case.fixture_id}",
+        status="confirmed",
+        candidate_ids=["scale:mock-1"],
+        selected_candidate_id="scale:mock-1",
+        scale_confidence="high",
+        expected_range_reduction_kcal=40.0,
+        prompt_user_for_reference=False,
+        trace_message="Mock scale evidence confirmed for deterministic smoke run.",
+        policy_refs=["scale_evidence_policy_v0.3"],
+    )
     _emit(
         emitter,
         trace_store,
         meal_case,
         stage="ScaleEvidenceResolution",
-        payload=scale_resolution,
+        payload=scale_resolution.model_dump(mode="json"),
     )
 
     portion_range = PortionRange(
