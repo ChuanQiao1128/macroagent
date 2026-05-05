@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,6 +42,11 @@ def arbitrate_evidence_claims(
     """Resolve compatible claims and report conflicts without computing final nutrition."""
     policy = load_evidence_arbitration_policy(policy_path)
     conflict_policy = policy["conflict_detection"]
+    macro_rules = (
+        policy.get("evidence_arbitration", {})
+        .get("macro_value", {})
+        .get("rules", {})
+    )
 
     merged_claims: list[EvidenceClaim] = []
     conflicts: list[EvidenceConflict] = []
@@ -62,6 +67,7 @@ def arbitrate_evidence_claims(
                 _detect_macro_conflicts(
                     group,
                     conflict_threshold=float(conflict_policy["macro_value"]["conflict_threshold"]),
+                    block_llm_raw_macro=_rule_blocks_llm_raw_macro(macro_rules),
                 )
             )
         elif claim_type == "food_identity":
@@ -182,8 +188,27 @@ def _detect_macro_conflicts(
     claims: Sequence[EvidenceClaim],
     *,
     conflict_threshold: float,
+    block_llm_raw_macro: bool = False,
 ) -> list[EvidenceConflict]:
     conflicts: list[EvidenceConflict] = []
+
+    if block_llm_raw_macro:
+        for claim in claims:
+            payload = _macro_payload(claim)
+            if payload.value_basis != "llm_raw":
+                continue
+            conflicts.append(
+                _conflict(
+                    claim_type="macro_value",
+                    claims=(claim,),
+                    metric="value_basis",
+                    metric_value="llm_raw",
+                    severity="high",
+                    decision="block_ledger_write",
+                    reason="llm raw macro claims are blocked by arbitration policy",
+                )
+            )
+
     if len(claims) < 2:
         return conflicts
 
@@ -212,6 +237,11 @@ def _detect_macro_conflicts(
                     )
                 )
     return conflicts
+
+
+def _rule_blocks_llm_raw_macro(rules: Mapping[str, Any]) -> bool:
+    rule_value = rules.get("llm_raw_macro")
+    return isinstance(rule_value, str) and rule_value.strip().lower() == "block"
 
 
 def _detect_food_identity_conflicts(
