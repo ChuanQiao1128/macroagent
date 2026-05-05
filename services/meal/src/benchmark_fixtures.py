@@ -4,13 +4,23 @@ import json
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
+
+import yaml
+
+from services.meal.takeoff.evidence_arbitration import arbitrate_evidence_claims
+from services.meal.takeoff.schemas import EvidenceClaim, MacroValueClaim
 
 FixtureSegment = Literal["friendly", "regression", "adversarial"]
 FixtureFamily = Literal["scale_evidence", "cross_cultural", "barcode_label_stub"]
 GateName = Literal["scale_evidence", "energy_density", "evidence_arbitration"]
 FixtureGroup = FixtureSegment | FixtureFamily
+
+POLICY_DIR = Path(__file__).resolve().parents[1] / "policies"
+DEFAULT_UNCERTAINTY_POLICY_PATH = POLICY_DIR / "uncertainty_policy.yaml"
+DEFAULT_SCALE_EVIDENCE_POLICY_PATH = POLICY_DIR / "scale_evidence_policy.yaml"
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +199,9 @@ def summarize_benchmark_results(
     rows: Sequence[Mapping[str, Any]],
     fixtures: Sequence[BenchmarkFixture] = V0_3_BENCHMARK_FIXTURES,
 ) -> dict[str, Any]:
+    if not _llm_raw_macro_block_rule_is_enforced():
+        raise ValueError("evidence arbitration policy must block llm_raw macro claims")
+
     fixture_index = {fixture.fixture_id: fixture for fixture in fixtures}
     normalized = [_normalize_result_row(row, fixture_index) for row in rows]
 
@@ -261,7 +274,12 @@ def _normalize_result_row(
     fixture = fixture_index.get(fixture_id) if fixture_id is not None else None
 
     decision = _extract_decision(row)
-    clarify_triggered = _extract_clarify_triggered(row, decision)
+    clarify_triggered = _extract_clarify_triggered(
+        row,
+        decision,
+        fixture_id=fixture_id,
+        gate=fixture.gate if fixture is not None else None,
+    )
     high_conflict = _extract_high_conflict(row)
     silent_high_conflict = high_conflict and not clarify_triggered and not _is_block(decision)
 
@@ -307,13 +325,96 @@ def _extract_decision(row: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _extract_clarify_triggered(row: Mapping[str, Any], decision: str | None) -> bool:
+def _extract_clarify_triggered(
+    row: Mapping[str, Any],
+    decision: str | None,
+    *,
+    fixture_id: str | None,
+    gate: GateName | None,
+) -> bool:
     explicit = row.get("clarify_triggered")
     if isinstance(explicit, bool):
         return explicit
+    if _is_block(decision):
+        return False
+
+    relative_range_width = _extract_relative_range_width(row)
+    policy_threshold = _clarify_relative_width_threshold(fixture_id=fixture_id, gate=gate)
+    if relative_range_width is not None and policy_threshold is not None:
+        return relative_range_width > policy_threshold
+
     if decision is not None:
         return decision == "CLARIFY"
     return False
+
+
+def _extract_relative_range_width(row: Mapping[str, Any]) -> float | None:
+    value = row.get("relative_range_width")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clarify_relative_width_threshold(
+    *,
+    fixture_id: str | None,
+    gate: GateName | None,
+) -> float | None:
+    default_threshold = _load_uncertainty_warn_relative_width_max()
+    if gate != "scale_evidence" or fixture_id is None:
+        return default_threshold
+    override_threshold = _load_scale_evidence_missing_scale_overrides().get(fixture_id)
+    if override_threshold is not None:
+        return override_threshold
+    return default_threshold
+
+
+@lru_cache(maxsize=1)
+def _load_uncertainty_warn_relative_width_max() -> float | None:
+    policy = _load_yaml_mapping(DEFAULT_UNCERTAINTY_POLICY_PATH)
+    range_decision = policy.get("range_decision")
+    if not isinstance(range_decision, Mapping):
+        return None
+    return _coerce_float(range_decision.get("warn_relative_width_max"))
+
+
+@lru_cache(maxsize=1)
+def _load_scale_evidence_missing_scale_overrides() -> dict[str, float]:
+    policy = _load_yaml_mapping(DEFAULT_SCALE_EVIDENCE_POLICY_PATH)
+    missing_scale = policy.get("missing_scale")
+    if not isinstance(missing_scale, Mapping):
+        return {}
+
+    overrides = missing_scale.get("high_impact_override")
+    if not isinstance(overrides, Mapping):
+        return {}
+
+    thresholds: dict[str, float] = {}
+    for fixture_id, override_policy in overrides.items():
+        if not isinstance(fixture_id, str) or not isinstance(override_policy, Mapping):
+            continue
+        threshold = _coerce_float(override_policy.get("clarify_if_relative_range_width_gt"))
+        if threshold is not None:
+            thresholds[fixture_id] = threshold
+    return thresholds
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as file_obj:
+        loaded = yaml.safe_load(file_obj)
+    if not isinstance(loaded, dict):
+        return {}
+    return loaded
+
+
+def _coerce_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_high_conflict(row: Mapping[str, Any]) -> bool:
@@ -350,6 +451,32 @@ def _extract_high_conflict(row: Mapping[str, Any]) -> bool:
 
 def _is_block(decision: str | None) -> bool:
     return decision == "BLOCK"
+
+
+@lru_cache(maxsize=1)
+def _llm_raw_macro_block_rule_is_enforced() -> bool:
+    claim = EvidenceClaim(
+        claim_id="benchmark:llm-raw",
+        source_type="vision",
+        confidence_label="low",
+        confidence_score=0.20,
+        evidence_refs=["evidence:benchmark:llm-raw"],
+        evidence_timestamp="2026-05-05T00:00:00Z",
+        payload=MacroValueClaim(
+            claim_type="macro_value",
+            component_id="component-1",
+            kcal=500.0,
+            value_basis="llm_raw",
+        ),
+    )
+    result = arbitrate_evidence_claims([claim])
+    return any(
+        conflict.claim_type == "macro_value"
+        and conflict.metric == "value_basis"
+        and conflict.metric_value == "llm_raw"
+        and conflict.decision == "block_ledger_write"
+        for conflict in result.conflicts
+    )
 
 
 def _summarize_metric_slice(results: Sequence[BenchmarkFixtureResult]) -> dict[str, Any]:
