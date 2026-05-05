@@ -1,0 +1,10 @@
+version: source_confidence_calibration_v0.3
+
+source_confidence_calibration:
+  barcode_verified_label: {high: 0.95, medium: 0.85, low: 0.70}
+  barcode_off_unverified: {high: 0.75, medium: 0.55, low: 0.40}
+  ocr_label_user_confirmed: {high: 0.90, medium: 0.75, low: 0.55}
+  ocr_label_unconfirmed: {high: 0.65, medium: 0.45, low: 0.30}
+  vision: {high: 0.75, medium: 0.50, low: 0.30}
+  personal_prior_n10: {high: 0.80, medium: 0.60, low: 0.40}
+  user_correction: {high: 0.95, medium: 0.85, low: 0.65}

@@ -1,0 +1,58 @@
+version: evidence_arbitration_policy_v0.3
+
+conflict_detection:
+  food_identity:
+    metric: category_jaccard
+    threshold: 0.30
+  portion_quantity:
+    metric: range_overlap
+    compatibility_threshold: 0.50
+  macro_value:
+    metric: relative_diff
+    conflict_threshold: 0.20
+  consumption_fraction:
+    metric: absolute_diff
+    conflict_threshold: 0.25
+  scale_evidence:
+    metric: tier_compatibility
+    threshold: same_or_adjacent
+
+evidence_arbitration:
+  food_identity:
+    priority:
+      - user_correction
+      - barcode
+      - ocr_label
+      - vision
+      - personal_prior
+    conflict_threshold:
+      semantic_category_mismatch: clarify
+
+  macro_value:
+    priority:
+      - deterministic_recompute
+      - label_ocr_user_confirmed
+      - menu_ocr
+      - database_source
+    rules:
+      llm_raw_macro: block
+      source_disagreement_gt_20_percent: clarify
+      menu_vs_recompute_gt_20_percent: clarify
+
+  portion_quantity:
+    priority:
+      - user_correction
+      - personal_container
+      - barcode_serving
+      - scale_evidence
+      - vision_heuristic
+      - personal_prior
+    rules:
+      missing_scale_and_wide_range: clarify
+      user_declines_clarify: log_low_confidence
+
+  consumption_fraction:
+    priority:
+      - user_explicit
+      - before_after_delta
+      - default_full_consumption
