@@ -13,6 +13,31 @@ from services.meal import (
 
 FIXTURE_RESULTS_PATH = Path("evals/fixtures/benchmark_v0_3/task_036_fixture_results.jsonl")
 
+EXPECTED_SCALE_EVIDENCE_FIXTURE_IDS = {
+    "no_reference_low_impact",
+    "no_reference_high_impact_bowl",
+    "spoon_visible_near_plate",
+    "fork_visible_far_from_plate",
+    "saved_bowl_detected",
+    "barcode_packaged_food",
+    "card_like_object_with_pii",
+    "plate_visible_unknown_size",
+}
+
+EXPECTED_ENERGY_DENSITY_FIXTURE_IDS = {
+    "cooked_rice_correct_density",
+    "dry_rice_incorrectly_used_for_cooked_rice",
+    "sauce_mapped_to_oil",
+    "mixed_bowl_aggregate_passes_component_fails",
+}
+
+EXPECTED_EVIDENCE_ARBITRATION_FIXTURE_IDS = {
+    "compatible_portion_ranges_merge",
+    "incompatible_macro_values_conflict",
+    "user_correction_beats_default_prior",
+    "llm_raw_macro_blocks",
+}
+
 
 @pytest.fixture(scope="module")
 def fixture_rows() -> list[dict[str, object]]:
@@ -53,6 +78,24 @@ def test_task_036_fixture_groups_include_required_groups() -> None:
         "barcode_packaged_food",
         "card_like_object_with_pii",
     }
+
+
+def test_task_036_fixture_groups_cover_required_v0_3_gate_fixtures() -> None:
+    groups = build_fixture_group_index()
+
+    assert set(groups["scale_evidence"]) == EXPECTED_SCALE_EVIDENCE_FIXTURE_IDS
+    assert set(groups["cross_cultural"]) == (
+        EXPECTED_ENERGY_DENSITY_FIXTURE_IDS | EXPECTED_EVIDENCE_ARBITRATION_FIXTURE_IDS
+    )
+
+
+def test_task_036_fixture_catalog_covers_required_v0_3_gate_fixtures() -> None:
+    expected_ids = (
+        EXPECTED_SCALE_EVIDENCE_FIXTURE_IDS
+        | EXPECTED_ENERGY_DENSITY_FIXTURE_IDS
+        | EXPECTED_EVIDENCE_ARBITRATION_FIXTURE_IDS
+    )
+    assert set(V0_3_REQUIRED_FIXTURE_IDS) == expected_ids
 
 
 def test_task_036_benchmark_report_separates_segments_and_measures_conflict_rates() -> None:
