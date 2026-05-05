@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from services.meal.takeoff.schemas import LOG_ANYWAY_REASON_VALUES, ConfidenceLabel
 
 
 class _StrictModel(BaseModel):
@@ -30,9 +33,22 @@ class LedgerEntry(_StrictModel):
     component_name: str | None = None
     corrected_grams: float | None = Field(default=None, gt=0)
     corrected_serving_label: str | None = None
+    kcal_best: float | None = Field(default=None, ge=0)
+    kcal_min: float | None = Field(default=None, ge=0)
+    kcal_max: float | None = Field(default=None, ge=0)
+    protein_best: float | None = Field(default=None, ge=0)
+    carbs_best: float | None = Field(default=None, ge=0)
+    fat_best: float | None = Field(default=None, ge=0)
+    confidence_label: ConfidenceLabel | None = None
+    top_uncertainty_drivers: list[str] = Field(default_factory=list)
     note: str | None = None
     supersedes_id: str | None = None
     active: bool = True
+    user_id: str | None = None
+    trace_id: str | None = None
+    meal_signature_hash: str | None = None
+    version: int = Field(default=1, ge=1)
+    correction_reason: str | None = None
     user_accepted_wide_range: bool | None = None
     user_decline_clarify_reason: str | None = None
     version_matrix: LedgerVersionMatrix
@@ -41,14 +57,31 @@ class LedgerEntry(_StrictModel):
     def _validate_entry(self) -> LedgerEntry:
         if self.supersedes_id == self.entry_id:
             raise ValueError("supersedes_id must not reference the same entry_id")
-        if self.corrected_grams is None and self.corrected_serving_label is None:
-            raise ValueError("either corrected_grams or corrected_serving_label is required")
+        has_correction = (
+            self.corrected_grams is not None or self.corrected_serving_label is not None
+        )
+        has_macro_estimate = (
+            self.kcal_min is not None and self.kcal_best is not None and self.kcal_max is not None
+        )
+        if not has_correction and not has_macro_estimate:
+            raise ValueError("ledger entry requires correction data or kcal min/best/max")
+        if has_macro_estimate:
+            if not self.kcal_min <= self.kcal_best <= self.kcal_max:
+                raise ValueError("ledger kcal interval must satisfy min <= best <= max")
+            if self.confidence_label is None:
+                raise ValueError("macro ledger entry requires confidence_label")
+            if self.meal_id is None:
+                raise ValueError("macro ledger entry requires meal_id")
+            if self.user_id is None:
+                raise ValueError("macro ledger entry requires user_id")
+            if self.trace_id is None:
+                raise ValueError("macro ledger entry requires trace_id")
         if self.user_decline_clarify_reason:
             if self.user_accepted_wide_range is False:
                 return self
             if (
                 self.user_accepted_wide_range is True
-                and self.user_decline_clarify_reason == "in_a_hurry"
+                and self.user_decline_clarify_reason in LOG_ANYWAY_REASON_VALUES
             ):
                 return self
             raise ValueError(
@@ -111,6 +144,49 @@ class AppendOnlyLedger:
             supersedes_id=supersedes_id,
             user_accepted_wide_range=user_accepted_wide_range,
             user_decline_clarify_reason=user_decline_clarify_reason,
+            version_matrix=version_matrix,
+        )
+        return self.append(new_entry)
+
+    def append_meal_estimate(
+        self,
+        *,
+        version_matrix: LedgerVersionMatrix,
+        meal_id: str,
+        user_id: str,
+        trace_id: str,
+        kcal_min: float,
+        kcal_best: float,
+        kcal_max: float,
+        confidence_label: Literal["high", "medium", "low"],
+        protein_best: float | None = None,
+        carbs_best: float | None = None,
+        fat_best: float | None = None,
+        top_uncertainty_drivers: list[str] | None = None,
+        user_accepted_wide_range: bool | None = None,
+        user_decline_clarify_reason: str | None = None,
+        meal_signature_hash: str | None = None,
+        entry_id: str | None = None,
+        created_at: str | None = None,
+    ) -> LedgerEntry:
+        new_entry = LedgerEntry(
+            entry_id=entry_id or str(uuid.uuid4()),
+            created_at=created_at
+            or datetime.now().astimezone().isoformat(timespec="seconds"),
+            meal_id=meal_id,
+            user_id=user_id,
+            trace_id=trace_id,
+            kcal_min=kcal_min,
+            kcal_best=kcal_best,
+            kcal_max=kcal_max,
+            protein_best=protein_best,
+            carbs_best=carbs_best,
+            fat_best=fat_best,
+            confidence_label=confidence_label,
+            top_uncertainty_drivers=top_uncertainty_drivers or [],
+            user_accepted_wide_range=user_accepted_wide_range,
+            user_decline_clarify_reason=user_decline_clarify_reason,
+            meal_signature_hash=meal_signature_hash,
             version_matrix=version_matrix,
         )
         return self.append(new_entry)

@@ -6,6 +6,12 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ConfidenceLabel = Literal["high", "medium", "low"]
+LogAnywayReason = Literal[
+    "did_not_want_to_retake",
+    "no_reference_available",
+    "trusts_estimate",
+    "in_a_hurry",
+]
 QuantityUnit = Literal["g", "ml", "piece", "serving"]
 PortionPhase = Literal["as_served", "as_consumed", "remaining"]
 ScaleEvidenceType = Literal[
@@ -303,10 +309,20 @@ class TraceEvent(StrictModel):
             return self
         if (
             self.user_accepted_wide_range is True
-            and self.user_decline_clarify_reason == "in_a_hurry"
+            and self.user_decline_clarify_reason in LOG_ANYWAY_REASON_VALUES
         ):
             return self
         raise ValueError(
             "user_decline_clarify_reason requires user_accepted_wide_range=False"
             " (or accepted log-anyway reason code)"
         )
+
+
+LOG_ANYWAY_REASON_VALUES: frozenset[str] = frozenset(
+    {
+        "did_not_want_to_retake",
+        "no_reference_available",
+        "trusts_estimate",
+        "in_a_hurry",
+    }
+)
