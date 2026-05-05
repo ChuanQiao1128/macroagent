@@ -105,8 +105,7 @@ def apply_ledger_gate(
             should_write_ledger=True,
             confidence_label="low",
             user_accepted_wide_range=True,
-            # Decline reason is only valid when user_accepted_wide_range is False.
-            user_decline_clarify_reason=None,
+            user_decline_clarify_reason=user_decline_clarify_reason,
             policy_refs=[f"{Path(policy_path).name}#range_decision"],
         )
 
@@ -160,11 +159,13 @@ def build_log_anyway_ledger_payload(
     user_decline_clarify_reason: str | None = None,
 ) -> dict[str, object]:
     """Build log-anyway metadata compatible with current ledger/trace pairing rules."""
-    _ = user_decline_clarify_reason
-    return {
+    payload: dict[str, object] = {
         "confidence_label": "low",
         "user_accepted_wide_range": True,
     }
+    if user_decline_clarify_reason is not None:
+        payload["user_decline_clarify_reason"] = user_decline_clarify_reason
+    return payload
 
 
 evaluate_ledger_gate = apply_ledger_gate
