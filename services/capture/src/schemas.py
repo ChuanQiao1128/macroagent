@@ -11,7 +11,7 @@ class StrictModel(BaseModel):
 
 
 class ImageIdentity(StrictModel):
-    image_sha256: str = Field(min_length=32)
+    image_sha256: str = Field(pattern=r"^[A-Fa-f0-9]{64}$")
     image_format: Literal["jpeg", "jpg", "heic", "heif", "png", "webp"]
     width_px: int = Field(gt=0)
     height_px: int = Field(gt=0)
@@ -124,3 +124,9 @@ class PhotoAnalyzeResponse(StrictModel):
     decision: Literal["ACCEPT", "WARN", "CLARIFY", "BLOCK"]
     reasons: list[str] = Field(default_factory=list)
     metrics: NutritionMetrics | None = None
+
+    @model_validator(mode="after")
+    def _validate_metrics_requirement(self) -> PhotoAnalyzeResponse:
+        if self.decision in {"ACCEPT", "WARN"} and self.metrics is None:
+            raise ValueError("metrics are required when decision is ACCEPT or WARN")
+        return self
