@@ -46,6 +46,29 @@ Minimum ablation metrics:
 The helper script `evals/run_ablation.py` generates factorial cells and can
 summarize JSONL fixture results without requiring model calls.
 
+## Integration Smoke Pipeline
+
+TASK-037 adds a deterministic mock integration smoke pipeline that exercises the
+end-to-end local control flow without any LLM or network calls. The fixture
+sequence is:
+
+- `MealCase` mock input;
+- mock `ComponentTakeoff` output;
+- mock `SourceSeed` candidates;
+- mock `SourceCritic` result;
+- mock `ScaleEvidenceResolution`;
+- `PortionRange`;
+- `MacroQuantity`;
+- `EvidenceArbitration`;
+- `LedgerGate`;
+- `TraceStore`;
+- `LedgerEntry`.
+
+The smoke suite includes one fixture each for `ACCEPT`, `WARN`, `CLARIFY`
+with log-anyway enabled, and `BLOCK` for an unsupported raw LLM macro claim.
+Every stage emits trace events, and written ledger entries carry the version
+matrix required for auditability.
+
 ## Latency Budgets
 
 ```yaml
