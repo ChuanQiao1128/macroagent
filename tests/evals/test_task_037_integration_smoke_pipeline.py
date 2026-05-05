@@ -59,4 +59,7 @@ def test_task_037_written_ledger_entries_include_version_matrix():
         fixture = by_id[fixture_id]
         assert fixture.ledger_entry is not None
         assert fixture.ledger_entry.version_matrix is not None
-        assert fixture.ledger_entry.version_matrix.takeoff_pipeline_version == "integration_smoke_v0.1"
+        assert (
+            fixture.ledger_entry.version_matrix.takeoff_pipeline_version
+            == "integration_smoke_v0.1"
+        )

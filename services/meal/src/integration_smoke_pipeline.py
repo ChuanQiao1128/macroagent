@@ -269,9 +269,15 @@ def _run_fixture(
         },
     )
 
-    evidence_claims = _build_mock_claims(meal_case, source_ref=source_seed_candidates[0]["source_ref"])
+    evidence_claims = _build_mock_claims(
+        meal_case,
+        source_ref=source_seed_candidates[0]["source_ref"],
+    )
     arbitration = arbitrate_evidence_claims(evidence_claims)
-    contract_violation = any(conflict.decision == "block_ledger_write" for conflict in arbitration.conflicts)
+    contract_violation = any(
+        conflict.decision == "block_ledger_write"
+        for conflict in arbitration.conflicts
+    )
     _emit(
         emitter,
         trace_store,
