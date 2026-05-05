@@ -14,7 +14,6 @@ _ADAPTER_STAGE = "CaptureScaleEvidenceAdapter"
 _POLICY_REFS = ["scale_evidence_policy_v0.3", "capture_metadata_v0.1"]
 
 _CARD_PII_TOKENS = {
-    "card",
     "credit card",
     "debit card",
     "driver license",
@@ -23,6 +22,7 @@ _CARD_PII_TOKENS = {
     "passport",
 }
 _REFERENCE_MEDIUM_TOKENS = {
+    "calibration card",
     "ruler",
     "measuring tape",
     "chopstick",
@@ -199,6 +199,60 @@ def _resolve(
 ) -> ScaleEvidenceResolution:
     candidate_ids = [candidate.evidence_id for candidate in candidates]
 
+    selected = _select_preferred_usable_candidate(candidates)
+    if selected is not None:
+        weak_side_angle = abs(capture_metadata.pitch_degrees) >= 35
+        if weak_side_angle and selected.evidence_type == "reference_object":
+            return ScaleEvidenceResolution(
+                resolution_id="scale_resolution:capture:1",
+                status="weak",
+                candidate_ids=candidate_ids,
+                selected_candidate_id=selected.evidence_id,
+                scale_confidence="low",
+                expected_range_reduction_kcal=12.0,
+                prompt_user_for_reference=True,
+                trace_message="Reference object available but side angle is weak for calibration.",
+                policy_refs=_POLICY_REFS,
+            )
+
+        if selected.evidence_type == "lidar_depth":
+            return ScaleEvidenceResolution(
+                resolution_id="scale_resolution:capture:1",
+                status="confirmed",
+                candidate_ids=candidate_ids,
+                selected_candidate_id=selected.evidence_id,
+                scale_confidence="high",
+                expected_range_reduction_kcal=45.0,
+                prompt_user_for_reference=False,
+                trace_message="LiDAR/depth metadata confirmed and used for scale.",
+                policy_refs=_POLICY_REFS,
+            )
+
+        if selected.evidence_type in {"barcode_serving", "label_ocr_serving"}:
+            return ScaleEvidenceResolution(
+                resolution_id="scale_resolution:capture:1",
+                status="confirmed",
+                candidate_ids=candidate_ids,
+                selected_candidate_id=selected.evidence_id,
+                scale_confidence="medium",
+                expected_range_reduction_kcal=28.0,
+                prompt_user_for_reference=False,
+                trace_message="Barcode/label serving metadata selected for scale evidence.",
+                policy_refs=_POLICY_REFS,
+            )
+
+        return ScaleEvidenceResolution(
+            resolution_id="scale_resolution:capture:1",
+            status="weak",
+            candidate_ids=candidate_ids,
+            selected_candidate_id=selected.evidence_id,
+            scale_confidence="low",
+            expected_range_reduction_kcal=15.0,
+            prompt_user_for_reference=False,
+            trace_message="Reference object hint selected as weak scale evidence.",
+            policy_refs=_POLICY_REFS,
+        )
+
     pii_candidate = next(
         (
             candidate
@@ -220,69 +274,15 @@ def _resolve(
             policy_refs=_POLICY_REFS,
         )
 
-    selected = _select_preferred_usable_candidate(candidates)
-    if selected is None:
-        return ScaleEvidenceResolution(
-            resolution_id="scale_resolution:capture:1",
-            status="missing_needs_reference",
-            candidate_ids=candidate_ids,
-            selected_candidate_id=None,
-            scale_confidence="none",
-            expected_range_reduction_kcal=None,
-            prompt_user_for_reference=True,
-            trace_message="No usable scale evidence found in capture metadata.",
-            policy_refs=_POLICY_REFS,
-        )
-
-    weak_side_angle = abs(capture_metadata.pitch_degrees) >= 35
-    if weak_side_angle and selected.evidence_type == "reference_object":
-        return ScaleEvidenceResolution(
-            resolution_id="scale_resolution:capture:1",
-            status="weak",
-            candidate_ids=candidate_ids,
-            selected_candidate_id=selected.evidence_id,
-            scale_confidence="low",
-            expected_range_reduction_kcal=12.0,
-            prompt_user_for_reference=True,
-            trace_message="Reference object available but side angle is weak for calibration.",
-            policy_refs=_POLICY_REFS,
-        )
-
-    if selected.evidence_type == "lidar_depth":
-        return ScaleEvidenceResolution(
-            resolution_id="scale_resolution:capture:1",
-            status="confirmed",
-            candidate_ids=candidate_ids,
-            selected_candidate_id=selected.evidence_id,
-            scale_confidence="high",
-            expected_range_reduction_kcal=45.0,
-            prompt_user_for_reference=False,
-            trace_message="LiDAR/depth metadata confirmed and used for scale.",
-            policy_refs=_POLICY_REFS,
-        )
-
-    if selected.evidence_type in {"barcode_serving", "label_ocr_serving"}:
-        return ScaleEvidenceResolution(
-            resolution_id="scale_resolution:capture:1",
-            status="confirmed",
-            candidate_ids=candidate_ids,
-            selected_candidate_id=selected.evidence_id,
-            scale_confidence="medium",
-            expected_range_reduction_kcal=28.0,
-            prompt_user_for_reference=False,
-            trace_message="Barcode/label serving metadata selected for scale evidence.",
-            policy_refs=_POLICY_REFS,
-        )
-
     return ScaleEvidenceResolution(
         resolution_id="scale_resolution:capture:1",
-        status="weak",
+        status="missing_needs_reference",
         candidate_ids=candidate_ids,
-        selected_candidate_id=selected.evidence_id,
-        scale_confidence="low",
-        expected_range_reduction_kcal=15.0,
-        prompt_user_for_reference=False,
-        trace_message="Reference object hint selected as weak scale evidence.",
+        selected_candidate_id=None,
+        scale_confidence="none",
+        expected_range_reduction_kcal=None,
+        prompt_user_for_reference=True,
+        trace_message="No usable scale evidence found in capture metadata.",
         policy_refs=_POLICY_REFS,
     )
 
