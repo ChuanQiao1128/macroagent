@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from services.meal.takeoff.macro_quantity import (
     aggregate_meal_macros,
@@ -137,3 +138,67 @@ def test_right_skewed_unknown_component_preserves_shape_and_skew_hint() -> None:
     assert estimate.distribution_shape == "right_skewed"
     assert estimate.skew_hint == "policy_upper_tail:sauce/oil_based/suspected_hidden"
 
+
+def test_unknown_component_bounds_are_loaded_from_policy_file(tmp_path) -> None:
+    policy_path = tmp_path / "uncertainty_policy_custom.yaml"
+    policy_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": "test-policy",
+                "range_decision": {
+                    "accept_relative_width_max": 0.35,
+                    "warn_relative_width_max": 0.60,
+                    "clarify_relative_width_min": 0.60,
+                },
+                "unknown_components": {
+                    "sauce": {
+                        "presence_states": {
+                            "visible": {"lower_can_be_zero": False},
+                            "visible_unknown": {"lower_can_be_zero": False},
+                            "visible_unknown_type": {"lower_can_be_zero": False},
+                            "suspected_hidden": {"lower_can_be_zero": True},
+                            "not_visible": {"lower_can_be_zero": True},
+                        },
+                        "families": {
+                            "oil_based": {
+                                "default_quantity_ml": {
+                                    "visible_light": {
+                                        "min": 11,
+                                        "best": 22,
+                                        "max": 44,
+                                    }
+                                }
+                            }
+                        },
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    estimate = calculate_component_estimate(
+        {
+            "component_id": "component-oil-visible",
+            "name": "visible oil",
+            "category": "oil_pure",
+            "source": {"kcal_per_100g": 884.0},
+            "unknown_component": {
+                "component_type": "sauce",
+                "family": "oil_based",
+                "presence_state": "visible",
+                "visible_amount": "light",
+                "quantity_unit": "ml",
+            },
+        },
+        uncertainty_policy_path=policy_path,
+    )
+
+    assert estimate.portion_range.quantity_min == pytest.approx(11.0)
+    assert estimate.portion_range.quantity_best == pytest.approx(22.0)
+    assert estimate.portion_range.quantity_max == pytest.approx(44.0)
+    assert (
+        f"{policy_path.name}#unknown_components.sauce.families.oil_based.visible_light"
+        in estimate.policy_refs
+    )
