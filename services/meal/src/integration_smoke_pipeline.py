@@ -293,6 +293,7 @@ def _run_fixture(
         meal_id=meal_case.meal_id,
         user_id=meal_case.user_id,
         trace_id=meal_case.trace_id,
+        entry_id=f"entry:{meal_case.fixture_id}",
         top_uncertainty_drivers=meal_estimate.top_uncertainty_drivers,
         meal_signature_hash=f"sig:{meal_case.fixture_id}",
     )
