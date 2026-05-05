@@ -93,6 +93,7 @@ export default function MealDetailPage(): JSX.Element {
         likelyHighKcal={860}
         confidenceLabel="Medium"
         mainUncertaintyDriver="Sauce and oil quantity"
+        primarySource="USDA seed + meal history"
       />
 
       {reviewState === "CLARIFY" ? (

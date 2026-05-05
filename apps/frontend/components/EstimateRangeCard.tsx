@@ -6,6 +6,7 @@ export interface EstimateRangeCardProps {
   likelyHighKcal: number;
   confidenceLabel: string;
   mainUncertaintyDriver: string;
+  primarySource: string;
 }
 
 const kcalFormatter = new Intl.NumberFormat("en-US");
@@ -20,6 +21,7 @@ export default function EstimateRangeCard({
   likelyHighKcal,
   confidenceLabel,
   mainUncertaintyDriver,
+  primarySource,
 }: EstimateRangeCardProps): JSX.Element {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -44,6 +46,14 @@ export default function EstimateRangeCard({
         <div>
           <dt className="text-sm text-slate-600">Main uncertainty driver</dt>
           <dd className="mt-1 text-sm text-slate-900">{mainUncertaintyDriver}</dd>
+        </div>
+        <div className="flex items-center justify-between">
+          <dt className="text-sm text-slate-600">Source</dt>
+          <dd>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-800">
+              {primarySource}
+            </span>
+          </dd>
         </div>
       </dl>
     </section>
