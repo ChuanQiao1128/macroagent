@@ -277,7 +277,6 @@ def _normalize_result_row(
     clarify_triggered = _extract_clarify_triggered(
         row,
         decision,
-        fixture_id=fixture_id,
         gate=fixture.gate if fixture is not None else None,
     )
     high_conflict = _extract_high_conflict(row)
@@ -329,7 +328,6 @@ def _extract_clarify_triggered(
     row: Mapping[str, Any],
     decision: str | None,
     *,
-    fixture_id: str | None,
     gate: GateName | None,
 ) -> bool:
     explicit = row.get("clarify_triggered")
@@ -337,14 +335,14 @@ def _extract_clarify_triggered(
         return explicit
     if _is_block(decision):
         return False
+    if decision is not None:
+        return decision == "CLARIFY"
 
     relative_range_width = _extract_relative_range_width(row)
-    policy_threshold = _clarify_relative_width_threshold(fixture_id=fixture_id, gate=gate)
+    policy_threshold = _clarify_relative_width_threshold(gate=gate)
     if relative_range_width is not None and policy_threshold is not None:
         return relative_range_width > policy_threshold
 
-    if decision is not None:
-        return decision == "CLARIFY"
     return False
 
 
@@ -360,15 +358,14 @@ def _extract_relative_range_width(row: Mapping[str, Any]) -> float | None:
 
 def _clarify_relative_width_threshold(
     *,
-    fixture_id: str | None,
     gate: GateName | None,
 ) -> float | None:
     default_threshold = _load_uncertainty_warn_relative_width_max()
-    if gate != "scale_evidence" or fixture_id is None:
+    if gate != "scale_evidence":
         return default_threshold
-    override_threshold = _load_scale_evidence_missing_scale_overrides().get(fixture_id)
-    if override_threshold is not None:
-        return override_threshold
+    scale_evidence_threshold = _load_scale_evidence_missing_scale_threshold()
+    if scale_evidence_threshold is not None:
+        return scale_evidence_threshold
     return default_threshold
 
 
@@ -382,24 +379,12 @@ def _load_uncertainty_warn_relative_width_max() -> float | None:
 
 
 @lru_cache(maxsize=1)
-def _load_scale_evidence_missing_scale_overrides() -> dict[str, float]:
+def _load_scale_evidence_missing_scale_threshold() -> float | None:
     policy = _load_yaml_mapping(DEFAULT_SCALE_EVIDENCE_POLICY_PATH)
     missing_scale = policy.get("missing_scale")
     if not isinstance(missing_scale, Mapping):
-        return {}
-
-    overrides = missing_scale.get("high_impact_override")
-    if not isinstance(overrides, Mapping):
-        return {}
-
-    thresholds: dict[str, float] = {}
-    for fixture_id, override_policy in overrides.items():
-        if not isinstance(fixture_id, str) or not isinstance(override_policy, Mapping):
-            continue
-        threshold = _coerce_float(override_policy.get("clarify_if_relative_range_width_gt"))
-        if threshold is not None:
-            thresholds[fixture_id] = threshold
-    return thresholds
+        return None
+    return _coerce_float(missing_scale.get("clarify_if_relative_range_width_gt"))
 
 
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:

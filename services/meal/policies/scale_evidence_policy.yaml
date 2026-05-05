@@ -17,7 +17,3 @@ pii_rejection:
 missing_scale:
   acceptable_if_relative_range_width_lte: 0.60
   clarify_if_relative_range_width_gt: 0.60
-  high_impact_override:
-    no_reference_high_impact_bowl:
-      acceptable_if_relative_range_width_lte: 0.65
-      clarify_if_relative_range_width_gt: 0.65
