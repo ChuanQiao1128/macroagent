@@ -17,6 +17,10 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+if [[ -d /opt/homebrew/bin ]]; then
+  export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+fi
+
 if [[ -d "$ROOT/.venv/bin" ]]; then
   export PATH="$ROOT/.venv/bin:$PATH"
 fi

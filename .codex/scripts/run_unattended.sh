@@ -18,6 +18,10 @@ fi
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+if [[ -d /opt/homebrew/bin ]]; then
+  export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+fi
+
 if [[ -d "$ROOT/.venv/bin" ]]; then
   export PATH="$ROOT/.venv/bin:$PATH"
 fi
@@ -46,6 +50,22 @@ if [[ "$AUTO_PUSH" == "1" && -z "$REMOTE_URL" ]]; then
 fi
 
 mkdir -p "$RUN_LOG_DIR"
+
+check_codex_cli() {
+  if ! command -v codex >/dev/null 2>&1; then
+    echo "Codex CLI not found on PATH." >&2
+    exit 1
+  fi
+
+  if ! codex --version >/dev/null 2>&1; then
+    echo "Codex CLI failed preflight." >&2
+    if command -v node >/dev/null 2>&1; then
+      node -p '"node=" + process.version + " arch=" + process.arch + " path=" + process.execPath' >&2
+    fi
+    echo "Try: npm install -g @openai/codex@latest" >&2
+    exit 1
+  fi
+}
 
 ensure_clean() {
   if [[ -n "$(git status --porcelain)" ]]; then
@@ -352,6 +372,7 @@ run_task_direct() {
 }
 
 ensure_clean
+check_codex_cli
 
 case "$UNATTENDED_MODE" in
   branch)
