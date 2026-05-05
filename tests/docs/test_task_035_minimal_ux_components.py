@@ -112,6 +112,37 @@ def test_meal_page_acceptance_flows_for_task_035() -> None:
     assert "<TakeoffTracePanel entries={TRACE_ENTRIES} />" in text
 
 
+def test_meal_page_clarify_state_gates_standard_log_path() -> None:
+    text = _read(PAGE_FILE)
+
+    assert "useState<MealReviewState>(\"CLARIFY\")" in text
+    assert "disabled={reviewState !== \"READY\"}" in text
+    assert "setReviewState(\"READY\")" in text
+    assert "<LogAnywayButton" in text
+
+
+def test_clarification_prompt_integration_uses_first_question_only() -> None:
+    prompt_text = _read(CLARIFICATION_PROMPT)
+    page_text = _read(PAGE_FILE)
+
+    assert "const CLARIFICATION_QUESTIONS: ClarificationQuestion[] = [" in page_text
+    assert "id: \"oil-usage\"" in page_text
+    assert "id: \"unused-question\"" in page_text
+    assert "questions={CLARIFICATION_QUESTIONS}" in page_text
+    assert "const firstQuestion = questions[0]" in prompt_text
+
+
+def test_trace_panel_uses_optional_secondary_ui_pattern() -> None:
+    panel_text = _read(TAKEOFF_TRACE_PANEL)
+    page_text = _read(PAGE_FILE)
+
+    assert "<details" in panel_text
+    assert "<summary" in panel_text
+    assert "Shows how this estimate was produced." in panel_text
+    assert "<TakeoffTracePanel entries={TRACE_ENTRIES} />" in page_text
+    assert "defaultOpen" not in page_text
+
+
 def test_ui_copy_avoids_medical_claims() -> None:
     banned_terms = (
         "diagnose",
@@ -123,6 +154,9 @@ def test_ui_copy_avoids_medical_claims() -> None:
         "therapy",
         "prescription",
         "medical advice",
+        "doctor-recommended",
+        "clinically proven",
+        "medication",
     )
 
     combined = "\n".join(_read(path).lower() for path in TASK_035_FILES)
