@@ -1,0 +1,19 @@
+version: scale_evidence_policy_v0.3
+
+selection_hierarchy:
+  - personal_saved_container
+  - barcode_or_label_serving
+  - calibration_card
+  - ruler
+  - standard_utensil_near_food
+  - common_plate_or_bowl
+  - hand_or_phone_weak
+  - photo_only
+
+pii_rejection:
+  card_like_object: reject_due_to_pii
+  face_or_child: do_not_store_raw_or_crop
+
+missing_scale:
+  acceptable_if_relative_range_width_lte: 0.60
+  clarify_if_relative_range_width_gt: 0.60

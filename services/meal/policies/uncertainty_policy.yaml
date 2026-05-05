@@ -1,0 +1,43 @@
+version: uncertainty_policy_v0.3
+
+range_decision:
+  accept_relative_width_max: 0.35
+  warn_relative_width_max: 0.60
+  clarify_relative_width_min: 0.60
+
+unknown_components:
+  sauce:
+    presence_states:
+      visible:
+        lower_can_be_zero: false
+      visible_unknown:
+        lower_can_be_zero: false
+      visible_unknown_type:
+        lower_can_be_zero: false
+      suspected_hidden:
+        lower_can_be_zero: true
+      not_visible:
+        lower_can_be_zero: true
+    families:
+      thin_sweet:
+        examples: ["teriyaki", "sweet_chili", "soy_based"]
+        default_quantity_ml:
+          visible_light: {min: 5, best: 10, max: 15}
+          visible_medium: {min: 10, best: 20, max: 30}
+          visible_heavy: {min: 20, best: 35, max: 50}
+        question_priority: medium
+      creamy:
+        examples: ["ranch", "mayo", "aioli", "cream_sauce"]
+        default_quantity_ml:
+          visible_light: {min: 5, best: 12, max: 20}
+          visible_medium: {min: 15, best: 30, max: 45}
+          visible_heavy: {min: 30, best: 50, max: 75}
+        question_priority: high
+      oil_based:
+        examples: ["olive_oil", "sesame_oil", "cooking_oil"]
+        default_quantity_ml:
+          suspected_hidden: {min: 0, best: 5, max: 15}
+          visible_light: {min: 3, best: 8, max: 15}
+          visible_medium: {min: 6, best: 14, max: 22}
+          visible_heavy: {min: 10, best: 20, max: 30}
+        question_priority: high

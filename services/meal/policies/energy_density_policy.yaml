@@ -1,0 +1,21 @@
+version: energy_density_policy_v0.3
+
+per_component:
+  cooked_grain: {min: 0.8, typical: 1.3, max: 2.0}
+  lean_meat: {min: 1.0, typical: 1.7, max: 2.8}
+  fried_food: {min: 2.5, typical: 3.5, max: 5.5}
+  oil_pure: {min: 8.0, typical: 8.8, max: 9.2}
+  vegetable_raw: {min: 0.1, typical: 0.4, max: 1.2}
+  sauce_thin_sweet: {min: 0.5, typical: 1.2, max: 2.5}
+  sauce_creamy: {min: 2.5, typical: 3.5, max: 5.0}
+
+per_meal_aggregate:
+  plated_meal: {min: 0.5, typical: 1.5, max: 3.0}
+  mixed_bowl: {min: 0.5, typical: 1.6, max: 3.2}
+  fried_meal: {min: 1.5, typical: 2.5, max: 4.5}
+  soup: {min: 0.2, typical: 0.6, max: 1.8}
+  drink: {min: 0.0, typical: 0.4, max: 1.5}
+
+outlier_decision:
+  warn_ratio_max: 1.25
+  clarify_ratio_max: 1.75
