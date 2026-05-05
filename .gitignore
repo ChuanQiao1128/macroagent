@@ -15,3 +15,5 @@ local_outputs/
 *.sqlite
 *.sqlite3
 vision_cache.json
+macroagent_codex_package/
+macroagent_codex_package.zip

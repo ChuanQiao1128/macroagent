@@ -23,6 +23,8 @@ if [[ -d "$ROOT/.venv/bin" ]]; then
 fi
 
 MAIN_BRANCH="${MAIN_BRANCH:-main}"
+REMOTE_MAIN_BRANCH="${REMOTE_MAIN_BRANCH:-$MAIN_BRANCH}"
+PUSH_BRANCH="${PUSH_BRANCH:-$MAIN_BRANCH}"
 UNATTENDED_MODE="${UNATTENDED_MODE:-branch}"
 AUTO_PUSH="${AUTO_PUSH:-1}"
 DELETE_TASK_BRANCH="${DELETE_TASK_BRANCH:-0}"
@@ -54,10 +56,16 @@ ensure_clean() {
 }
 
 sync_main() {
-  git switch "$MAIN_BRANCH"
   if [[ -n "$REMOTE_URL" ]]; then
-    git fetch "$REMOTE_URL" "$MAIN_BRANCH"
-    git merge --ff-only FETCH_HEAD
+    git fetch "$REMOTE_URL" "$REMOTE_MAIN_BRANCH"
+    if git show-ref --verify --quiet "refs/heads/$MAIN_BRANCH"; then
+      git switch "$MAIN_BRANCH"
+      git merge --ff-only FETCH_HEAD
+    else
+      git switch -c "$MAIN_BRANCH" FETCH_HEAD
+    fi
+  else
+    git switch "$MAIN_BRANCH"
   fi
 }
 
@@ -275,8 +283,8 @@ push_main() {
     return
   fi
 
-  git push "$REMOTE_URL" "$MAIN_BRANCH"
-  git fetch "$REMOTE_URL" "$MAIN_BRANCH:refs/remotes/origin/$MAIN_BRANCH" || true
+  git push "$REMOTE_URL" "$MAIN_BRANCH:refs/heads/$PUSH_BRANCH"
+  git fetch "$REMOTE_URL" "$PUSH_BRANCH:refs/remotes/origin/$PUSH_BRANCH" || true
 }
 
 run_task_on_branch() {
