@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from services.meal.takeoff.schemas import TraceEvent
-from services.meal.takeoff.trace import InMemoryTraceEmitter, emit_stage_event
+from services.meal.takeoff.trace import InMemoryTraceEmitter, TraceEmitter, emit_stage_event
 from services.storage.trace_store import TraceStore
 
 
@@ -79,6 +79,12 @@ def test_takeoff_stage_stubs_can_emit_trace_events() -> None:
     assert emitter.get_trace("trace-1") == (first, second)
 
 
+def test_in_memory_emitter_satisfies_trace_emitter_protocol() -> None:
+    emitter = InMemoryTraceEmitter()
+
+    assert isinstance(emitter, TraceEmitter)
+
+
 def test_trace_store_appends_and_returns_events_by_trace_id() -> None:
     store = TraceStore()
     original = TraceEvent(
@@ -121,6 +127,50 @@ def test_trace_store_rejects_forbidden_raw_image_payload_keys() -> None:
 
     with pytest.raises(ValueError, match="forbidden raw-image keys"):
         store.append(event)
+
+
+@pytest.mark.parametrize(
+    "forbidden_key",
+    [
+        "image",
+        "image_base64",
+        "image_bytes",
+        "image_data",
+        "raw_image",
+        "raw_image_base64",
+        "raw_image_bytes",
+    ],
+)
+def test_trace_store_rejects_all_forbidden_raw_image_payload_keys(
+    forbidden_key: str,
+) -> None:
+    store = TraceStore()
+    event = TraceEvent(
+        trace_id="trace-1",
+        stage="detect_components",
+        event_name="started",
+        payload={forbidden_key: "secret"},
+    )
+
+    with pytest.raises(ValueError, match="forbidden raw-image keys"):
+        store.append(event)
+
+
+def test_trace_store_accepts_image_sha256_without_raw_image_payload() -> None:
+    store = TraceStore()
+    event = TraceEvent(
+        trace_id="trace-1",
+        stage="detect_components",
+        event_name="started",
+        image_sha256="abc123",
+        payload={"component_count": 1},
+    )
+
+    store.append(event)
+    stored = store.get_trace("trace-1")
+
+    assert len(stored) == 1
+    assert stored[0].image_sha256 == "abc123"
 
 
 def test_privacy_trace_boundary_doc_exists_and_mentions_image_hash_contract() -> None:

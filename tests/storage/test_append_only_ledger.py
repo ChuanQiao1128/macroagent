@@ -40,6 +40,26 @@ def test_ledger_version_matrix_requires_non_empty_source_dataset_versions() -> N
         )
 
 
+def test_ledger_version_matrix_allows_optional_semantic_judge_version() -> None:
+    versions = LedgerVersionMatrix(
+        calculator_version="calc-v1",
+        uncertainty_policy_version="uncertainty-v1",
+        energy_density_policy_version="energy-v1",
+        scale_evidence_policy_version="scale-v1",
+        contract_yaml_version="contract-v1",
+        source_dataset_versions={"usda": "2026.05"},
+        takeoff_pipeline_version="takeoff-v1",
+    )
+
+    entry = LedgerEntry(
+        entry_id="entry-1",
+        corrected_grams=100.0,
+        version_matrix=versions,
+    )
+
+    assert entry.version_matrix.semantic_judge_version is None
+
+
 def test_append_only_correction_chain_marks_latest_active_and_keeps_history() -> None:
     ledger = AppendOnlyLedger()
     versions = _version_matrix()
@@ -77,6 +97,38 @@ def test_append_only_correction_chain_marks_latest_active_and_keeps_history() ->
     assert tuple(entry.entry_id for entry in ledger.list_entries(include_inactive=False)) == (
         "entry-2",
     )
+
+
+def test_append_only_correction_chain_keeps_multiple_superseded_rows() -> None:
+    ledger = AppendOnlyLedger()
+    versions = _version_matrix()
+
+    first = ledger.append_correction(
+        entry_id="entry-1",
+        corrected_grams=120.0,
+        version_matrix=versions,
+    )
+    second = ledger.append_correction(
+        entry_id="entry-2",
+        corrected_grams=130.0,
+        supersedes_id=first.entry_id,
+        version_matrix=versions,
+    )
+    third = ledger.append_correction(
+        entry_id="entry-3",
+        corrected_grams=140.0,
+        supersedes_id=second.entry_id,
+        version_matrix=versions,
+    )
+
+    ordered = ledger.list_entries(include_inactive=True)
+    assert tuple(entry.entry_id for entry in ordered) == ("entry-1", "entry-2", "entry-3")
+    assert tuple(entry.active for entry in ordered) == (False, False, True)
+
+    assert third.supersedes_id == "entry-2"
+    assert tuple(
+        entry.entry_id for entry in ledger.list_entries(include_inactive=False)
+    ) == ("entry-3",)
 
 
 def test_append_only_correction_chain_rejects_superseding_inactive_entry() -> None:
