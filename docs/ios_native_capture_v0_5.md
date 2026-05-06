@@ -39,9 +39,20 @@ trace ID.
 
 ### TASK-043 - Local Analyze Photo HTTP Server
 
-Create a no-framework or standard-library local HTTP server wrapper around the
-existing analyze photo facade. It must accept JSON metadata first, with optional
-multipart/image handling deferred if needed.
+Status: verified in `services/api/local_server.py`,
+`tests/api/test_local_server.py`, and `tests/cli/test_local_server_cli.py`.
+
+The local HTTP server is a standard-library wrapper around the existing analyze
+photo facade. It exposes:
+
+- `GET /health` -> `{"status":"ok"}`
+- `POST /v1/meals/analyze-photo` -> deterministic `AnalyzePhotoFacadeResponse`
+
+The POST endpoint accepts either the full `AnalyzePhotoFacadeRequest` envelope
+or a raw `PhotoAnalyzeRequest` payload. It returns structured JSON errors for
+invalid JSON, invalid schema, unsupported paths, and unsupported methods.
+Multipart or image-byte handling is still deferred; the current smoke-test path
+is JSON metadata only.
 
 ### TASK-044 - iOS SwiftUI Project Skeleton
 
