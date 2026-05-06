@@ -12,6 +12,17 @@ It is intended for SwiftUI/AVFoundation/CoreMotion capture clients.
 - `image_identity.width_px`/`height_px`: Encoded image dimensions.
 - `image_identity.byte_size`: Encoded image byte length.
 
+## Response Contract
+
+The backend facade response is the canonical source of truth. The committed
+example field `photo_analyze_response` is a Swift-facing projection generated
+from `analyze_photo_facade_response`:
+
+- `status` maps to `decision`.
+- `nutrition` maps to `metrics`.
+- `request_id` and `reasons` are copied exactly.
+- `BLOCK` responses carry no nutrition/metrics.
+
 ## Capture Metadata Mapping
 
 - `device_model`

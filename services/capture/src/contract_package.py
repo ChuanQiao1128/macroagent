@@ -64,6 +64,22 @@ def _write_json(path: Path, payload: Any) -> None:
     )
 
 
+def photo_analyze_response_from_facade(
+    response: AnalyzePhotoFacadeResponse,
+) -> PhotoAnalyzeResponse:
+    """Map the canonical backend facade response into the iOS handoff shape."""
+    return PhotoAnalyzeResponse(
+        request_id=response.request_id,
+        decision=response.status,
+        reasons=list(response.reasons),
+        metrics=(
+            response.nutrition.model_dump(mode="json")
+            if response.nutrition is not None
+            else None
+        ),
+    )
+
+
 def export_contract_package(base_dir: Path | None = None) -> None:
     root = base_dir or Path(__file__).resolve().parents[1] / "contracts"
     schemas_dir = root / "schemas"
@@ -208,6 +224,12 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         facade_payload = analyze_photo_facade(facade_request)
         return facade_payload.model_dump(mode="json")
 
+    def handoff_response(photo_analyze_request: dict[str, Any]) -> dict[str, Any]:
+        facade_payload = AnalyzePhotoFacadeResponse.model_validate(
+            facade_response(photo_analyze_request)
+        )
+        return photo_analyze_response_from_facade(facade_payload).model_dump(mode="json")
+
     def artifact_scale_evidence_ids(photo_analyze_request: dict[str, Any]) -> list[str]:
         request_model = PhotoAnalyzeRequest.model_validate(photo_analyze_request)
         scale_evidence = resolve_scale_evidence_from_capture(
@@ -246,109 +268,13 @@ def export_contract_package(base_dir: Path | None = None) -> None:
     examples = {
         "top_down_photo_with_depth": {
             "photo_analyze_request": top_down_depth_request,
-            "photo_analyze_response": {
-                "request_id": top_down_depth_request["request_id"],
-                "decision": "ACCEPT",
-                "reasons": ["adequate scale cues and stable camera pose"],
-                "metrics": {
-                    "kcal": {
-                        "best_estimate": 520.0,
-                        "min_estimate": 470.0,
-                        "max_estimate": 590.0,
-                        "source": "fdc:fixture",
-                    },
-                    "protein_g": {
-                        "best_estimate": 35.0,
-                        "min_estimate": 31.0,
-                        "max_estimate": 40.0,
-                        "source": "fdc:fixture",
-                    },
-                    "carbs_g": {
-                        "best_estimate": 48.0,
-                        "min_estimate": 42.0,
-                        "max_estimate": 55.0,
-                        "source": "fdc:fixture",
-                    },
-                    "fat_g": {
-                        "best_estimate": 18.0,
-                        "min_estimate": 15.0,
-                        "max_estimate": 22.0,
-                        "source": "fdc:fixture",
-                    },
-                    "sugar_g": {
-                        "best_estimate": 8.0,
-                        "min_estimate": 5.0,
-                        "max_estimate": 11.0,
-                        "source": "fdc:fixture",
-                    },
-                    "sodium_mg": {
-                        "best_estimate": 640.0,
-                        "min_estimate": 560.0,
-                        "max_estimate": 730.0,
-                        "source": "fdc:fixture",
-                    },
-                    "fiber_g": {
-                        "best_estimate": 7.0,
-                        "min_estimate": 5.0,
-                        "max_estimate": 10.0,
-                        "source": "fdc:fixture",
-                    },
-                },
-            },
+            "photo_analyze_response": handoff_response(top_down_depth_request),
             "analyze_photo_facade_response": facade_response(top_down_depth_request),
             "capture_trace_artifact": capture_trace_artifact,
         },
         "weak_side_angle_without_reference": {
             "photo_analyze_request": side_angle_weak_request,
-            "photo_analyze_response": {
-                "request_id": side_angle_weak_request["request_id"],
-                "decision": "WARN",
-                "reasons": ["side-angle pose and no reference object increase uncertainty"],
-                "metrics": {
-                    "kcal": {
-                        "best_estimate": 520.0,
-                        "min_estimate": 430.0,
-                        "max_estimate": 650.0,
-                        "source": "fdc:fixture",
-                    },
-                    "protein_g": {
-                        "best_estimate": 35.0,
-                        "min_estimate": 28.0,
-                        "max_estimate": 43.0,
-                        "source": "fdc:fixture",
-                    },
-                    "carbs_g": {
-                        "best_estimate": 48.0,
-                        "min_estimate": 39.0,
-                        "max_estimate": 61.0,
-                        "source": "fdc:fixture",
-                    },
-                    "fat_g": {
-                        "best_estimate": 18.0,
-                        "min_estimate": 14.0,
-                        "max_estimate": 23.0,
-                        "source": "fdc:fixture",
-                    },
-                    "sugar_g": {
-                        "best_estimate": 8.0,
-                        "min_estimate": 4.0,
-                        "max_estimate": 12.0,
-                        "source": "fdc:fixture",
-                    },
-                    "sodium_mg": {
-                        "best_estimate": 640.0,
-                        "min_estimate": 510.0,
-                        "max_estimate": 820.0,
-                        "source": "fdc:fixture",
-                    },
-                    "fiber_g": {
-                        "best_estimate": 7.0,
-                        "min_estimate": 4.0,
-                        "max_estimate": 11.0,
-                        "source": "fdc:fixture",
-                    },
-                },
-            },
+            "photo_analyze_response": handoff_response(side_angle_weak_request),
             "analyze_photo_facade_response": facade_response(side_angle_weak_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,
@@ -369,55 +295,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         },
         "barcode_packaged_food": {
             "photo_analyze_request": barcode_packaged_request,
-            "photo_analyze_response": {
-                "request_id": barcode_packaged_request["request_id"],
-                "decision": "ACCEPT",
-                "reasons": ["barcode payload detected and accepted as safe"],
-                "metrics": {
-                    "kcal": {
-                        "best_estimate": 240.0,
-                        "min_estimate": 220.0,
-                        "max_estimate": 265.0,
-                        "source": "barcode_lookup",
-                    },
-                    "protein_g": {
-                        "best_estimate": 4.0,
-                        "min_estimate": 3.0,
-                        "max_estimate": 5.0,
-                        "source": "barcode_lookup",
-                    },
-                    "carbs_g": {
-                        "best_estimate": 31.0,
-                        "min_estimate": 28.0,
-                        "max_estimate": 35.0,
-                        "source": "barcode_lookup",
-                    },
-                    "fat_g": {
-                        "best_estimate": 11.0,
-                        "min_estimate": 10.0,
-                        "max_estimate": 13.0,
-                        "source": "barcode_lookup",
-                    },
-                    "sugar_g": {
-                        "best_estimate": 13.0,
-                        "min_estimate": 11.0,
-                        "max_estimate": 15.0,
-                        "source": "barcode_lookup",
-                    },
-                    "sodium_mg": {
-                        "best_estimate": 210.0,
-                        "min_estimate": 180.0,
-                        "max_estimate": 250.0,
-                        "source": "barcode_lookup",
-                    },
-                    "fiber_g": {
-                        "best_estimate": 2.0,
-                        "min_estimate": 1.0,
-                        "max_estimate": 3.0,
-                        "source": "barcode_lookup",
-                    },
-                },
-            },
+            "photo_analyze_response": handoff_response(barcode_packaged_request),
             "analyze_photo_facade_response": facade_response(barcode_packaged_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,
@@ -440,12 +318,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         },
         "missing_scale_clarify_case": {
             "photo_analyze_request": missing_scale_clarify_request,
-            "photo_analyze_response": {
-                "request_id": missing_scale_clarify_request["request_id"],
-                "decision": "CLARIFY",
-                "reasons": ["missing scale evidence; clarify required before logging"],
-                "metrics": None,
-            },
+            "photo_analyze_response": handoff_response(missing_scale_clarify_request),
             "analyze_photo_facade_response": facade_response(missing_scale_clarify_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,

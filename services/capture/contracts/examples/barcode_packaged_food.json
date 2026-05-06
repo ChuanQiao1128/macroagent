@@ -125,50 +125,50 @@
     "decision": "ACCEPT",
     "metrics": {
       "carbs_g": {
-        "best_estimate": 31.0,
-        "max_estimate": 35.0,
-        "min_estimate": 28.0,
-        "source": "barcode_lookup"
+        "best_estimate": 28.2,
+        "max_estimate": 31.0,
+        "min_estimate": 25.4,
+        "source": "deterministic:usda_seed_0001"
       },
       "fat_g": {
-        "best_estimate": 11.0,
-        "max_estimate": 13.0,
-        "min_estimate": 10.0,
-        "source": "barcode_lookup"
+        "best_estimate": 0.3,
+        "max_estimate": 0.3,
+        "min_estimate": 0.3,
+        "source": "deterministic:usda_seed_0001"
       },
       "fiber_g": {
-        "best_estimate": 2.0,
-        "max_estimate": 3.0,
-        "min_estimate": 1.0,
-        "source": "barcode_lookup"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "kcal": {
-        "best_estimate": 240.0,
-        "max_estimate": 265.0,
-        "min_estimate": 220.0,
-        "source": "barcode_lookup"
+        "best_estimate": 130.0,
+        "max_estimate": 143.0,
+        "min_estimate": 117.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "protein_g": {
-        "best_estimate": 4.0,
-        "max_estimate": 5.0,
-        "min_estimate": 3.0,
-        "source": "barcode_lookup"
+        "best_estimate": 2.4,
+        "max_estimate": 2.6,
+        "min_estimate": 2.2,
+        "source": "deterministic:usda_seed_0001"
       },
       "sodium_mg": {
-        "best_estimate": 210.0,
-        "max_estimate": 250.0,
-        "min_estimate": 180.0,
-        "source": "barcode_lookup"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "sugar_g": {
-        "best_estimate": 13.0,
-        "max_estimate": 15.0,
-        "min_estimate": 11.0,
-        "source": "barcode_lookup"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       }
     },
     "reasons": [
-      "barcode payload detected and accepted as safe"
+      "range_width_within_accept"
     ],
     "request_id": "req_accept_barcode_packaged"
   }

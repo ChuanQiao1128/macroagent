@@ -88,9 +88,26 @@ def test_sample_payloads_validate_against_backend_models_and_are_synthetic() -> 
     for name in example_names:
         payload = _load_json(EXAMPLES_DIR / f"{name}.json")
         PhotoAnalyzeRequest.model_validate(payload["photo_analyze_request"])
-        PhotoAnalyzeResponse.model_validate(payload["photo_analyze_response"])
-        AnalyzePhotoFacadeResponse.model_validate(payload["analyze_photo_facade_response"])
+        handoff_response = PhotoAnalyzeResponse.model_validate(
+            payload["photo_analyze_response"]
+        )
+        facade_response = AnalyzePhotoFacadeResponse.model_validate(
+            payload["analyze_photo_facade_response"]
+        )
         CaptureTraceArtifact.model_validate(payload["capture_trace_artifact"])
+
+        assert handoff_response.request_id == facade_response.request_id
+        assert handoff_response.decision == facade_response.status
+        assert handoff_response.reasons == facade_response.reasons
+        assert (
+            handoff_response.metrics.model_dump(mode="json")
+            if handoff_response.metrics is not None
+            else None
+        ) == (
+            facade_response.nutrition.model_dump(mode="json")
+            if facade_response.nutrition is not None
+            else None
+        )
 
         forbidden_values: list[str] = []
         _collect_forbidden_paths(payload, forbidden_values)

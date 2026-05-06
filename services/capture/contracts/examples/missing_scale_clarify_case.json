@@ -126,9 +126,52 @@
   },
   "photo_analyze_response": {
     "decision": "CLARIFY",
-    "metrics": null,
+    "metrics": {
+      "carbs_g": {
+        "best_estimate": 14.8,
+        "max_estimate": 25.2,
+        "min_estimate": 4.3,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "fat_g": {
+        "best_estimate": 0.8,
+        "max_estimate": 1.4,
+        "min_estimate": 0.2,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "fiber_g": {
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "kcal": {
+        "best_estimate": 71.8,
+        "max_estimate": 122.5,
+        "min_estimate": 21.0,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "protein_g": {
+        "best_estimate": 4.9,
+        "max_estimate": 8.4,
+        "min_estimate": 1.4,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "sodium_mg": {
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
+      },
+      "sugar_g": {
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
+      }
+    },
     "reasons": [
-      "missing scale evidence; clarify required before logging"
+      "range_width_gt_warn_max"
     ],
     "request_id": "req_clarify_missing_scale"
   }

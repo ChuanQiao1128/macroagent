@@ -120,50 +120,51 @@
     "decision": "WARN",
     "metrics": {
       "carbs_g": {
-        "best_estimate": 48.0,
-        "max_estimate": 61.0,
-        "min_estimate": 39.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0013"
       },
       "fat_g": {
-        "best_estimate": 18.0,
-        "max_estimate": 23.0,
-        "min_estimate": 14.0,
-        "source": "fdc:fixture"
+        "best_estimate": 6.8,
+        "max_estimate": 8.6,
+        "min_estimate": 5.1,
+        "source": "deterministic:usda_seed_0013"
       },
       "fiber_g": {
-        "best_estimate": 7.0,
-        "max_estimate": 11.0,
-        "min_estimate": 4.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0013"
       },
       "kcal": {
-        "best_estimate": 520.0,
-        "max_estimate": 650.0,
-        "min_estimate": 430.0,
-        "source": "fdc:fixture"
+        "best_estimate": 313.5,
+        "max_estimate": 391.9,
+        "min_estimate": 235.1,
+        "source": "deterministic:usda_seed_0013"
       },
       "protein_g": {
-        "best_estimate": 35.0,
-        "max_estimate": 43.0,
-        "min_estimate": 28.0,
-        "source": "fdc:fixture"
+        "best_estimate": 58.9,
+        "max_estimate": 73.6,
+        "min_estimate": 44.2,
+        "source": "deterministic:usda_seed_0013"
       },
       "sodium_mg": {
-        "best_estimate": 640.0,
-        "max_estimate": 820.0,
-        "min_estimate": 510.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0013"
       },
       "sugar_g": {
-        "best_estimate": 8.0,
-        "max_estimate": 12.0,
-        "min_estimate": 4.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0013"
       }
     },
     "reasons": [
-      "side-angle pose and no reference object increase uncertainty"
+      "range_width_gt_accept_max",
+      "scale confidence is low; interval may be wide"
     ],
     "request_id": "req_warn_side_angle_weak"
   }
