@@ -7,7 +7,7 @@ from services.capture.src.schemas import PhotoAnalyzeRequest
 from services.meal.takeoff.schemas import MealScaleEvidence
 
 _LOCAL_PATH_PATTERN = re.compile(
-    r"(^~?/)|(^/Users/)|(^/private/)|(^/var/)|(^[A-Za-z]:\\\\)|(^\\\\)"
+    r"(^~?/)|(^/Users/)|(^/private/)|(^/var/)|(^[A-Za-z]:\\)|(^\\\\)"
 )
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _LONG_DIGIT_PATTERN = re.compile(r"\d{9,}")
