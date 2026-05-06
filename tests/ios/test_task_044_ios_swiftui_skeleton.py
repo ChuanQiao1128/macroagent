@@ -59,6 +59,16 @@ def test_readme_documents_ios_version_capabilities_and_local_server_url() -> Non
     assert "http://<mac-lan-ip>:8765" in text
 
 
+def test_readme_includes_manual_xcode_project_setup_workflow() -> None:
+    text = _read(README)
+
+    assert "Create / Open Xcode Project Manually" in text
+    assert "Open Xcode and create a new **iOS App** project." in text
+    assert "Product Name: `MacroAgentCapture`." in text
+    assert "Set the deployment target to **iOS 17.0**" in text
+    assert "Add all `*.swift` files from this folder to the app target." in text
+
+
 def test_source_contains_clear_capture_metadata_api_and_result_seams() -> None:
     capture_service_text = _read(IOS_APP_DIR / "CaptureService.swift")
     metadata_builder_text = _read(IOS_APP_DIR / "MetadataBuilder.swift")
@@ -110,4 +120,23 @@ def test_swift_sources_do_not_introduce_third_party_imports() -> None:
         assert not disallowed, (
             f"{path.as_posix()} imports non-standard modules: {disallowed}. "
             "TASK-044 must avoid third-party package dependencies."
+        )
+
+
+def test_source_does_not_implement_camera_capture_yet() -> None:
+    camera_api_tokens = (
+        "AVCaptureSession",
+        "AVCaptureDevice",
+        "AVCapturePhotoOutput",
+        "UIImagePickerController",
+        "PhotosPicker",
+        "PHPickerViewController",
+    )
+
+    for path in REQUIRED_SWIFT_FILES:
+        text = _read(path)
+        matches = [token for token in camera_api_tokens if token in text]
+        assert not matches, (
+            f"{path.as_posix()} appears to implement camera capture primitives: {matches}. "
+            "TASK-044 forbids camera capture implementation at this stage."
         )
