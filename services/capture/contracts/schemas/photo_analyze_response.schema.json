@@ -1,27 +1,6 @@
 {
   "$defs": {
-    "ClarifyQuestion": {
-      "additionalProperties": false,
-      "properties": {
-        "question_id": {
-          "minLength": 1,
-          "title": "Question Id",
-          "type": "string"
-        },
-        "text": {
-          "minLength": 1,
-          "title": "Text",
-          "type": "string"
-        }
-      },
-      "required": [
-        "question_id",
-        "text"
-      ],
-      "title": "ClarifyQuestion",
-      "type": "object"
-    },
-    "NutritionInterval": {
+    "NutritionMetric": {
       "additionalProperties": false,
       "properties": {
         "best_estimate": {
@@ -51,32 +30,32 @@
         "max_estimate",
         "source"
       ],
-      "title": "NutritionInterval",
+      "title": "NutritionMetric",
       "type": "object"
     },
-    "NutritionIntervals": {
+    "NutritionMetrics": {
       "additionalProperties": false,
       "properties": {
         "carbs_g": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "fat_g": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "fiber_g": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "kcal": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "protein_g": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "sodium_mg": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         },
         "sugar_g": {
-          "$ref": "#/$defs/NutritionInterval"
+          "$ref": "#/$defs/NutritionMetric"
         }
       },
       "required": [
@@ -88,74 +67,26 @@
         "sodium_mg",
         "fiber_g"
       ],
-      "title": "NutritionIntervals",
-      "type": "object"
-    },
-    "UncertaintySummary": {
-      "additionalProperties": false,
-      "properties": {
-        "confidence_label": {
-          "enum": [
-            "high",
-            "medium",
-            "low"
-          ],
-          "title": "Confidence Label",
-          "type": "string"
-        },
-        "relative_range_width": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Relative Range Width"
-        },
-        "uncertainty_flags": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Uncertainty Flags",
-          "type": "array"
-        }
-      },
-      "required": [
-        "confidence_label"
-      ],
-      "title": "UncertaintySummary",
+      "title": "NutritionMetrics",
       "type": "object"
     }
   },
   "additionalProperties": false,
   "properties": {
-    "clarify_questions": {
-      "items": {
-        "$ref": "#/$defs/ClarifyQuestion"
-      },
-      "title": "Clarify Questions",
-      "type": "array"
-    },
-    "ledger_entry_id": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
+    "decision": {
+      "enum": [
+        "ACCEPT",
+        "WARN",
+        "CLARIFY",
+        "BLOCK"
       ],
-      "default": null,
-      "title": "Ledger Entry Id"
+      "title": "Decision",
+      "type": "string"
     },
-    "nutrition": {
+    "metrics": {
       "anyOf": [
         {
-          "$ref": "#/$defs/NutritionIntervals"
+          "$ref": "#/$defs/NutritionMetrics"
         },
         {
           "type": "null"
@@ -174,32 +105,12 @@
       "minLength": 1,
       "title": "Request Id",
       "type": "string"
-    },
-    "status": {
-      "enum": [
-        "ACCEPT",
-        "WARN",
-        "CLARIFY",
-        "BLOCK"
-      ],
-      "title": "Status",
-      "type": "string"
-    },
-    "trace_id": {
-      "minLength": 1,
-      "title": "Trace Id",
-      "type": "string"
-    },
-    "uncertainty_summary": {
-      "$ref": "#/$defs/UncertaintySummary"
     }
   },
   "required": [
     "request_id",
-    "status",
-    "trace_id",
-    "uncertainty_summary"
+    "decision"
   ],
-  "title": "AnalyzePhotoFacadeResponse",
+  "title": "PhotoAnalyzeResponse",
   "type": "object"
 }

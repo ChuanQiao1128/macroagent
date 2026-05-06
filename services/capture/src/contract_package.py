@@ -68,7 +68,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
     )
     _write_json(
         schemas_dir / "photo_analyze_response.schema.json",
-        AnalyzePhotoFacadeResponse.model_json_schema(),
+        PhotoAnalyzeResponse.model_json_schema(),
     )
     _write_json(
         schemas_dir / "capture_metadata.schema.json", DeviceCaptureMetadata.model_json_schema()
