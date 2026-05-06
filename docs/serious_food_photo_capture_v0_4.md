@@ -65,6 +65,9 @@ Expected output:
 Convert iPhone capture metadata into existing `ScaleEvidenceCandidate` and
 `ScaleEvidenceResolution` objects.
 
+Status: verified in `services/capture/src/scale_evidence_adapter.py` and
+`tests/capture/test_scale_evidence_adapter.py`.
+
 Expected output:
 
 - depth/LiDAR, barcode/label serving, utensil/reference hints, and photo-only cases
