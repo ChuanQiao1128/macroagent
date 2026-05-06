@@ -219,7 +219,12 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
                 return
             }
 
-            sessionQueue.async {
+            sessionQueue.async { [weak self] in
+                guard self != nil else {
+                    continuation.resume(throwing: CaptureServiceError.captureServiceReleased)
+                    return
+                }
+
                 if !session.isRunning {
                     session.startRunning()
                 }
@@ -235,7 +240,12 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
                 return
             }
 
-            sessionQueue.async {
+            sessionQueue.async { [weak self] in
+                guard self != nil else {
+                    continuation.resume(returning: ())
+                    return
+                }
+
                 if session.isRunning {
                     session.stopRunning()
                 }
