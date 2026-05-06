@@ -62,7 +62,10 @@ def build_sanitized_capture_trace_artifact(
 
     barcode_payload = (metadata.barcode_payload or "").strip()
     barcode_detected = bool(barcode_payload)
-    barcode_value_stored = barcode_detected and barcode_marked_safe
+    # Allow either explicit runtime marking or metadata safety marking.
+    barcode_value_stored = barcode_detected and (
+        barcode_marked_safe or metadata.barcode_payload_safe
+    )
 
     artifact: dict[str, object] = {
         "image_identity": {
