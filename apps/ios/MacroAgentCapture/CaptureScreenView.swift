@@ -59,6 +59,10 @@ struct CaptureScreenView: View {
             }
 
             Section("Actions") {
+                Text("Review the Metadata tab preview before sending Analyze.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 Button("Run Health Check") {
                     Task { [weak store] in
                         guard let store else {
@@ -82,6 +86,12 @@ struct CaptureScreenView: View {
             Section("Status") {
                 if let health = store.latestHealth {
                     KeyValueRow(label: "health", value: health.status)
+                }
+                if let analyzeError = store.latestAnalyzeError {
+                    KeyValueRow(
+                        label: "analyze_error",
+                        value: "\(analyzeError.title): \(analyzeError.detail)"
+                    )
                 }
                 KeyValueRow(label: "debug", value: store.debugMessage)
             }

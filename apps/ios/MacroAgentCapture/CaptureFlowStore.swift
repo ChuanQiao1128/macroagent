@@ -1,6 +1,40 @@
 import Foundation
 import SwiftUI
 
+enum AnalyzeErrorState: Equatable {
+    case invalidServerURL(String)
+    case networkFailure(String)
+    case invalidResponse(String)
+    case serverFailure(String)
+    case unknown(String)
+
+    var title: String {
+        switch self {
+        case .invalidServerURL:
+            return "Invalid server URL"
+        case .networkFailure:
+            return "Network failure"
+        case .invalidResponse:
+            return "Invalid response"
+        case .serverFailure:
+            return "Server failure"
+        case .unknown:
+            return "Unknown error"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .invalidServerURL(let detail),
+             .networkFailure(let detail),
+             .invalidResponse(let detail),
+             .serverFailure(let detail),
+             .unknown(let detail):
+            return detail
+        }
+    }
+}
+
 @MainActor
 final class CaptureFlowStore: ObservableObject {
     @Published var serverURLText: String
@@ -14,6 +48,7 @@ final class CaptureFlowStore: ObservableObject {
     @Published private(set) var metadataPreview: AnalyzePhotoRequestEnvelope
     @Published private(set) var latestHealth: HealthResponse?
     @Published private(set) var latestResponse: AnalyzePhotoResponse?
+    @Published private(set) var latestAnalyzeError: AnalyzeErrorState?
     @Published private(set) var debugMessage: String
     @Published private(set) var isAnalyzing: Bool
 
@@ -42,6 +77,7 @@ final class CaptureFlowStore: ObservableObject {
 
         self.latestHealth = nil
         self.latestResponse = nil
+        self.latestAnalyzeError = nil
         self.debugMessage = "Ready"
         self.isAnalyzing = false
     }
@@ -59,6 +95,7 @@ final class CaptureFlowStore: ObservableObject {
             captureDraft = draft
             metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
             latestResponse = nil
+            latestAnalyzeError = nil
             debugMessage = "Prepared \(draft.captureSourceMode.displayName.lowercased()) draft with \(draft.imageIdentity.byteSize) bytes."
         } catch {
             debugMessage = "Capture failed: \(error.localizedDescription)"
@@ -81,19 +118,24 @@ final class CaptureFlowStore: ObservableObject {
         if selectedCaptureMode == .camera, captureDraft.captureSourceMode != .camera {
             debugMessage = "Capture a real camera photo before analyze while Camera mode is selected."
             latestResponse = nil
+            latestAnalyzeError = nil
             return
         }
 
         isAnalyzing = true
+        latestAnalyzeError = nil
         debugMessage = "Submitting metadata payload to local server..."
 
         do {
             let response = try await currentAPIClient().analyzePhoto(metadataPreview)
             latestResponse = response
+            latestAnalyzeError = nil
             debugMessage = "Received \(response.status.rawValue) response for request \(response.requestID)."
         } catch {
             latestResponse = nil
-            debugMessage = "Analyze request failed: \(error.localizedDescription)"
+            let errorState = classifyAnalyzeError(error)
+            latestAnalyzeError = errorState
+            debugMessage = "Analyze request failed (\(errorState.title)): \(errorState.detail)"
         }
 
         isAnalyzing = false
@@ -140,5 +182,30 @@ final class CaptureFlowStore: ObservableObject {
             encodedImageBytes: captureDraft.encodedImageBytes
         )
         metadataPreview = metadataBuilder.buildRequestEnvelope(from: captureDraft)
+    }
+
+    private func classifyAnalyzeError(_ error: Error) -> AnalyzeErrorState {
+        if let apiError = error as? APIClientError {
+            switch apiError {
+            case .invalidBaseURL(let raw):
+                return .invalidServerURL("Invalid server URL: \(raw)")
+            case .unexpectedStatusCode(let code):
+                return .serverFailure("Server returned HTTP \(code).")
+            case .encodingFailed:
+                return .invalidResponse("Unable to encode request payload.")
+            case .invalidResponse(let detail):
+                return .invalidResponse(detail)
+            }
+        }
+
+        if let urlError = error as? URLError {
+            return .networkFailure(urlError.localizedDescription)
+        }
+
+        if error is DecodingError {
+            return .invalidResponse("Response JSON did not match expected fields.")
+        }
+
+        return .unknown(error.localizedDescription)
     }
 }

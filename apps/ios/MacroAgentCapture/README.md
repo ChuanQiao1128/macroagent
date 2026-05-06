@@ -37,6 +37,12 @@ Both modes produce:
 - `image_identity.byte_size`
 - v0.4 `capture_metadata` fields including motion, depth, OCR, barcode, and reference hint values
 
+## Mock-First Backend Behavior (Explicit)
+
+- `POST /v1/meals/analyze-photo` is currently backed by deterministic mock-first analysis in the local Mac server.
+- The smoke test goal is transport and contract validation (photo metadata -> backend -> response rendering), not production vision inference.
+- Expect deterministic `ACCEPT`/`WARN`/`CLARIFY`/`BLOCK` fixture-style behavior keyed by request data.
+
 ## Privacy / Storage Boundary
 
 - Raw image bytes are kept in memory only (`CaptureDraft.encodedImageBytes`).
@@ -57,6 +63,53 @@ Backend run command on Mac:
 cd /Users/qc/Documents/Claude/Projects/NutritionAI
 python -m services.api.local_server --host 0.0.0.0 --port 8765
 ```
+
+## Manual Phone-to-Mac Smoke Test Runbook
+
+1. Find your Mac LAN IP (same Wi-Fi network as iPhone).
+
+```bash
+ipconfig getifaddr en0
+```
+
+If `en0` is not your active interface, list interfaces and pick the active LAN/Wi-Fi IP:
+
+```bash
+ifconfig | rg "inet "
+```
+
+2. Start the local server on your Mac.
+
+```bash
+cd /Users/qc/Documents/Claude/Projects/NutritionAI
+python -m services.api.local_server --host 0.0.0.0 --port 8765
+```
+
+3. Configure server URL on iPhone.
+- Open `MacroAgentCapture`.
+- In `Capture` tab, set server URL to `http://<mac-lan-ip>:8765`.
+
+4. Take a photo.
+- Keep `Capture Mode` as `Camera` on a real iPhone.
+- Tap `Capture Now`.
+
+5. Send request.
+- Open `Metadata` tab and confirm the request preview for `/v1/meals/analyze-photo`.
+- Return to `Capture` or `Result` tab and tap `Analyze`.
+
+6. Verify response.
+- Confirm `status`, `trace_id`, and `reasons`.
+- Confirm seven nutrition metrics render when status is not `BLOCK`:
+  `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, `fiber_g`.
+- Confirm `clarify_questions` are shown when status is `CLARIFY`.
+
+## Troubleshooting
+
+- Same Wi-Fi/LAN: confirm iPhone and Mac are on the same SSID and subnet.
+- URL format: use `http://<mac-lan-ip>:8765` (not `127.0.0.1`) on physical iPhone.
+- Server bind: ensure server is started with `--host 0.0.0.0`.
+- macOS firewall: System Settings -> Network -> Firewall; allow incoming connections for Terminal/Python (or temporarily disable firewall for local test), then retry.
+- Health check: use `Run Health Check` in app before `Analyze`; if health fails, fix network path first.
 
 ## Create / Open Xcode Project Manually
 

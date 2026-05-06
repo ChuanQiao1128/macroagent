@@ -34,6 +34,7 @@ enum APIClientError: LocalizedError {
     case invalidBaseURL(String)
     case unexpectedStatusCode(Int)
     case encodingFailed
+    case invalidResponse(String)
 
     var errorDescription: String? {
         switch self {
@@ -43,6 +44,8 @@ enum APIClientError: LocalizedError {
             return "Server returned HTTP \(code)."
         case .encodingFailed:
             return "Unable to encode request payload."
+        case .invalidResponse(let detail):
+            return "Invalid response payload: \(detail)"
         }
     }
 }
@@ -88,7 +91,11 @@ struct LocalServerAPIClient: MacroAgentAPIClient {
 
         let (data, response) = try await urlSession.data(for: request)
         try validate(response: response)
-        return try decoder.decode(AnalyzePhotoResponse.self, from: data)
+        do {
+            return try decoder.decode(AnalyzePhotoResponse.self, from: data)
+        } catch {
+            throw APIClientError.invalidResponse("response body does not match AnalyzePhotoResponse")
+        }
     }
 
     private func makeURL(path: String) throws -> URL {
