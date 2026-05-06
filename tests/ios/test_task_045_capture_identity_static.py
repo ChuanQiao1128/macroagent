@@ -4,6 +4,7 @@ from pathlib import Path
 
 IOS_APP_DIR = Path("apps/ios/MacroAgentCapture")
 CAPTURE_SERVICE = IOS_APP_DIR / "CaptureService.swift"
+MODELS = IOS_APP_DIR / "Models.swift"
 
 
 def _read(path: Path) -> str:
@@ -73,3 +74,28 @@ def test_sample_fallback_mode_uses_embedded_in_memory_image_bytes() -> None:
     assert "Data(base64Encoded: png1x1Base64)" in text
     assert "return Data([0x89, 0x50, 0x4E, 0x47])" in text
     assert "captureSourceMode: .sampleFallback" in text
+
+
+def test_capture_metadata_contract_names_match_v0_4_payload_shape() -> None:
+    text = _read(MODELS)
+
+    expected_keys = (
+        'case deviceModel = "device_model"',
+        'case osVersion = "os_version"',
+        'case cameraPosition = "camera_position"',
+        "case orientation",
+        'case pitchDegrees = "pitch_degrees"',
+        'case rollDegrees = "roll_degrees"',
+        'case focalLengthMM = "focal_length_mm"',
+        'case lensHint = "lens_hint"',
+        'case depthAvailable = "depth_available"',
+        'case depthQuality = "depth_quality"',
+        'case lidarAvailable = "lidar_available"',
+        'case barcodePayload = "barcode_payload"',
+        'case barcodePayloadSafe = "barcode_payload_safe"',
+        'case ocrTextSnippets = "ocr_text_snippets"',
+        'case referenceObjectHint = "reference_object_hint"',
+        'case captureTimestamp = "capture_timestamp"',
+    )
+    for key in expected_keys:
+        assert key in text
