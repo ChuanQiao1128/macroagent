@@ -1,11 +1,23 @@
 import AVFoundation
+import CoreMotion
 import CryptoKit
 import Foundation
 import ImageIO
+import Vision
 
 protocol CaptureService {
-    func initialDraft() -> CaptureDraft
-    func prepareDraft(mode: CaptureSourceMode) async throws -> CaptureDraft
+    func initialDraft(referenceObjectHint: String?) -> CaptureDraft
+    func prepareDraft(mode: CaptureSourceMode, referenceObjectHint: String?) async throws -> CaptureDraft
+}
+
+extension CaptureService {
+    func initialDraft() -> CaptureDraft {
+        initialDraft(referenceObjectHint: nil)
+    }
+
+    func prepareDraft(mode: CaptureSourceMode) async throws -> CaptureDraft {
+        try await prepareDraft(mode: mode, referenceObjectHint: nil)
+    }
 }
 
 enum CaptureServiceError: LocalizedError {
@@ -43,12 +55,12 @@ enum CaptureServiceError: LocalizedError {
 struct PlaceholderCaptureService: CaptureService {
     private let defaultUserID = "ios-smoke-user-0001"
 
-    func initialDraft() -> CaptureDraft {
-        SampleCaptureFactory.makeDraft(userID: defaultUserID)
+    func initialDraft(referenceObjectHint: String?) -> CaptureDraft {
+        SampleCaptureFactory.makeDraft(userID: defaultUserID, referenceObjectHint: referenceObjectHint)
     }
 
-    func prepareDraft(mode: CaptureSourceMode) async throws -> CaptureDraft {
-        SampleCaptureFactory.makeDraft(userID: defaultUserID)
+    func prepareDraft(mode: CaptureSourceMode, referenceObjectHint: String?) async throws -> CaptureDraft {
+        SampleCaptureFactory.makeDraft(userID: defaultUserID, referenceObjectHint: referenceObjectHint)
     }
 }
 
@@ -56,12 +68,16 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
     private struct CameraRuntime {
         let session: AVCaptureSession
         let photoOutput: AVCapturePhotoOutput
+        let camera: AVCaptureDevice
         let cameraPosition: CameraPosition
+        let lidarAvailable: Bool
     }
 
     private struct CapturedPhoto {
         let photo: AVCapturePhoto
         let suggestedFileTypeRawValue: String?
+        let captureTimestamp: Date
+        let motionSnapshot: MotionSnapshot?
     }
 
     private let defaultUserID: String
@@ -73,20 +89,20 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         self.defaultUserID = defaultUserID
     }
 
-    func initialDraft() -> CaptureDraft {
-        SampleCaptureFactory.makeDraft(userID: defaultUserID)
+    func initialDraft(referenceObjectHint: String?) -> CaptureDraft {
+        SampleCaptureFactory.makeDraft(userID: defaultUserID, referenceObjectHint: referenceObjectHint)
     }
 
-    func prepareDraft(mode: CaptureSourceMode) async throws -> CaptureDraft {
+    func prepareDraft(mode: CaptureSourceMode, referenceObjectHint: String?) async throws -> CaptureDraft {
         switch mode {
         case .sampleFallback:
-            return SampleCaptureFactory.makeDraft(userID: defaultUserID)
+            return SampleCaptureFactory.makeDraft(userID: defaultUserID, referenceObjectHint: referenceObjectHint)
         case .camera:
-            return try await prepareCameraDraft()
+            return try await prepareCameraDraft(referenceObjectHint: referenceObjectHint)
         }
     }
 
-    private func prepareCameraDraft() async throws -> CaptureDraft {
+    private func prepareCameraDraft(referenceObjectHint: String?) async throws -> CaptureDraft {
 #if targetEnvironment(simulator)
         throw CaptureServiceError.simulatorRequiresSampleMode
 #else
@@ -94,9 +110,18 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let runtime = try await buildCameraRuntime()
         try await startSession(runtime.session)
 
+        let motionSampler = MotionSampler()
+        motionSampler.start()
+        defer {
+            motionSampler.stop()
+        }
+
+        // Allow CoreMotion updates to warm up so we can sample near shutter time.
+        try? await Task.sleep(nanoseconds: 120_000_000)
+
         let capturedPhoto: CapturedPhoto
         do {
-            capturedPhoto = try await capturePhoto(with: runtime.photoOutput)
+            capturedPhoto = try await capturePhoto(with: runtime.photoOutput, motionSampler: motionSampler)
         } catch {
             await stopSession(runtime.session)
             throw error
@@ -110,23 +135,28 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             suggestedFileTypeRawValue: capturedPhoto.suggestedFileTypeRawValue
         )
 
+        let motionSnapshot = capturedPhoto.motionSnapshot ?? motionSampler.snapshot()
+        let depthAvailable = capturedPhoto.photo.depthData != nil
+        let depthQuality = DepthQualityEstimator.from(depthData: capturedPhoto.photo.depthData)
+        let visionMetadata = VisionMetadataExtractor.extract(from: encodedBytes)
+
         let metadata = CaptureMetadata(
             deviceModel: DeviceIdentity.hardwareModelIdentifier(),
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
             cameraPosition: runtime.cameraPosition,
             orientation: .unknown,
-            pitchDegrees: 0,
-            rollDegrees: 0,
+            pitchDegrees: motionSnapshot?.pitchDegrees ?? 0,
+            rollDegrees: motionSnapshot?.rollDegrees ?? 0,
             focalLengthMM: nil,
-            lensHint: "standard",
-            depthAvailable: false,
-            depthQuality: .none,
-            lidarAvailable: false,
-            barcodePayload: nil,
-            barcodePayloadSafe: false,
-            ocrTextSnippets: [],
-            referenceObjectHint: nil,
-            captureTimestamp: TimestampFormatter.iso8601Now()
+            lensHint: LensHintResolver.resolve(for: runtime.camera.deviceType),
+            depthAvailable: depthAvailable,
+            depthQuality: depthQuality,
+            lidarAvailable: runtime.lidarAvailable,
+            barcodePayload: visionMetadata.barcodePayload,
+            barcodePayloadSafe: visionMetadata.barcodePayloadSafe,
+            ocrTextSnippets: visionMetadata.ocrTextSnippets,
+            referenceObjectHint: referenceObjectHint,
+            captureTimestamp: TimestampFormatter.iso8601(from: capturedPhoto.captureTimestamp)
         )
 
         return CaptureDraft(
@@ -197,12 +227,19 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
 
                     session.addInput(input)
                     session.addOutput(output)
+
+                    if output.isDepthDataDeliverySupported {
+                        output.isDepthDataDeliveryEnabled = true
+                    }
+
                     session.commitConfiguration()
 
                     let runtime = CameraRuntime(
                         session: session,
                         photoOutput: output,
-                        cameraPosition: CameraPosition.fromAVPosition(camera.position)
+                        camera: camera,
+                        cameraPosition: CameraPosition.fromAVPosition(camera.position),
+                        lidarAvailable: DeviceCapabilities.hasLiDARCamera()
                     )
                     continuation.resume(returning: runtime)
                 } catch {
@@ -254,9 +291,15 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         }
     }
 
-    private func capturePhoto(with photoOutput: AVCapturePhotoOutput) async throws -> CapturedPhoto {
+    private func capturePhoto(with photoOutput: AVCapturePhotoOutput, motionSampler: MotionSampler) async throws -> CapturedPhoto {
         let settings = AVCapturePhotoSettings()
+        if photoOutput.isDepthDataDeliverySupported {
+            settings.isDepthDataDeliveryEnabled = true
+        }
+
         let suggestedFileTypeRawValue = settings.processedFileType?.rawValue
+        let captureTimestamp = Date()
+        let motionSnapshot = motionSampler.snapshot()
 
         let photo = try await withCheckedThrowingContinuation { [weak self] continuation in
             guard let self else {
@@ -286,7 +329,12 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             }
         }
 
-        return CapturedPhoto(photo: photo, suggestedFileTypeRawValue: suggestedFileTypeRawValue)
+        return CapturedPhoto(
+            photo: photo,
+            suggestedFileTypeRawValue: suggestedFileTypeRawValue,
+            captureTimestamp: captureTimestamp,
+            motionSnapshot: motionSnapshot
+        )
     }
 
     private func extractEncodedBytes(from photo: AVCapturePhoto) throws -> Data {
@@ -320,6 +368,299 @@ extension AVFoundationCaptureService: AVCapturePhotoCaptureDelegate {
         if let error {
             finishPendingCapture(with: .failure(error))
         }
+    }
+}
+
+private struct MotionSnapshot {
+    let pitchDegrees: Double
+    let rollDegrees: Double
+}
+
+private final class MotionSampler {
+    private let motionManager = CMMotionManager()
+
+    func start() {
+        guard motionManager.isDeviceMotionAvailable else {
+            return
+        }
+
+        motionManager.deviceMotionUpdateInterval = 1.0 / 30.0
+        motionManager.startDeviceMotionUpdates(using: .xArbitraryCorrectedZVertical)
+    }
+
+    func stop() {
+        if motionManager.isDeviceMotionActive {
+            motionManager.stopDeviceMotionUpdates()
+        }
+    }
+
+    func snapshot() -> MotionSnapshot? {
+        guard let motion = motionManager.deviceMotion else {
+            return nil
+        }
+
+        let pitchDegrees = sanitizeAngleDegrees(motion.attitude.pitch * 180.0 / Double.pi)
+        let rollDegrees = sanitizeAngleDegrees(motion.attitude.roll * 180.0 / Double.pi)
+        return MotionSnapshot(pitchDegrees: pitchDegrees, rollDegrees: rollDegrees)
+    }
+
+    private func sanitizeAngleDegrees(_ value: Double) -> Double {
+        guard value.isFinite else {
+            return 0
+        }
+
+        return max(-180, min(180, value))
+    }
+}
+
+private struct VisionCaptureMetadata {
+    let barcodePayload: String?
+    let barcodePayloadSafe: Bool
+    let ocrTextSnippets: [String]
+}
+
+private enum VisionMetadataExtractor {
+    private static let maxOCRSnippetCount = 6
+    private static let maxSnippetLength = 48
+
+    private static let foodPackageKeywords: [String] = [
+        "nutrition", "ingredient", "ingredients", "serving", "calorie", "calories", "kcal",
+        "protein", "carb", "carbs", "fat", "fiber", "sugar", "sodium", "net wt", "energy",
+        "portion", "grams", "ounces", "ml", "l", "kg", "g", "mg"
+    ]
+
+    static func extract(from encodedBytes: Data) -> VisionCaptureMetadata {
+        guard let cgImage = cgImage(from: encodedBytes) else {
+            return VisionCaptureMetadata(barcodePayload: nil, barcodePayloadSafe: false, ocrTextSnippets: [])
+        }
+
+        let barcodeRequest = VNDetectBarcodesRequest()
+        let textRequest = VNRecognizeTextRequest()
+        textRequest.recognitionLevel = .accurate
+        textRequest.usesLanguageCorrection = false
+        textRequest.recognitionLanguages = ["en-US"]
+
+        do {
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+            try handler.perform([barcodeRequest, textRequest])
+        } catch {
+            return VisionCaptureMetadata(barcodePayload: nil, barcodePayloadSafe: false, ocrTextSnippets: [])
+        }
+
+        let barcodePayloads = (barcodeRequest.results ?? []).compactMap { observation in
+            observation.payloadStringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let barcodeResult = firstSafeBarcodePayload(in: barcodePayloads)
+
+        let rawTextCandidates = (textRequest.results ?? []).compactMap { observation in
+            observation.topCandidates(1).first?.string
+        }
+        let snippets = shortFoodPackageSnippets(from: rawTextCandidates)
+
+        return VisionCaptureMetadata(
+            barcodePayload: barcodeResult.payload,
+            barcodePayloadSafe: barcodeResult.safe,
+            ocrTextSnippets: snippets
+        )
+    }
+
+    private static func cgImage(from data: Data) -> CGImage? {
+        guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else {
+            return nil
+        }
+
+        return image
+    }
+
+    private static func firstSafeBarcodePayload(in payloads: [String]) -> (payload: String?, safe: Bool) {
+        for payload in payloads {
+            if isSafeBarcodePayload(payload) {
+                return (payload, true)
+            }
+        }
+
+        return (nil, false)
+    }
+
+    private static func isSafeBarcodePayload(_ payload: String) -> Bool {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 64 else {
+            return false
+        }
+
+        if looksSensitive(trimmed) {
+            return false
+        }
+
+        let allowedScalars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._:/+()"))
+        for scalar in trimmed.unicodeScalars where !allowedScalars.contains(scalar) {
+            return false
+        }
+
+        let digitsOnly = trimmed.filter(\.isNumber)
+        if digitsOnly.count > 20 {
+            return false
+        }
+
+        return true
+    }
+
+    private static func shortFoodPackageSnippets(from rawCandidates: [String]) -> [String] {
+        var snippets: [String] = []
+        var seen: Set<String> = []
+
+        for candidate in rawCandidates {
+            let lines = candidate.split(whereSeparator: \.isNewline).map(String.init)
+            for line in lines {
+                guard let normalized = normalizeOCRLine(line) else {
+                    continue
+                }
+
+                let signature = normalized.lowercased()
+                if seen.contains(signature) {
+                    continue
+                }
+
+                seen.insert(signature)
+                snippets.append(normalized)
+
+                if snippets.count >= maxOCRSnippetCount {
+                    return snippets
+                }
+            }
+        }
+
+        return snippets
+    }
+
+    private static func normalizeOCRLine(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let collapsed = collapseWhitespace(trimmed)
+        guard collapsed.count >= 2 else {
+            return nil
+        }
+
+        let shortened = collapsed.count > maxSnippetLength
+            ? String(collapsed.prefix(maxSnippetLength))
+            : collapsed
+
+        guard !looksSensitive(shortened) else {
+            return nil
+        }
+
+        guard isFoodOrPackageOriented(shortened) else {
+            return nil
+        }
+
+        return shortened
+    }
+
+    private static func collapseWhitespace(_ text: String) -> String {
+        text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func looksSensitive(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+
+        if lowercased.contains("@") || lowercased.contains("http://") || lowercased.contains("https://") {
+            return true
+        }
+
+        let digitsOnly = text.filter(\.isNumber)
+        if digitsOnly.count >= 10,
+           (text.contains("+") || text.contains("(") || text.contains(")") || text.contains("-") || text.contains(" ")) {
+            return true
+        }
+
+        let compact = text.replacingOccurrences(of: " ", with: "")
+        if compact.count >= 16,
+           compact.range(of: "^[A-Za-z0-9_./:-]+$", options: .regularExpression) != nil {
+            return true
+        }
+
+        return false
+    }
+
+    private static func isFoodOrPackageOriented(_ text: String) -> Bool {
+        let lowercased = text.lowercased()
+
+        if foodPackageKeywords.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        if lowercased.range(of: "\\b\\d{1,4}\\s?(kcal|cal|kj|g|mg|ml|oz|lb|l)\\b", options: .regularExpression) != nil {
+            return true
+        }
+
+        if lowercased.range(of: "\\b(total|per|serving|servings|ingredients?|nutrition|energy|net)\\b", options: .regularExpression) != nil {
+            return true
+        }
+
+        return false
+    }
+}
+
+private enum DepthQualityEstimator {
+    static func from(depthData: AVDepthData?) -> DepthQuality {
+        guard let depthData else {
+            return .none
+        }
+
+        let pixelBuffer = depthData.depthDataMap
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+
+        guard width > 0, height > 0 else {
+            return .unknown
+        }
+
+        let shorterSide = min(width, height)
+        if shorterSide >= 960 {
+            return .high
+        }
+
+        if shorterSide >= 480 {
+            return .medium
+        }
+
+        return .low
+    }
+}
+
+private enum LensHintResolver {
+    static func resolve(for deviceType: AVCaptureDevice.DeviceType) -> String {
+        switch deviceType {
+        case .builtInUltraWideCamera:
+            return "ultra_wide"
+        case .builtInTelephotoCamera:
+            return "telephoto"
+        case .builtInDualCamera, .builtInDualWideCamera, .builtInTripleCamera:
+            return "multi"
+        case .builtInWideAngleCamera:
+            return "standard"
+        default:
+            return "standard"
+        }
+    }
+}
+
+private enum DeviceCapabilities {
+    static func hasLiDARCamera() -> Bool {
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInLiDARDepthCamera],
+            mediaType: .video,
+            position: .back
+        )
+        return !discovery.devices.isEmpty
     }
 }
 
@@ -407,7 +748,7 @@ private enum ImageIdentityExtractor {
 }
 
 private enum SampleCaptureFactory {
-    static func makeDraft(userID: String) -> CaptureDraft {
+    static func makeDraft(userID: String, referenceObjectHint: String?) -> CaptureDraft {
         let encodedBytes = sampleImageBytes()
         let imageIdentity: ImageIdentity
 
@@ -426,6 +767,8 @@ private enum SampleCaptureFactory {
             )
         }
 
+        let visionMetadata = VisionMetadataExtractor.extract(from: encodedBytes)
+
         let metadata = CaptureMetadata(
             deviceModel: "sample-fallback",
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
@@ -438,10 +781,10 @@ private enum SampleCaptureFactory {
             depthAvailable: false,
             depthQuality: .none,
             lidarAvailable: false,
-            barcodePayload: nil,
-            barcodePayloadSafe: false,
-            ocrTextSnippets: [],
-            referenceObjectHint: "sample_fallback",
+            barcodePayload: visionMetadata.barcodePayload,
+            barcodePayloadSafe: visionMetadata.barcodePayloadSafe,
+            ocrTextSnippets: visionMetadata.ocrTextSnippets,
+            referenceObjectHint: referenceObjectHint,
             captureTimestamp: TimestampFormatter.iso8601Now()
         )
 
@@ -479,7 +822,11 @@ private enum TimestampFormatter {
     }()
 
     static func iso8601Now() -> String {
-        formatter.string(from: Date())
+        iso8601(from: Date())
+    }
+
+    static func iso8601(from date: Date) -> String {
+        formatter.string(from: date)
     }
 }
 

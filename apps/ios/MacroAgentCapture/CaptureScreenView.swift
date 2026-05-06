@@ -26,6 +26,18 @@ struct CaptureScreenView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Reference Object") {
+                Picker("Hint", selection: $store.selectedReferenceObjectHint) {
+                    ForEach(ReferenceObjectHint.allCases) { hint in
+                        Text(hint.displayName).tag(hint)
+                    }
+                }
+
+                Text("Optional scale hint passed as capture_metadata.reference_object_hint.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Capture Draft") {
                 KeyValueRow(label: "request_id", value: store.captureDraft.requestID)
                 KeyValueRow(label: "user_id", value: store.captureDraft.userID)
@@ -34,6 +46,7 @@ struct CaptureScreenView: View {
                 KeyValueRow(label: "image_format", value: store.captureDraft.imageIdentity.imageFormat)
                 KeyValueRow(label: "image_size", value: "\(store.captureDraft.imageIdentity.widthPX)x\(store.captureDraft.imageIdentity.heightPX)")
                 KeyValueRow(label: "bytes", value: "\(store.captureDraft.imageIdentity.byteSize)")
+                KeyValueRow(label: "reference_object_hint", value: store.captureDraft.captureMetadata.referenceObjectHint ?? "<none>")
 
                 Button("Capture Now") {
                     Task { [weak store] in

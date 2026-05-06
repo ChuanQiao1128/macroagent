@@ -14,7 +14,7 @@ For smoke testing on a real iPhone, configure these in your Xcode target:
 
 - Camera permission: `NSCameraUsageDescription`
 - Local network permission: `NSLocalNetworkUsageDescription` (for calling Mac LAN server)
-- Motion permission: `NSMotionUsageDescription` (reserved for upcoming motion metadata)
+- Motion permission: `NSMotionUsageDescription` (used for pitch/roll near shutter time)
 - App Transport Security exception for local HTTP development traffic as needed
 
 ## Real Device Requirement
@@ -35,12 +35,16 @@ Both modes produce:
 - `image_identity.width_px`
 - `image_identity.height_px`
 - `image_identity.byte_size`
+- v0.4 `capture_metadata` fields including motion, depth, OCR, barcode, and reference hint values
 
 ## Privacy / Storage Boundary
 
 - Raw image bytes are kept in memory only (`CaptureDraft.encodedImageBytes`).
 - Raw photo files are not written to the repository.
 - Raw image bytes are not serialized into metadata payload fields.
+- Barcode detection and OCR are executed locally on-device with Apple Vision.
+- `barcode_payload` is sent only when it passes a local safety filter.
+- `ocr_text_snippets` are trimmed to short food/package-oriented snippets and filtered to avoid likely email/phone/long-identifier values.
 
 ## Local Server URL
 

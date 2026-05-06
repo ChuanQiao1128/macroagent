@@ -5,6 +5,11 @@ import SwiftUI
 final class CaptureFlowStore: ObservableObject {
     @Published var serverURLText: String
     @Published var selectedCaptureMode: CaptureSourceMode
+    @Published var selectedReferenceObjectHint: ReferenceObjectHint {
+        didSet {
+            applyReferenceHintSelection()
+        }
+    }
     @Published private(set) var captureDraft: CaptureDraft
     @Published private(set) var metadataPreview: AnalyzePhotoRequestEnvelope
     @Published private(set) var latestHealth: HealthResponse?
@@ -29,8 +34,9 @@ final class CaptureFlowStore: ObservableObject {
         self.apiClientFactory = apiClientFactory
         self.serverURLText = initialServerURL
         self.selectedCaptureMode = .camera
+        self.selectedReferenceObjectHint = .none
 
-        let draft = captureService.initialDraft()
+        let draft = captureService.initialDraft(referenceObjectHint: selectedReferenceObjectHint.metadataValue)
         self.captureDraft = draft
         self.metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
 
@@ -46,7 +52,10 @@ final class CaptureFlowStore: ObservableObject {
             : "Preparing sample fallback capture..."
 
         do {
-            let draft = try await captureService.prepareDraft(mode: selectedCaptureMode)
+            let draft = try await captureService.prepareDraft(
+                mode: selectedCaptureMode,
+                referenceObjectHint: selectedReferenceObjectHint.metadataValue
+            )
             captureDraft = draft
             metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
             latestResponse = nil
@@ -93,5 +102,43 @@ final class CaptureFlowStore: ObservableObject {
     private func currentAPIClient() -> MacroAgentAPIClient {
         let configuration = LocalServerConfiguration(baseURLString: serverURLText)
         return apiClientFactory(configuration)
+    }
+
+    private func applyReferenceHintSelection() {
+        let selectedHint = selectedReferenceObjectHint.metadataValue
+        let currentMetadata = captureDraft.captureMetadata
+
+        if currentMetadata.referenceObjectHint == selectedHint {
+            return
+        }
+
+        let updatedMetadata = CaptureMetadata(
+            deviceModel: currentMetadata.deviceModel,
+            osVersion: currentMetadata.osVersion,
+            cameraPosition: currentMetadata.cameraPosition,
+            orientation: currentMetadata.orientation,
+            pitchDegrees: currentMetadata.pitchDegrees,
+            rollDegrees: currentMetadata.rollDegrees,
+            focalLengthMM: currentMetadata.focalLengthMM,
+            lensHint: currentMetadata.lensHint,
+            depthAvailable: currentMetadata.depthAvailable,
+            depthQuality: currentMetadata.depthQuality,
+            lidarAvailable: currentMetadata.lidarAvailable,
+            barcodePayload: currentMetadata.barcodePayload,
+            barcodePayloadSafe: currentMetadata.barcodePayloadSafe,
+            ocrTextSnippets: currentMetadata.ocrTextSnippets,
+            referenceObjectHint: selectedHint,
+            captureTimestamp: currentMetadata.captureTimestamp
+        )
+
+        captureDraft = CaptureDraft(
+            requestID: captureDraft.requestID,
+            userID: captureDraft.userID,
+            captureSourceMode: captureDraft.captureSourceMode,
+            imageIdentity: captureDraft.imageIdentity,
+            captureMetadata: updatedMetadata,
+            encodedImageBytes: captureDraft.encodedImageBytes
+        )
+        metadataPreview = metadataBuilder.buildRequestEnvelope(from: captureDraft)
     }
 }

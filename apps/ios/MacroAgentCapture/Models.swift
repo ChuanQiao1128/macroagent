@@ -47,6 +47,35 @@ enum CaptureSourceMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable {
+    case none
+    case creditCard = "credit_card"
+    case standardFork = "standard_fork"
+    case tablespoon
+    case sodaCan = "soda_can_330ml"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .none:
+            return "None"
+        case .creditCard:
+            return "Credit Card"
+        case .standardFork:
+            return "Standard Fork"
+        case .tablespoon:
+            return "Tablespoon"
+        case .sodaCan:
+            return "330ml Soda Can"
+        }
+    }
+
+    var metadataValue: String? {
+        self == .none ? nil : rawValue
+    }
+}
+
 struct ImageIdentity: Codable, Hashable {
     let imageSHA256: String
     let imageFormat: String
