@@ -56,10 +56,11 @@ is JSON metadata only.
 
 ### TASK-044 - iOS SwiftUI Project Skeleton
 
-Add a minimal SwiftUI app under `apps/ios/MacroAgentCapture`. It should have a
-capture screen, metadata preview, and result/debug screen. The project should be
-plain source files and a clear README/runbook even if Xcode project generation is
-manual in this repo.
+Verified in `apps/ios/MacroAgentCapture` and `tests/ios/test_task_044_ios_swiftui_skeleton.py`.
+The skeleton includes a SwiftUI entrypoint, root view, capture placeholder,
+metadata preview placeholder, result/debug placeholder, and a lightweight local
+server client seam. The README covers manual Xcode setup, iOS 17.0+, required
+permissions, and the local server URL.
 
 ### TASK-045 - AVFoundation Capture and Image Hash
 
