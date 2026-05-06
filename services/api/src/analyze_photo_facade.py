@@ -19,6 +19,7 @@ from services.meal.takeoff.schemas import EvidenceClaim, MacroValueClaim, Portio
 from services.meal.takeoff.trace import InMemoryTraceEmitter, emit_stage_event
 from services.nutrition import match_food_name, parse_portion_range
 from services.storage.ledger import AppendOnlyLedger
+from services.storage.trace_store import TraceStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +55,7 @@ def analyze_photo_facade(
     request: AnalyzePhotoFacadeRequest,
     *,
     ledger: AppendOnlyLedger | None = None,
+    trace_store: TraceStore | None = None,
 ) -> AnalyzePhotoFacadeResponse:
     payload = request.payload
     fixture_id = _fixture_id_from_request_id(payload.request_id)
@@ -161,6 +163,7 @@ def analyze_photo_facade(
     )
 
     if gate.decision == "BLOCK":
+        _append_trace_events(trace_store=trace_store, emitter=emitter)
         reasons = [
             "unsupported raw macro claim from llm"
             if has_blocking_conflict
@@ -204,6 +207,7 @@ def analyze_photo_facade(
     if status == "WARN" and not uncertainty_flags:
         uncertainty_flags.append("wide_portion_range")
 
+    _append_trace_events(trace_store=trace_store, emitter=emitter)
     return AnalyzePhotoFacadeResponse(
         request_id=payload.request_id,
         status=status,
@@ -221,6 +225,15 @@ def analyze_photo_facade(
             uncertainty_flags=uncertainty_flags,
         ),
     )
+
+
+def _append_trace_events(
+    *, trace_store: TraceStore | None, emitter: InMemoryTraceEmitter
+) -> None:
+    if trace_store is None:
+        return
+    for event in emitter.events:
+        trace_store.append(event)
 
 
 def _fixture_id_from_request_id(request_id: str) -> str:

@@ -23,7 +23,13 @@ def build_sanitized_capture_trace_artifact(
 ) -> dict[str, object]:
     """Build a PII-safe capture trace payload from a photo analyze request."""
     metadata = request.capture_metadata
-    _reject_local_paths([metadata.barcode_payload or "", metadata.reference_object_hint or ""])
+    _reject_local_paths(
+        [
+            metadata.barcode_payload or "",
+            metadata.reference_object_hint or "",
+            metadata.lens_hint or "",
+        ]
+    )
     _reject_ocr_pii(metadata.ocr_text_snippets)
 
     resolution = scale_evidence.resolutions[0]
