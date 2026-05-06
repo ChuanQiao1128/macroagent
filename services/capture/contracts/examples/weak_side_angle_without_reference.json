@@ -85,9 +85,7 @@
     "ocr_detected": false,
     "ocr_text_stored": false,
     "prompt_version": "vision_prompt_placeholder",
-    "scale_evidence_ids": [
-      "scale:shape_prior:1"
-    ]
+    "scale_evidence_ids": []
   },
   "photo_analyze_request": {
     "capture_metadata": {

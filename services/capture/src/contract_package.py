@@ -8,7 +8,13 @@ from typing import Any, Literal
 from pydantic import Field
 
 from services.api import AnalyzePhotoFacadeRequest, AnalyzePhotoFacadeResponse, analyze_photo_facade
-from services.capture import DeviceCaptureMetadata, PhotoAnalyzeRequest, PhotoAnalyzeResponse
+from services.capture import (
+    DeviceCaptureMetadata,
+    PhotoAnalyzeRequest,
+    PhotoAnalyzeResponse,
+    build_sanitized_capture_trace_artifact,
+    resolve_scale_evidence_from_capture,
+)
 from services.capture.src.schemas import ImageIdentity, StrictModel
 
 
@@ -202,6 +208,20 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         facade_payload = analyze_photo_facade(facade_request)
         return facade_payload.model_dump(mode="json")
 
+    def artifact_scale_evidence_ids(photo_analyze_request: dict[str, Any]) -> list[str]:
+        request_model = PhotoAnalyzeRequest.model_validate(photo_analyze_request)
+        scale_evidence = resolve_scale_evidence_from_capture(
+            trace_id=f"trace:{request_model.request_id}",
+            capture_metadata=request_model.capture_metadata,
+        )
+        artifact = build_sanitized_capture_trace_artifact(
+            request=request_model,
+            scale_evidence=scale_evidence,
+            model_version="vision_model_placeholder",
+            prompt_version="vision_prompt_placeholder",
+        )
+        return list(artifact["scale_evidence_ids"])
+
     capture_trace_artifact = {
         "image_identity": top_down_depth_request["image_identity"],
         "capture_quality_summary": {
@@ -343,7 +363,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                     "roll_degrees": -12.1,
                     "lens_hint": "wide",
                 },
-                "scale_evidence_ids": ["scale:shape_prior:1"],
+                "scale_evidence_ids": artifact_scale_evidence_ids(side_angle_weak_request),
                 "ocr_detected": False,
             },
         },
@@ -412,7 +432,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                     "roll_degrees": 1.5,
                     "lens_hint": "wide",
                 },
-                "scale_evidence_ids": ["scale:barcode:1"],
+                "scale_evidence_ids": artifact_scale_evidence_ids(barcode_packaged_request),
                 "barcode_detected": True,
                 "barcode_value_stored": True,
                 "barcode_value": "049000042511",

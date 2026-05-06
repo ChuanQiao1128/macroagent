@@ -84,7 +84,9 @@
     "ocr_text_stored": false,
     "prompt_version": "vision_prompt_placeholder",
     "scale_evidence_ids": [
-      "scale:barcode:1"
+      "scale:barcode_serving:1",
+      "scale:label_ocr_serving:1",
+      "scale:reference_object:1"
     ]
   },
   "photo_analyze_request": {
