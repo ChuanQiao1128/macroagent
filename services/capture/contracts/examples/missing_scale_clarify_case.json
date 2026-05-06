@@ -13,58 +13,60 @@
     "ledger_entry_id": null,
     "nutrition": {
       "carbs_g": {
-        "best_estimate": 48.0,
-        "max_estimate": 55.0,
-        "min_estimate": 42.0,
-        "source": "fdc:fixture"
+        "best_estimate": 14.8,
+        "max_estimate": 25.2,
+        "min_estimate": 4.3,
+        "source": "deterministic:usda_seed_0048"
       },
       "fat_g": {
-        "best_estimate": 18.0,
-        "max_estimate": 22.0,
-        "min_estimate": 15.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.8,
+        "max_estimate": 1.4,
+        "min_estimate": 0.2,
+        "source": "deterministic:usda_seed_0048"
       },
       "fiber_g": {
-        "best_estimate": 7.0,
-        "max_estimate": 10.0,
-        "min_estimate": 5.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
       },
       "kcal": {
-        "best_estimate": 520.0,
-        "max_estimate": 590.0,
-        "min_estimate": 470.0,
-        "source": "fdc:fixture"
+        "best_estimate": 71.8,
+        "max_estimate": 122.5,
+        "min_estimate": 21.0,
+        "source": "deterministic:usda_seed_0048"
       },
       "protein_g": {
-        "best_estimate": 35.0,
-        "max_estimate": 40.0,
-        "min_estimate": 31.0,
-        "source": "fdc:fixture"
+        "best_estimate": 4.9,
+        "max_estimate": 8.4,
+        "min_estimate": 1.4,
+        "source": "deterministic:usda_seed_0048"
       },
       "sodium_mg": {
-        "best_estimate": 640.0,
-        "max_estimate": 730.0,
-        "min_estimate": 560.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
       },
       "sugar_g": {
-        "best_estimate": 8.0,
-        "max_estimate": 11.0,
-        "min_estimate": 5.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0048"
       }
     },
     "reasons": [
-      "insufficient scale evidence for portion resolution"
+      "range_width_gt_warn_max"
     ],
     "request_id": "req_clarify_missing_scale",
     "status": "CLARIFY",
     "trace_id": "trace:req_clarify_missing_scale",
     "uncertainty_summary": {
-      "confidence_label": "medium",
-      "relative_range_width": 0.22,
-      "uncertainty_flags": []
+      "confidence_label": "low",
+      "relative_range_width": 1.4136490250696379,
+      "uncertainty_flags": [
+        "unknown_portion_hint"
+      ]
     }
   },
   "capture_trace_artifact": {

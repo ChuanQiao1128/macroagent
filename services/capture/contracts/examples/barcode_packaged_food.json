@@ -4,57 +4,57 @@
     "ledger_entry_id": null,
     "nutrition": {
       "carbs_g": {
-        "best_estimate": 48.0,
-        "max_estimate": 55.0,
-        "min_estimate": 42.0,
-        "source": "fdc:fixture"
+        "best_estimate": 28.2,
+        "max_estimate": 31.0,
+        "min_estimate": 25.4,
+        "source": "deterministic:usda_seed_0001"
       },
       "fat_g": {
-        "best_estimate": 18.0,
-        "max_estimate": 22.0,
-        "min_estimate": 15.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.3,
+        "max_estimate": 0.3,
+        "min_estimate": 0.3,
+        "source": "deterministic:usda_seed_0001"
       },
       "fiber_g": {
-        "best_estimate": 7.0,
-        "max_estimate": 10.0,
-        "min_estimate": 5.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "kcal": {
-        "best_estimate": 520.0,
-        "max_estimate": 590.0,
-        "min_estimate": 470.0,
-        "source": "fdc:fixture"
+        "best_estimate": 130.0,
+        "max_estimate": 143.0,
+        "min_estimate": 117.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "protein_g": {
-        "best_estimate": 35.0,
-        "max_estimate": 40.0,
-        "min_estimate": 31.0,
-        "source": "fdc:fixture"
+        "best_estimate": 2.4,
+        "max_estimate": 2.6,
+        "min_estimate": 2.2,
+        "source": "deterministic:usda_seed_0001"
       },
       "sodium_mg": {
-        "best_estimate": 640.0,
-        "max_estimate": 730.0,
-        "min_estimate": 560.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       },
       "sugar_g": {
-        "best_estimate": 8.0,
-        "max_estimate": 11.0,
-        "min_estimate": 5.0,
-        "source": "fdc:fixture"
+        "best_estimate": 0.0,
+        "max_estimate": 0.0,
+        "min_estimate": 0.0,
+        "source": "deterministic:usda_seed_0001"
       }
     },
     "reasons": [
-      "fixture response for iOS contract package"
+      "range_width_within_accept"
     ],
     "request_id": "req_accept_barcode_packaged",
     "status": "ACCEPT",
     "trace_id": "trace:req_accept_barcode_packaged",
     "uncertainty_summary": {
-      "confidence_label": "medium",
-      "relative_range_width": 0.22,
+      "confidence_label": "high",
+      "relative_range_width": 0.2,
       "uncertainty_flags": []
     }
   },

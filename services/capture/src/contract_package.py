@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from services.api import AnalyzePhotoFacadeResponse
+from services.api import AnalyzePhotoFacadeRequest, AnalyzePhotoFacadeResponse, analyze_photo_facade
 from services.capture import DeviceCaptureMetadata, PhotoAnalyzeRequest, PhotoAnalyzeResponse
 from services.capture.src.schemas import ImageIdentity, StrictModel
 
@@ -67,7 +67,8 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         schemas_dir / "photo_analyze_request.schema.json", PhotoAnalyzeRequest.model_json_schema()
     )
     _write_json(
-        schemas_dir / "photo_analyze_response.schema.json", PhotoAnalyzeResponse.model_json_schema()
+        schemas_dir / "photo_analyze_response.schema.json",
+        AnalyzePhotoFacadeResponse.model_json_schema(),
     )
     _write_json(
         schemas_dir / "capture_metadata.schema.json", DeviceCaptureMetadata.model_json_schema()
@@ -196,87 +197,10 @@ def export_contract_package(base_dir: Path | None = None) -> None:
         },
     }
 
-    def facade_response(status: str, request_id: str) -> dict[str, Any]:
-        nutrition = {
-            "kcal": {
-                "best_estimate": 520.0,
-                "min_estimate": 470.0,
-                "max_estimate": 590.0,
-                "source": "fdc:fixture",
-            },
-            "protein_g": {
-                "best_estimate": 35.0,
-                "min_estimate": 31.0,
-                "max_estimate": 40.0,
-                "source": "fdc:fixture",
-            },
-            "carbs_g": {
-                "best_estimate": 48.0,
-                "min_estimate": 42.0,
-                "max_estimate": 55.0,
-                "source": "fdc:fixture",
-            },
-            "fat_g": {
-                "best_estimate": 18.0,
-                "min_estimate": 15.0,
-                "max_estimate": 22.0,
-                "source": "fdc:fixture",
-            },
-            "sugar_g": {
-                "best_estimate": 8.0,
-                "min_estimate": 5.0,
-                "max_estimate": 11.0,
-                "source": "fdc:fixture",
-            },
-            "sodium_mg": {
-                "best_estimate": 640.0,
-                "min_estimate": 560.0,
-                "max_estimate": 730.0,
-                "source": "fdc:fixture",
-            },
-            "fiber_g": {
-                "best_estimate": 7.0,
-                "min_estimate": 5.0,
-                "max_estimate": 10.0,
-                "source": "fdc:fixture",
-            },
-        }
-        payload: dict[str, Any] = {
-            "request_id": request_id,
-            "status": status,
-            "nutrition": nutrition,
-            "reasons": ["fixture response for iOS contract package"],
-            "clarify_questions": [],
-            "trace_id": f"trace:{request_id}",
-            "ledger_entry_id": None,
-            "uncertainty_summary": {
-                "confidence_label": "medium",
-                "relative_range_width": 0.22,
-                "uncertainty_flags": [],
-            },
-        }
-        if status == "WARN":
-            payload["reasons"] = [
-                "weak perspective angle and missing reference object",
-                "scale confidence is low; interval may be wide",
-            ]
-            payload["uncertainty_summary"]["uncertainty_flags"] = ["wide_portion_range"]
-        if status == "CLARIFY":
-            payload["reasons"] = ["insufficient scale evidence for portion resolution"]
-            payload["clarify_questions"] = [
-                {
-                    "question_id": "clarify_portion_reference",
-                    "text": (
-                        "Could you add a known-size reference object "
-                        "or confirm the portion size?"
-                    ),
-                },
-                {
-                    "question_id": "clarify_component_identity",
-                    "text": "Please confirm the main component and any hidden sauces/oils.",
-                },
-            ]
-        return payload
+    def facade_response(photo_analyze_request: dict[str, Any]) -> dict[str, Any]:
+        facade_request = AnalyzePhotoFacadeRequest.model_validate(photo_analyze_request)
+        facade_payload = analyze_photo_facade(facade_request)
+        return facade_payload.model_dump(mode="json")
 
     capture_trace_artifact = {
         "image_identity": top_down_depth_request["image_identity"],
@@ -351,9 +275,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                     },
                 },
             },
-            "analyze_photo_facade_response": facade_response(
-                "ACCEPT", top_down_depth_request["request_id"]
-            ),
+            "analyze_photo_facade_response": facade_response(top_down_depth_request),
             "capture_trace_artifact": capture_trace_artifact,
         },
         "weak_side_angle_without_reference": {
@@ -407,9 +329,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                     },
                 },
             },
-            "analyze_photo_facade_response": facade_response(
-                "WARN", side_angle_weak_request["request_id"]
-            ),
+            "analyze_photo_facade_response": facade_response(side_angle_weak_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,
                 "image_identity": side_angle_weak_request["image_identity"],
@@ -478,9 +398,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                     },
                 },
             },
-            "analyze_photo_facade_response": facade_response(
-                "ACCEPT", barcode_packaged_request["request_id"]
-            ),
+            "analyze_photo_facade_response": facade_response(barcode_packaged_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,
                 "image_identity": barcode_packaged_request["image_identity"],
@@ -508,9 +426,7 @@ def export_contract_package(base_dir: Path | None = None) -> None:
                 "reasons": ["missing scale evidence; clarify required before logging"],
                 "metrics": None,
             },
-            "analyze_photo_facade_response": facade_response(
-                "CLARIFY", missing_scale_clarify_request["request_id"]
-            ),
+            "analyze_photo_facade_response": facade_response(missing_scale_clarify_request),
             "capture_trace_artifact": {
                 **capture_trace_artifact,
                 "image_identity": missing_scale_clarify_request["image_identity"],
