@@ -422,11 +422,21 @@ private struct VisionCaptureMetadata {
 private enum VisionMetadataExtractor {
     private static let maxOCRSnippetCount = 6
     private static let maxSnippetLength = 48
+    private static let supportedBarcodeSymbologies: [VNBarcodeSymbology] = [
+        .ean8, .ean13, .upce
+    ]
+    private static let blockedBarcodePayloadPrefixes: [String] = [
+        "mailto:", "tel:", "sms:", "smsto:", "mms:", "mmsto:",
+        "geo:", "wifi:", "http://", "https://", "otpauth:"
+    ]
+    private static let blockedBarcodePayloadTokens: [String] = [
+        "begin:vcard", "mecard:"
+    ]
 
     private static let foodPackageKeywords: [String] = [
         "nutrition", "ingredient", "ingredients", "serving", "calorie", "calories", "kcal",
         "protein", "carb", "carbs", "fat", "fiber", "sugar", "sodium", "net wt", "energy",
-        "portion", "grams", "ounces", "ml", "l", "kg", "g", "mg"
+        "portion", "grams", "ounces", "ml", "kg", "mg"
     ]
 
     static func extract(from encodedBytes: Data) -> VisionCaptureMetadata {
@@ -435,6 +445,7 @@ private enum VisionMetadataExtractor {
         }
 
         let barcodeRequest = VNDetectBarcodesRequest()
+        barcodeRequest.symbologies = supportedBarcodeSymbologies
         let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = .accurate
         textRequest.usesLanguageCorrection = false
@@ -453,10 +464,8 @@ private enum VisionMetadataExtractor {
             return VisionCaptureMetadata(barcodePayload: nil, barcodePayloadSafe: false, ocrTextSnippets: [])
         }
 
-        let barcodePayloads = (barcodeRequest.results ?? []).compactMap { observation in
-            observation.payloadStringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let barcodeResult = firstSafeBarcodePayload(in: barcodePayloads)
+        let barcodeObservations = barcodeRequest.results ?? []
+        let barcodeResult = firstSafeBarcodePayload(in: barcodeObservations)
 
         let rawTextCandidates = (textRequest.results ?? []).compactMap { observation in
             observation.topCandidates(1).first?.string
@@ -496,8 +505,15 @@ private enum VisionMetadataExtractor {
         return .up
     }
 
-    private static func firstSafeBarcodePayload(in payloads: [String]) -> (payload: String?, safe: Bool) {
-        for payload in payloads {
+    private static func firstSafeBarcodePayload(in observations: [VNBarcodeObservation]) -> (payload: String?, safe: Bool) {
+        for observation in observations {
+            guard supportedBarcodeSymbologies.contains(observation.symbology),
+                  let payload = observation.payloadStringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !payload.isEmpty
+            else {
+                continue
+            }
+
             if isSafeBarcodePayload(payload) {
                 return (payload, true)
             }
@@ -509,6 +525,10 @@ private enum VisionMetadataExtractor {
     private static func isSafeBarcodePayload(_ payload: String) -> Bool {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 64 else {
+            return false
+        }
+
+        if looksLikeNonProductBarcodePayload(trimmed) {
             return false
         }
 
@@ -527,6 +547,19 @@ private enum VisionMetadataExtractor {
         }
 
         return true
+    }
+
+    private static func looksLikeNonProductBarcodePayload(_ payload: String) -> Bool {
+        let lowercased = payload.lowercased()
+        if blockedBarcodePayloadPrefixes.contains(where: { lowercased.hasPrefix($0) }) {
+            return true
+        }
+
+        if blockedBarcodePayloadTokens.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        return false
     }
 
     private static func shortFoodPackageSnippets(from rawCandidates: [String]) -> [String] {
@@ -615,7 +648,7 @@ private enum VisionMetadataExtractor {
     private static func isFoodOrPackageOriented(_ text: String) -> Bool {
         let lowercased = text.lowercased()
 
-        if foodPackageKeywords.contains(where: { lowercased.contains($0) }) {
+        if foodPackageKeywords.contains(where: { containsKeyword(lowercased, keyword: $0) }) {
             return true
         }
 
@@ -628,6 +661,18 @@ private enum VisionMetadataExtractor {
         }
 
         return false
+    }
+
+    private static func containsKeyword(_ text: String, keyword: String) -> Bool {
+        let tokens = keyword
+            .split(whereSeparator: \.isWhitespace)
+            .map { NSRegularExpression.escapedPattern(for: String($0)) }
+        guard !tokens.isEmpty else {
+            return false
+        }
+
+        let pattern = "\\b" + tokens.joined(separator: "\\s+") + "\\b"
+        return text.range(of: pattern, options: .regularExpression) != nil
     }
 }
 
