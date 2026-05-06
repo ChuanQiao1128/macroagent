@@ -3,28 +3,36 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from services.api import AnalyzePhotoFacadeResponse
 from services.capture import DeviceCaptureMetadata, PhotoAnalyzeRequest, PhotoAnalyzeResponse
-from services.capture.src.schemas import StrictModel
+from services.capture.src.schemas import ImageIdentity, StrictModel
 
 
 class CaptureQualitySummary(StrictModel):
     depth_available: bool
-    depth_quality: str
+    depth_quality: Literal["none", "low", "medium", "high", "unknown"]
     lidar_available: bool
-    camera_position: str
-    orientation: str
+    camera_position: Literal["front", "back", "unknown"]
+    orientation: Literal[
+        "portrait",
+        "portrait_upside_down",
+        "landscape_left",
+        "landscape_right",
+        "face_up",
+        "face_down",
+        "unknown",
+    ]
     pitch_degrees: float = Field(ge=-180, le=180)
     roll_degrees: float = Field(ge=-180, le=180)
     lens_hint: str | None = None
 
 
 class CaptureTraceArtifact(StrictModel):
-    image_identity: dict[str, Any]
+    image_identity: ImageIdentity
     capture_quality_summary: CaptureQualitySummary
     scale_evidence_ids: list[str] = Field(default_factory=list)
     barcode_detected: bool
@@ -476,6 +484,17 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "capture_trace_artifact": {
                 **capture_trace_artifact,
                 "image_identity": barcode_packaged_request["image_identity"],
+                "capture_quality_summary": {
+                    "depth_available": False,
+                    "depth_quality": "low",
+                    "lidar_available": False,
+                    "camera_position": "back",
+                    "orientation": "portrait",
+                    "pitch_degrees": 4.0,
+                    "roll_degrees": 1.5,
+                    "lens_hint": "wide",
+                },
+                "scale_evidence_ids": ["scale:barcode:1"],
                 "barcode_detected": True,
                 "barcode_value_stored": True,
                 "barcode_value": "049000042511",

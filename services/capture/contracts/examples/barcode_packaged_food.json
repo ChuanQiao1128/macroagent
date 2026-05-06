@@ -64,13 +64,13 @@
     "barcode_value_stored": true,
     "capture_quality_summary": {
       "camera_position": "back",
-      "depth_available": true,
-      "depth_quality": "high",
+      "depth_available": false,
+      "depth_quality": "low",
       "lens_hint": "wide",
-      "lidar_available": true,
+      "lidar_available": false,
       "orientation": "portrait",
-      "pitch_degrees": 1.2,
-      "roll_degrees": -0.4
+      "pitch_degrees": 4.0,
+      "roll_degrees": 1.5
     },
     "image_identity": {
       "byte_size": 1530440,
@@ -84,8 +84,7 @@
     "ocr_text_stored": false,
     "prompt_version": "vision_prompt_placeholder",
     "scale_evidence_ids": [
-      "scale:lidar_depth:1",
-      "scale:reference_object:1"
+      "scale:barcode:1"
     ]
   },
   "photo_analyze_request": {

@@ -4,6 +4,11 @@
       "additionalProperties": false,
       "properties": {
         "camera_position": {
+          "enum": [
+            "front",
+            "back",
+            "unknown"
+          ],
           "title": "Camera Position",
           "type": "string"
         },
@@ -12,6 +17,13 @@
           "type": "boolean"
         },
         "depth_quality": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "unknown"
+          ],
           "title": "Depth Quality",
           "type": "string"
         },
@@ -32,6 +44,15 @@
           "type": "boolean"
         },
         "orientation": {
+          "enum": [
+            "portrait",
+            "portrait_upside_down",
+            "landscape_left",
+            "landscape_right",
+            "face_up",
+            "face_down",
+            "unknown"
+          ],
           "title": "Orientation",
           "type": "string"
         },
@@ -58,6 +79,52 @@
         "roll_degrees"
       ],
       "title": "CaptureQualitySummary",
+      "type": "object"
+    },
+    "ImageIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "exclusiveMinimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "height_px": {
+          "exclusiveMinimum": 0,
+          "title": "Height Px",
+          "type": "integer"
+        },
+        "image_format": {
+          "enum": [
+            "jpeg",
+            "jpg",
+            "heic",
+            "heif",
+            "png",
+            "webp"
+          ],
+          "title": "Image Format",
+          "type": "string"
+        },
+        "image_sha256": {
+          "pattern": "^[A-Fa-f0-9]{64}$",
+          "title": "Image Sha256",
+          "type": "string"
+        },
+        "width_px": {
+          "exclusiveMinimum": 0,
+          "title": "Width Px",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image_sha256",
+        "image_format",
+        "width_px",
+        "height_px",
+        "byte_size"
+      ],
+      "title": "ImageIdentity",
       "type": "object"
     }
   },
@@ -87,9 +154,7 @@
       "$ref": "#/$defs/CaptureQualitySummary"
     },
     "image_identity": {
-      "additionalProperties": true,
-      "title": "Image Identity",
-      "type": "object"
+      "$ref": "#/$defs/ImageIdentity"
     },
     "model_version": {
       "anyOf": [
