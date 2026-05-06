@@ -82,14 +82,21 @@ Expected output:
 Add a mock-first backend facade for `/v1/meals/analyze-photo` semantics without
 starting a live web framework yet.
 
+Status: verified in `services/api/src/analyze_photo_facade.py` and
+`tests/api/test_analyze_photo_facade.py`.
+
 Expected output:
 
-- strict request and response schema;
-- deterministic mock pipeline using existing takeoff, nutrition, ledger, and trace
-  modules;
+- strict request and response schema that accepts the TASK-038 payload shape;
+- deterministic mock pipeline using existing scale evidence, portion parsing,
+  nutrition lookup, evidence arbitration, ledger gating, and trace emission;
 - response includes the seven user-facing metrics: `kcal`, `protein_g`, `carbs_g`,
   `fat_g`, `sugar_g`, `sodium_mg`, and `fiber_g`;
 - response status supports `ACCEPT`, `WARN`, `CLARIFY`, and `BLOCK`;
+- `CLARIFY` returns follow-up questions and can write a ledger entry when
+  `log_anyway=true` and a supported reason is supplied;
+- `BLOCK` rejects unsupported raw macro input and does not return nutrition;
+- response nutrition values come from deterministic recomputation, not LLM text;
 - no live model integration.
 
 ### TASK-041 - Capture Trace and Privacy Boundary
