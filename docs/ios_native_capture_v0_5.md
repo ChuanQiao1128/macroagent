@@ -85,8 +85,22 @@ when running on Simulator.
 
 ### TASK-046 - CoreMotion and Vision Metadata
 
-Add capture-time pitch/roll and local Vision barcode/OCR metadata. Keep OCR short
-and non-PII. Add a reference object hint UI control.
+Status: verified in `apps/ios/MacroAgentCapture/CaptureService.swift`,
+`apps/ios/MacroAgentCapture/CaptureFlowStore.swift`,
+`apps/ios/MacroAgentCapture/CaptureScreenView.swift`,
+`apps/ios/MacroAgentCapture/Models.swift`, and
+`tests/ios/test_task_046_motion_vision_metadata_static.py`.
+
+The native smoke app now:
+
+- samples CoreMotion pitch/roll near shutter time;
+- runs local Vision barcode detection and OCR on-device;
+- keeps OCR snippets short and food/package-oriented;
+- filters barcode values through a local safety check before sending;
+- exposes a reference object hint picker in the UI;
+- populates the v0.4 metadata fields for pitch, roll, barcode payloads, OCR
+  snippets, reference object hints, depth availability, depth quality, and
+  LiDAR availability.
 
 ### TASK-047 - Phone-to-Mac Smoke Test
 
