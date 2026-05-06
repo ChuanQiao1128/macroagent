@@ -46,6 +46,8 @@ _FIXTURE_COMPONENTS: dict[str, _MockComponent] = {
     ),
     "block": _MockComponent(name="pasta", portion_hint="100 g", source_query="cooked pasta"),
 }
+_WARN_FIXTURE_GRAM_MULTIPLIER_MIN = 0.75
+_WARN_FIXTURE_GRAM_MULTIPLIER_MAX = 1.25
 
 
 def analyze_photo_facade(
@@ -89,17 +91,27 @@ def analyze_photo_facade(
         },
     )
 
-    meal_interval = calculate_food_macro_interval(
-        entry,
-        PortionGramBounds(
-            grams_min=portion.grams_min,
-            grams_max=portion.grams_max,
-            grams_p10=portion.grams_p10,
-            grams_p50=portion.grams_p50,
-            grams_p90=portion.grams_p90,
-            percentiles_available=True,
-        ),
+    portion_bounds = PortionGramBounds(
+        grams_min=portion.grams_min,
+        grams_max=portion.grams_max,
+        grams_p10=portion.grams_p10,
+        grams_p50=portion.grams_p50,
+        grams_p90=portion.grams_p90,
+        percentiles_available=True,
     )
+    if fixture_id == "warn":
+        warn_grams_min = portion.grams_p50 * _WARN_FIXTURE_GRAM_MULTIPLIER_MIN
+        warn_grams_max = portion.grams_p50 * _WARN_FIXTURE_GRAM_MULTIPLIER_MAX
+        portion_bounds = PortionGramBounds(
+            grams_min=warn_grams_min,
+            grams_max=warn_grams_max,
+            grams_p10=warn_grams_min,
+            grams_p50=portion.grams_p50,
+            grams_p90=warn_grams_max,
+            percentiles_available=True,
+        )
+
+    meal_interval = calculate_food_macro_interval(entry, portion_bounds)
 
     claims = _build_claims(
         fixture_id=fixture_id,
@@ -114,17 +126,10 @@ def analyze_photo_facade(
         conflict.decision == "block_ledger_write" for conflict in arbitration.conflicts
     )
 
-    kcal_min = meal_interval.kcal.min
-    kcal_best = meal_interval.kcal.p50
-    kcal_max = meal_interval.kcal.max
-    if fixture_id == "warn":
-        kcal_min = kcal_best * 0.72
-        kcal_max = kcal_best * 1.28
-
     gate = apply_ledger_gate(
-        kcal_min=kcal_min,
-        kcal_best=kcal_best,
-        kcal_max=kcal_max,
+        kcal_min=meal_interval.kcal.min,
+        kcal_best=meal_interval.kcal.p50,
+        kcal_max=meal_interval.kcal.max,
         contract_violation=has_blocking_conflict,
         log_anyway=request.options.log_anyway,
         user_decline_clarify_reason=request.options.log_anyway_reason,
@@ -188,9 +193,6 @@ def analyze_photo_facade(
         nutrition=_to_nutrition_intervals(
             meal_interval=meal_interval,
             source_ref=entry.id,
-            kcal_min_override=kcal_min,
-            kcal_best_override=kcal_best,
-            kcal_max_override=kcal_max,
         ),
         reasons=reasons,
         clarify_questions=clarify_questions,
@@ -286,9 +288,6 @@ def _to_nutrition_intervals(
     *,
     meal_interval,
     source_ref: str,
-    kcal_min_override: float | None = None,
-    kcal_best_override: float | None = None,
-    kcal_max_override: float | None = None,
 ) -> NutritionIntervals:
     source = f"deterministic:{source_ref}"
 
@@ -302,11 +301,9 @@ def _to_nutrition_intervals(
 
     return NutritionIntervals(
         kcal=NutritionInterval(
-            best_estimate=(
-                meal_interval.kcal.p50 if kcal_best_override is None else kcal_best_override
-            ),
-            min_estimate=meal_interval.kcal.min if kcal_min_override is None else kcal_min_override,
-            max_estimate=meal_interval.kcal.max if kcal_max_override is None else kcal_max_override,
+            best_estimate=meal_interval.kcal.p50,
+            min_estimate=meal_interval.kcal.min,
+            max_estimate=meal_interval.kcal.max,
             source=source,
         ),
         protein_g=_interval(meal_interval.protein_g),

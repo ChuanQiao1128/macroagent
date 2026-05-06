@@ -62,6 +62,17 @@ class AnalyzePhotoFacadeRequest(StrictModel):
     payload: PhotoAnalyzeRequest
     options: AnalyzePhotoOptions = Field(default_factory=AnalyzePhotoOptions)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_raw_photo_request(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        # Accept TASK-038 request shape directly and wrap with default options.
+        if "payload" not in data and "options" not in data:
+            return {"payload": data}
+        return data
+
 
 class AnalyzePhotoFacadeResponse(StrictModel):
     request_id: str = Field(min_length=1)
