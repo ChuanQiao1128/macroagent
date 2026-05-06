@@ -59,6 +59,11 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let cameraPosition: CameraPosition
     }
 
+    private struct CapturedPhoto {
+        let photo: AVCapturePhoto
+        let suggestedFileTypeRawValue: String?
+    }
+
     private let defaultUserID: String
     private let sessionQueue = DispatchQueue(label: "com.macroagent.capture.session")
     private let continuationLock = NSLock()
@@ -89,9 +94,9 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let runtime = try await buildCameraRuntime()
         try await startSession(runtime.session)
 
-        let photo: AVCapturePhoto
+        let capturedPhoto: CapturedPhoto
         do {
-            photo = try await capturePhoto(with: runtime.photoOutput)
+            capturedPhoto = try await capturePhoto(with: runtime.photoOutput)
         } catch {
             await stopSession(runtime.session)
             throw error
@@ -99,10 +104,10 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
 
         await stopSession(runtime.session)
 
-        let encodedBytes = try extractEncodedBytes(from: photo)
+        let encodedBytes = try extractEncodedBytes(from: capturedPhoto.photo)
         let imageIdentity = try ImageIdentityExtractor.build(
             from: encodedBytes,
-            suggestedFileTypeRawValue: photo.resolvedSettings.processedFileType?.rawValue
+            suggestedFileTypeRawValue: capturedPhoto.suggestedFileTypeRawValue
         )
 
         let metadata = CaptureMetadata(
@@ -239,8 +244,11 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         }
     }
 
-    private func capturePhoto(with photoOutput: AVCapturePhotoOutput) async throws -> AVCapturePhoto {
-        try await withCheckedThrowingContinuation { [weak self] continuation in
+    private func capturePhoto(with photoOutput: AVCapturePhotoOutput) async throws -> CapturedPhoto {
+        let settings = AVCapturePhotoSettings()
+        let suggestedFileTypeRawValue = settings.processedFileType?.rawValue
+
+        let photo = try await withCheckedThrowingContinuation { [weak self] continuation in
             guard let self else {
                 continuation.resume(throwing: CaptureServiceError.captureServiceReleased)
                 return
@@ -264,11 +272,11 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
                     return
                 }
 
-                let settings = AVCapturePhotoSettings()
-                settings.isHighResolutionPhotoEnabled = true
                 photoOutput.capturePhoto(with: settings, delegate: self)
             }
         }
+
+        return CapturedPhoto(photo: photo, suggestedFileTypeRawValue: suggestedFileTypeRawValue)
     }
 
     private func extractEncodedBytes(from photo: AVCapturePhoto) throws -> Data {
