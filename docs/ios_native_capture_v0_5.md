@@ -64,8 +64,24 @@ permissions, and the local server URL.
 
 ### TASK-045 - AVFoundation Capture and Image Hash
 
-Implement the iOS capture service: take a photo, extract encoded dimensions and
-byte size, compute SHA-256, and create the request envelope expected by v0.4.
+Status: verified in `apps/ios/MacroAgentCapture/CaptureService.swift`,
+`apps/ios/MacroAgentCapture/MetadataBuilder.swift`,
+`apps/ios/MacroAgentCapture/Models.swift`, and
+`tests/ios/test_task_045_capture_identity_static.py`.
+
+The capture service now:
+
+- requests camera permission before entering `Camera` mode;
+- uses `AVFoundation` to capture encoded image bytes from a real iPhone camera;
+- computes SHA-256 with `CryptoKit`;
+- extracts width, height, byte size, and normalized image format from the encoded bytes;
+- keeps raw image bytes in memory only for upload;
+- exposes `Sample Fallback` for Simulator and other no-camera environments;
+- builds the v0.4 `image_identity` and `capture_metadata` payload shape.
+
+Device runbook note: the app target must include `NSCameraUsageDescription`, and
+`Camera` mode should only be used on a physical iPhone. Use `Sample Fallback`
+when running on Simulator.
 
 ### TASK-046 - CoreMotion and Vision Metadata
 
