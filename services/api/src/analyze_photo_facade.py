@@ -185,7 +185,13 @@ def analyze_photo_facade(
     return AnalyzePhotoFacadeResponse(
         request_id=payload.request_id,
         status=status,
-        nutrition=_to_nutrition_intervals(meal_interval=meal_interval, source_ref=entry.id),
+        nutrition=_to_nutrition_intervals(
+            meal_interval=meal_interval,
+            source_ref=entry.id,
+            kcal_min_override=kcal_min,
+            kcal_best_override=kcal_best,
+            kcal_max_override=kcal_max,
+        ),
         reasons=reasons,
         clarify_questions=clarify_questions,
         trace_id=trace_id,
@@ -276,7 +282,14 @@ def _build_claims(
     return claims
 
 
-def _to_nutrition_intervals(*, meal_interval, source_ref: str) -> NutritionIntervals:
+def _to_nutrition_intervals(
+    *,
+    meal_interval,
+    source_ref: str,
+    kcal_min_override: float | None = None,
+    kcal_best_override: float | None = None,
+    kcal_max_override: float | None = None,
+) -> NutritionIntervals:
     source = f"deterministic:{source_ref}"
 
     def _interval(metric) -> NutritionInterval:
@@ -288,7 +301,14 @@ def _to_nutrition_intervals(*, meal_interval, source_ref: str) -> NutritionInter
         )
 
     return NutritionIntervals(
-        kcal=_interval(meal_interval.kcal),
+        kcal=NutritionInterval(
+            best_estimate=(
+                meal_interval.kcal.p50 if kcal_best_override is None else kcal_best_override
+            ),
+            min_estimate=meal_interval.kcal.min if kcal_min_override is None else kcal_min_override,
+            max_estimate=meal_interval.kcal.max if kcal_max_override is None else kcal_max_override,
+            source=source,
+        ),
         protein_g=_interval(meal_interval.protein_g),
         carbs_g=_interval(meal_interval.carbs_g),
         fat_g=_interval(meal_interval.fat_g),
