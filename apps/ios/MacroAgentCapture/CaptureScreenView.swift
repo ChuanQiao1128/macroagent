@@ -13,15 +13,35 @@ struct CaptureScreenView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Capture Placeholder") {
+            Section("Capture Mode") {
+                Picker("Mode", selection: $store.selectedCaptureMode) {
+                    ForEach(CaptureSourceMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("Use Camera mode on a real iPhone. Use Sample Fallback for Simulator or no-camera environments.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Capture Draft") {
                 KeyValueRow(label: "request_id", value: store.captureDraft.requestID)
                 KeyValueRow(label: "user_id", value: store.captureDraft.userID)
+                KeyValueRow(label: "capture_source", value: store.captureDraft.captureSourceMode.rawValue)
                 KeyValueRow(label: "image_sha256", value: store.captureDraft.imageIdentity.imageSHA256)
+                KeyValueRow(label: "image_format", value: store.captureDraft.imageIdentity.imageFormat)
                 KeyValueRow(label: "image_size", value: "\(store.captureDraft.imageIdentity.widthPX)x\(store.captureDraft.imageIdentity.heightPX)")
                 KeyValueRow(label: "bytes", value: "\(store.captureDraft.imageIdentity.byteSize)")
 
-                Button("Refresh Placeholder Capture") { [weak store] in
-                    store?.refreshDraft()
+                Button("Capture Now") {
+                    Task { [weak store] in
+                        guard let store else {
+                            return
+                        }
+                        await store.captureNow()
+                    }
                 }
             }
 
@@ -35,7 +55,7 @@ struct CaptureScreenView: View {
                     }
                 }
 
-                Button("Analyze Placeholder Payload") {
+                Button("Analyze Captured Payload") {
                     Task { [weak store] in
                         guard let store else {
                             return

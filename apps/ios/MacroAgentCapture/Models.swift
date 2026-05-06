@@ -31,6 +31,22 @@ enum DepthQuality: String, Codable, CaseIterable {
     case unknown
 }
 
+enum CaptureSourceMode: String, Codable, CaseIterable, Identifiable {
+    case camera
+    case sampleFallback = "sample_fallback"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .camera:
+            return "Camera"
+        case .sampleFallback:
+            return "Sample Fallback"
+        }
+    }
+}
+
 struct ImageIdentity: Codable, Hashable {
     let imageSHA256: String
     let imageFormat: String
@@ -88,8 +104,10 @@ struct CaptureMetadata: Codable, Hashable {
 struct CaptureDraft: Hashable {
     let requestID: String
     let userID: String
+    let captureSourceMode: CaptureSourceMode
     let imageIdentity: ImageIdentity
     let captureMetadata: CaptureMetadata
+    let encodedImageBytes: Data
 }
 
 struct AnalyzePhotoRequest: Codable, Hashable {

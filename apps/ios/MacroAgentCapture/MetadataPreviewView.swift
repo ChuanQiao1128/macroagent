@@ -5,7 +5,7 @@ struct MetadataPreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Placeholder metadata payload that will be sent to `/v1/meals/analyze-photo`.")
+            Text("Capture metadata payload that will be sent to `/v1/meals/analyze-photo`.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -16,8 +16,13 @@ struct MetadataPreviewView: View {
                     .textSelection(.enabled)
             }
 
-            Button("Rebuild From Capture Service") { [weak store] in
-                store?.refreshDraft()
+            Button("Rebuild From Capture Service") {
+                Task { [weak store] in
+                    guard let store else {
+                        return
+                    }
+                    await store.captureNow()
+                }
             }
             .buttonStyle(.bordered)
         }

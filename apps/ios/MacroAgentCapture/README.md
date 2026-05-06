@@ -1,7 +1,7 @@
-# MacroAgentCapture (iOS SwiftUI Skeleton)
+# MacroAgentCapture (iOS Camera Smoke App)
 
-This folder contains a minimal native iOS SwiftUI source skeleton for TASK-044.
-It is intentionally placeholder-only for capture metadata flow and local server wiring.
+This folder contains the native iOS SwiftUI smoke app source for capture metadata flow.
+TASK-045 adds a real AVFoundation photo capture path and SHA-256 image identity generation.
 
 ## Minimum iOS Version
 
@@ -12,10 +12,35 @@ It is intentionally placeholder-only for capture metadata flow and local server 
 
 For smoke testing on a real iPhone, configure these in your Xcode target:
 
-- Camera permission: `NSCameraUsageDescription` (camera capture is not implemented yet, but required for upcoming tasks).
-- Local network permission: `NSLocalNetworkUsageDescription` (for calling Mac LAN server).
-- Motion permission: `NSMotionUsageDescription` (for upcoming pitch/roll metadata).
-- App Transport Security exception for local HTTP development traffic as needed.
+- Camera permission: `NSCameraUsageDescription`
+- Local network permission: `NSLocalNetworkUsageDescription` (for calling Mac LAN server)
+- Motion permission: `NSMotionUsageDescription` (reserved for upcoming motion metadata)
+- App Transport Security exception for local HTTP development traffic as needed
+
+## Real Device Requirement
+
+- `Camera` mode requires a real iPhone camera.
+- The iOS Simulator does not provide a real camera capture path for this smoke test.
+- On Simulator (or no-camera environments), switch capture mode to `Sample Fallback`.
+
+## Capture Modes
+
+- `Camera`: Uses `AVFoundation` to request camera access and capture encoded image bytes.
+- `Sample Fallback`: Uses a synthetic in-memory sample image for simulator/no-camera development.
+
+Both modes produce:
+
+- `image_identity.image_sha256` via `CryptoKit` SHA-256 on encoded bytes
+- `image_identity.image_format`
+- `image_identity.width_px`
+- `image_identity.height_px`
+- `image_identity.byte_size`
+
+## Privacy / Storage Boundary
+
+- Raw image bytes are kept in memory only (`CaptureDraft.encodedImageBytes`).
+- Raw photo files are not written to the repository.
+- Raw image bytes are not serialized into metadata payload fields.
 
 ## Local Server URL
 
@@ -43,13 +68,13 @@ If this repo does not generate an Xcode project automatically:
 
 ## Included Seams
 
-- `CaptureService.swift`: placeholder capture service seam.
+- `CaptureService.swift`: AVFoundation capture service + sample fallback mode.
 - `MetadataBuilder.swift`: request envelope construction seam.
 - `APIClient.swift`: local-server API client abstraction seam.
 - `ResultDebugView.swift`: result/debug rendering seam.
 
 ## Current Status
 
-- No camera or AVFoundation implementation yet.
+- Real camera capture path implemented for smoke testing on iPhone.
+- Simulator-safe sample fallback mode implemented.
 - No third-party Swift packages required.
-- Deterministic placeholder metadata is used for smoke wiring.

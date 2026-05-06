@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class CaptureFlowStore: ObservableObject {
     @Published var serverURLText: String
+    @Published var selectedCaptureMode: CaptureSourceMode
     @Published private(set) var captureDraft: CaptureDraft
     @Published private(set) var metadataPreview: AnalyzePhotoRequestEnvelope
     @Published private(set) var latestHealth: HealthResponse?
@@ -16,7 +17,7 @@ final class CaptureFlowStore: ObservableObject {
     private let apiClientFactory: (LocalServerConfiguration) -> MacroAgentAPIClient
 
     init(
-        captureService: CaptureService = PlaceholderCaptureService(),
+        captureService: CaptureService = AVFoundationCaptureService(),
         metadataBuilder: MetadataBuilder = PlaceholderMetadataBuilder(),
         initialServerURL: String = LocalServerConfiguration.defaultBaseURLString,
         apiClientFactory: @escaping (LocalServerConfiguration) -> MacroAgentAPIClient = { configuration in
@@ -27,8 +28,9 @@ final class CaptureFlowStore: ObservableObject {
         self.metadataBuilder = metadataBuilder
         self.apiClientFactory = apiClientFactory
         self.serverURLText = initialServerURL
+        self.selectedCaptureMode = .camera
 
-        let draft = captureService.prepareDraft()
+        let draft = captureService.initialDraft()
         self.captureDraft = draft
         self.metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
 
@@ -38,12 +40,20 @@ final class CaptureFlowStore: ObservableObject {
         self.isAnalyzing = false
     }
 
-    func refreshDraft() {
-        let draft = captureService.prepareDraft()
-        captureDraft = draft
-        metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
-        latestResponse = nil
-        debugMessage = "Prepared deterministic placeholder capture draft."
+    func captureNow() async {
+        debugMessage = selectedCaptureMode == .camera
+            ? "Capturing photo with AVFoundation..."
+            : "Preparing sample fallback capture..."
+
+        do {
+            let draft = try await captureService.prepareDraft(mode: selectedCaptureMode)
+            captureDraft = draft
+            metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
+            latestResponse = nil
+            debugMessage = "Prepared \(draft.captureSourceMode.displayName.lowercased()) draft with \(draft.imageIdentity.byteSize) bytes."
+        } catch {
+            debugMessage = "Capture failed: \(error.localizedDescription)"
+        }
     }
 
     func runHealthCheck() async {

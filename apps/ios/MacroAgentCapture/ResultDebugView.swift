@@ -5,7 +5,7 @@ struct ResultDebugView: View {
 
     var body: some View {
         Form {
-            Section("Result Placeholder") {
+            Section("Result") {
                 if let response = store.latestResponse {
                     DebugRow(label: "request_id", value: response.requestID)
                     DebugRow(label: "status", value: response.status.rawValue)
