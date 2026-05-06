@@ -69,6 +69,12 @@ final class CaptureFlowStore: ObservableObject {
     }
 
     func analyze() async {
+        if selectedCaptureMode == .camera, captureDraft.captureSourceMode != .camera {
+            debugMessage = "Capture a real camera photo before analyze while Camera mode is selected."
+            latestResponse = nil
+            return
+        }
+
         isAnalyzing = true
         debugMessage = "Submitting metadata payload to local server..."
 
