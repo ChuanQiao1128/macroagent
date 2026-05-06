@@ -8,6 +8,7 @@ from services.meal.takeoff.schemas import TraceEvent
 _FORBIDDEN_IMAGE_KEYS = frozenset(
     {
         "image",
+        "image_b64",
         "image_base64",
         "image_bytes",
         "image_data",
@@ -16,10 +17,15 @@ _FORBIDDEN_IMAGE_KEYS = frozenset(
         "raw_image_bytes",
         "base64_image",
         "base64",
+        "base64_data",
+        "base64_payload",
         "local_image_path",
         "image_path",
         "path",
+        "local_path",
+        "filesystem_path",
         "ocr_text",
+        "ocr_raw_text",
         "ocr_text_snippets",
         "barcode_payload",
     }
