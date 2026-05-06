@@ -11,7 +11,7 @@ from services.api.src.schemas import (
     NutritionIntervals,
     UncertaintySummary,
 )
-from services.capture import resolve_scale_evidence_from_capture
+from services.capture import build_sanitized_capture_trace_artifact, resolve_scale_evidence_from_capture
 from services.meal.src.api_integration import build_default_ledger_version_matrix
 from services.meal.takeoff.evidence_arbitration import arbitrate_evidence_claims
 from services.meal.takeoff.ledger_gate import apply_ledger_gate
@@ -67,6 +67,23 @@ def analyze_photo_facade(
         image_sha256=payload.image_identity.image_sha256,
     )
     scale_resolution = scale.resolutions[0]
+
+    capture_trace_artifact = build_sanitized_capture_trace_artifact(
+        request=payload,
+        scale_evidence=scale,
+        model_version=None,
+        prompt_version=None,
+        barcode_marked_safe=payload.capture_metadata.barcode_payload_safe,
+    )
+
+    emit_stage_event(
+        emitter,
+        trace_id=trace_id,
+        stage="AnalyzePhotoFacade",
+        event_name="capture.trace_artifact_built",
+        image_sha256=payload.image_identity.image_sha256,
+        payload=capture_trace_artifact,
+    )
 
     component = _FIXTURE_COMPONENTS[fixture_id]
     portion = parse_portion_range(

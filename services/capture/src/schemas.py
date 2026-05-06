@@ -39,6 +39,7 @@ class DeviceCaptureMetadata(StrictModel):
     depth_quality: Literal["none", "low", "medium", "high", "unknown"]
     lidar_available: bool
     barcode_payload: str | None = None
+    barcode_payload_safe: bool = False
     ocr_text_snippets: list[str] = Field(default_factory=list)
     reference_object_hint: str | None = None
     capture_timestamp: datetime

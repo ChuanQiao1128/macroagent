@@ -13,6 +13,14 @@ _FORBIDDEN_IMAGE_KEYS = frozenset(
         "raw_image",
         "raw_image_base64",
         "raw_image_bytes",
+        "base64_image",
+        "base64",
+        "local_image_path",
+        "image_path",
+        "path",
+        "ocr_text",
+        "ocr_text_snippets",
+        "barcode_payload",
     }
 )
 
