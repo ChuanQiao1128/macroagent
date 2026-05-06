@@ -1,0 +1,116 @@
+{
+  "$defs": {
+    "NutritionMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "best_estimate": {
+          "minimum": 0,
+          "title": "Best Estimate",
+          "type": "number"
+        },
+        "max_estimate": {
+          "minimum": 0,
+          "title": "Max Estimate",
+          "type": "number"
+        },
+        "min_estimate": {
+          "minimum": 0,
+          "title": "Min Estimate",
+          "type": "number"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "best_estimate",
+        "min_estimate",
+        "max_estimate",
+        "source"
+      ],
+      "title": "NutritionMetric",
+      "type": "object"
+    },
+    "NutritionMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "carbs_g": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "fat_g": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "fiber_g": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "kcal": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "protein_g": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "sodium_mg": {
+          "$ref": "#/$defs/NutritionMetric"
+        },
+        "sugar_g": {
+          "$ref": "#/$defs/NutritionMetric"
+        }
+      },
+      "required": [
+        "kcal",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "sugar_g",
+        "sodium_mg",
+        "fiber_g"
+      ],
+      "title": "NutritionMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "enum": [
+        "ACCEPT",
+        "WARN",
+        "CLARIFY",
+        "BLOCK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NutritionMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "decision"
+  ],
+  "title": "PhotoAnalyzeResponse",
+  "type": "object"
+}

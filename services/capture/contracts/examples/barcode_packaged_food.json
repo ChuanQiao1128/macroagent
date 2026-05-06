@@ -1,0 +1,174 @@
+{
+  "analyze_photo_facade_response": {
+    "clarify_questions": [],
+    "ledger_entry_id": null,
+    "nutrition": {
+      "carbs_g": {
+        "best_estimate": 48.0,
+        "max_estimate": 55.0,
+        "min_estimate": 42.0,
+        "source": "fdc:fixture"
+      },
+      "fat_g": {
+        "best_estimate": 18.0,
+        "max_estimate": 22.0,
+        "min_estimate": 15.0,
+        "source": "fdc:fixture"
+      },
+      "fiber_g": {
+        "best_estimate": 7.0,
+        "max_estimate": 10.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      },
+      "kcal": {
+        "best_estimate": 520.0,
+        "max_estimate": 590.0,
+        "min_estimate": 470.0,
+        "source": "fdc:fixture"
+      },
+      "protein_g": {
+        "best_estimate": 35.0,
+        "max_estimate": 40.0,
+        "min_estimate": 31.0,
+        "source": "fdc:fixture"
+      },
+      "sodium_mg": {
+        "best_estimate": 640.0,
+        "max_estimate": 730.0,
+        "min_estimate": 560.0,
+        "source": "fdc:fixture"
+      },
+      "sugar_g": {
+        "best_estimate": 8.0,
+        "max_estimate": 11.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      }
+    },
+    "reasons": [
+      "fixture response for iOS contract package"
+    ],
+    "request_id": "req_accept_barcode_packaged",
+    "status": "ACCEPT",
+    "trace_id": "trace:req_accept_barcode_packaged",
+    "uncertainty_summary": {
+      "confidence_label": "medium",
+      "relative_range_width": 0.22,
+      "uncertainty_flags": []
+    }
+  },
+  "capture_trace_artifact": {
+    "barcode_detected": true,
+    "barcode_value": "049000042511",
+    "barcode_value_stored": true,
+    "capture_quality_summary": {
+      "camera_position": "back",
+      "depth_available": true,
+      "depth_quality": "high",
+      "lens_hint": "wide",
+      "lidar_available": true,
+      "orientation": "portrait",
+      "pitch_degrees": 1.2,
+      "roll_degrees": -0.4
+    },
+    "image_identity": {
+      "byte_size": 1530440,
+      "height_px": 4032,
+      "image_format": "jpg",
+      "image_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "width_px": 3024
+    },
+    "model_version": "vision_model_placeholder",
+    "ocr_detected": true,
+    "ocr_text_stored": false,
+    "prompt_version": "vision_prompt_placeholder",
+    "scale_evidence_ids": [
+      "scale:lidar_depth:1",
+      "scale:reference_object:1"
+    ]
+  },
+  "photo_analyze_request": {
+    "capture_metadata": {
+      "barcode_payload": "049000042511",
+      "barcode_payload_safe": true,
+      "camera_position": "back",
+      "capture_timestamp": "2026-05-01T12:40:12+00:00",
+      "depth_available": false,
+      "depth_quality": "low",
+      "device_model": "iPhone15,2",
+      "focal_length_mm": 5.7,
+      "lens_hint": "wide",
+      "lidar_available": false,
+      "ocr_text_snippets": [
+        "Nutrition Facts",
+        "Serving size 55g"
+      ],
+      "orientation": "portrait",
+      "os_version": "iOS 18.0",
+      "pitch_degrees": 4.0,
+      "reference_object_hint": "packaged_food_label",
+      "roll_degrees": 1.5
+    },
+    "image_identity": {
+      "byte_size": 1530440,
+      "height_px": 4032,
+      "image_format": "jpg",
+      "image_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "width_px": 3024
+    },
+    "request_id": "req_accept_barcode_packaged",
+    "user_id": "user_demo_contract"
+  },
+  "photo_analyze_response": {
+    "decision": "ACCEPT",
+    "metrics": {
+      "carbs_g": {
+        "best_estimate": 31.0,
+        "max_estimate": 35.0,
+        "min_estimate": 28.0,
+        "source": "barcode_lookup"
+      },
+      "fat_g": {
+        "best_estimate": 11.0,
+        "max_estimate": 13.0,
+        "min_estimate": 10.0,
+        "source": "barcode_lookup"
+      },
+      "fiber_g": {
+        "best_estimate": 2.0,
+        "max_estimate": 3.0,
+        "min_estimate": 1.0,
+        "source": "barcode_lookup"
+      },
+      "kcal": {
+        "best_estimate": 240.0,
+        "max_estimate": 265.0,
+        "min_estimate": 220.0,
+        "source": "barcode_lookup"
+      },
+      "protein_g": {
+        "best_estimate": 4.0,
+        "max_estimate": 5.0,
+        "min_estimate": 3.0,
+        "source": "barcode_lookup"
+      },
+      "sodium_mg": {
+        "best_estimate": 210.0,
+        "max_estimate": 250.0,
+        "min_estimate": 180.0,
+        "source": "barcode_lookup"
+      },
+      "sugar_g": {
+        "best_estimate": 13.0,
+        "max_estimate": 15.0,
+        "min_estimate": 11.0,
+        "source": "barcode_lookup"
+      }
+    },
+    "reasons": [
+      "barcode payload detected and accepted as safe"
+    ],
+    "request_id": "req_accept_barcode_packaged"
+  }
+}

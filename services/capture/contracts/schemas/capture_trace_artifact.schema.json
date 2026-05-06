@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "CaptureQualitySummary": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_position": {
+          "title": "Camera Position",
+          "type": "string"
+        },
+        "depth_available": {
+          "title": "Depth Available",
+          "type": "boolean"
+        },
+        "depth_quality": {
+          "title": "Depth Quality",
+          "type": "string"
+        },
+        "lens_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lens Hint"
+        },
+        "lidar_available": {
+          "title": "Lidar Available",
+          "type": "boolean"
+        },
+        "orientation": {
+          "title": "Orientation",
+          "type": "string"
+        },
+        "pitch_degrees": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Pitch Degrees",
+          "type": "number"
+        },
+        "roll_degrees": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Roll Degrees",
+          "type": "number"
+        }
+      },
+      "required": [
+        "depth_available",
+        "depth_quality",
+        "lidar_available",
+        "camera_position",
+        "orientation",
+        "pitch_degrees",
+        "roll_degrees"
+      ],
+      "title": "CaptureQualitySummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "barcode_detected": {
+      "title": "Barcode Detected",
+      "type": "boolean"
+    },
+    "barcode_value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Barcode Value"
+    },
+    "barcode_value_stored": {
+      "title": "Barcode Value Stored",
+      "type": "boolean"
+    },
+    "capture_quality_summary": {
+      "$ref": "#/$defs/CaptureQualitySummary"
+    },
+    "image_identity": {
+      "additionalProperties": true,
+      "title": "Image Identity",
+      "type": "object"
+    },
+    "model_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Version"
+    },
+    "ocr_detected": {
+      "title": "Ocr Detected",
+      "type": "boolean"
+    },
+    "ocr_text_stored": {
+      "title": "Ocr Text Stored",
+      "type": "boolean"
+    },
+    "prompt_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prompt Version"
+    },
+    "scale_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scale Evidence Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "image_identity",
+    "capture_quality_summary",
+    "barcode_detected",
+    "barcode_value_stored",
+    "ocr_detected",
+    "ocr_text_stored"
+  ],
+  "title": "CaptureTraceArtifact",
+  "type": "object"
+}

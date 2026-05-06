@@ -1,0 +1,225 @@
+{
+  "$defs": {
+    "DeviceCaptureMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "barcode_payload": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Barcode Payload"
+        },
+        "barcode_payload_safe": {
+          "default": false,
+          "title": "Barcode Payload Safe",
+          "type": "boolean"
+        },
+        "camera_position": {
+          "enum": [
+            "front",
+            "back",
+            "unknown"
+          ],
+          "title": "Camera Position",
+          "type": "string"
+        },
+        "capture_timestamp": {
+          "format": "date-time",
+          "title": "Capture Timestamp",
+          "type": "string"
+        },
+        "depth_available": {
+          "title": "Depth Available",
+          "type": "boolean"
+        },
+        "depth_quality": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "unknown"
+          ],
+          "title": "Depth Quality",
+          "type": "string"
+        },
+        "device_model": {
+          "minLength": 1,
+          "title": "Device Model",
+          "type": "string"
+        },
+        "focal_length_mm": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focal Length Mm"
+        },
+        "lens_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lens Hint"
+        },
+        "lidar_available": {
+          "title": "Lidar Available",
+          "type": "boolean"
+        },
+        "ocr_text_snippets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ocr Text Snippets",
+          "type": "array"
+        },
+        "orientation": {
+          "enum": [
+            "portrait",
+            "portrait_upside_down",
+            "landscape_left",
+            "landscape_right",
+            "face_up",
+            "face_down",
+            "unknown"
+          ],
+          "title": "Orientation",
+          "type": "string"
+        },
+        "os_version": {
+          "minLength": 1,
+          "title": "Os Version",
+          "type": "string"
+        },
+        "pitch_degrees": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Pitch Degrees",
+          "type": "number"
+        },
+        "reference_object_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Object Hint"
+        },
+        "roll_degrees": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Roll Degrees",
+          "type": "number"
+        }
+      },
+      "required": [
+        "device_model",
+        "os_version",
+        "camera_position",
+        "orientation",
+        "pitch_degrees",
+        "roll_degrees",
+        "depth_available",
+        "depth_quality",
+        "lidar_available",
+        "capture_timestamp"
+      ],
+      "title": "DeviceCaptureMetadata",
+      "type": "object"
+    },
+    "ImageIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "exclusiveMinimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "height_px": {
+          "exclusiveMinimum": 0,
+          "title": "Height Px",
+          "type": "integer"
+        },
+        "image_format": {
+          "enum": [
+            "jpeg",
+            "jpg",
+            "heic",
+            "heif",
+            "png",
+            "webp"
+          ],
+          "title": "Image Format",
+          "type": "string"
+        },
+        "image_sha256": {
+          "pattern": "^[A-Fa-f0-9]{64}$",
+          "title": "Image Sha256",
+          "type": "string"
+        },
+        "width_px": {
+          "exclusiveMinimum": 0,
+          "title": "Width Px",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image_sha256",
+        "image_format",
+        "width_px",
+        "height_px",
+        "byte_size"
+      ],
+      "title": "ImageIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capture_metadata": {
+      "$ref": "#/$defs/DeviceCaptureMetadata"
+    },
+    "image_identity": {
+      "$ref": "#/$defs/ImageIdentity"
+    },
+    "request_id": {
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "user_id": {
+      "minLength": 1,
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "user_id",
+    "image_identity",
+    "capture_metadata"
+  ],
+  "title": "PhotoAnalyzeRequest",
+  "type": "object"
+}

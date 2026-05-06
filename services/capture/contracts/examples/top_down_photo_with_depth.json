@@ -1,0 +1,173 @@
+{
+  "analyze_photo_facade_response": {
+    "clarify_questions": [],
+    "ledger_entry_id": null,
+    "nutrition": {
+      "carbs_g": {
+        "best_estimate": 48.0,
+        "max_estimate": 55.0,
+        "min_estimate": 42.0,
+        "source": "fdc:fixture"
+      },
+      "fat_g": {
+        "best_estimate": 18.0,
+        "max_estimate": 22.0,
+        "min_estimate": 15.0,
+        "source": "fdc:fixture"
+      },
+      "fiber_g": {
+        "best_estimate": 7.0,
+        "max_estimate": 10.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      },
+      "kcal": {
+        "best_estimate": 520.0,
+        "max_estimate": 590.0,
+        "min_estimate": 470.0,
+        "source": "fdc:fixture"
+      },
+      "protein_g": {
+        "best_estimate": 35.0,
+        "max_estimate": 40.0,
+        "min_estimate": 31.0,
+        "source": "fdc:fixture"
+      },
+      "sodium_mg": {
+        "best_estimate": 640.0,
+        "max_estimate": 730.0,
+        "min_estimate": 560.0,
+        "source": "fdc:fixture"
+      },
+      "sugar_g": {
+        "best_estimate": 8.0,
+        "max_estimate": 11.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      }
+    },
+    "reasons": [
+      "fixture response for iOS contract package"
+    ],
+    "request_id": "req_accept_top_down_depth",
+    "status": "ACCEPT",
+    "trace_id": "trace:req_accept_top_down_depth",
+    "uncertainty_summary": {
+      "confidence_label": "medium",
+      "relative_range_width": 0.22,
+      "uncertainty_flags": []
+    }
+  },
+  "capture_trace_artifact": {
+    "barcode_detected": false,
+    "barcode_value_stored": false,
+    "capture_quality_summary": {
+      "camera_position": "back",
+      "depth_available": true,
+      "depth_quality": "high",
+      "lens_hint": "wide",
+      "lidar_available": true,
+      "orientation": "portrait",
+      "pitch_degrees": 1.2,
+      "roll_degrees": -0.4
+    },
+    "image_identity": {
+      "byte_size": 2456789,
+      "height_px": 4032,
+      "image_format": "heic",
+      "image_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "width_px": 3024
+    },
+    "model_version": "vision_model_placeholder",
+    "ocr_detected": true,
+    "ocr_text_stored": false,
+    "prompt_version": "vision_prompt_placeholder",
+    "scale_evidence_ids": [
+      "scale:lidar_depth:1",
+      "scale:reference_object:1"
+    ]
+  },
+  "photo_analyze_request": {
+    "capture_metadata": {
+      "barcode_payload": null,
+      "barcode_payload_safe": false,
+      "camera_position": "back",
+      "capture_timestamp": "2026-05-01T12:34:56+00:00",
+      "depth_available": true,
+      "depth_quality": "high",
+      "device_model": "iPhone15,3",
+      "focal_length_mm": 5.7,
+      "lens_hint": "wide",
+      "lidar_available": true,
+      "ocr_text_snippets": [
+        "brown rice",
+        "grilled salmon"
+      ],
+      "orientation": "portrait",
+      "os_version": "iOS 18.1",
+      "pitch_degrees": 1.2,
+      "reference_object_hint": "standard dinner plate",
+      "roll_degrees": -0.4
+    },
+    "image_identity": {
+      "byte_size": 2456789,
+      "height_px": 4032,
+      "image_format": "heic",
+      "image_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "width_px": 3024
+    },
+    "request_id": "req_accept_top_down_depth",
+    "user_id": "user_demo_contract"
+  },
+  "photo_analyze_response": {
+    "decision": "ACCEPT",
+    "metrics": {
+      "carbs_g": {
+        "best_estimate": 48.0,
+        "max_estimate": 55.0,
+        "min_estimate": 42.0,
+        "source": "fdc:fixture"
+      },
+      "fat_g": {
+        "best_estimate": 18.0,
+        "max_estimate": 22.0,
+        "min_estimate": 15.0,
+        "source": "fdc:fixture"
+      },
+      "fiber_g": {
+        "best_estimate": 7.0,
+        "max_estimate": 10.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      },
+      "kcal": {
+        "best_estimate": 520.0,
+        "max_estimate": 590.0,
+        "min_estimate": 470.0,
+        "source": "fdc:fixture"
+      },
+      "protein_g": {
+        "best_estimate": 35.0,
+        "max_estimate": 40.0,
+        "min_estimate": 31.0,
+        "source": "fdc:fixture"
+      },
+      "sodium_mg": {
+        "best_estimate": 640.0,
+        "max_estimate": 730.0,
+        "min_estimate": 560.0,
+        "source": "fdc:fixture"
+      },
+      "sugar_g": {
+        "best_estimate": 8.0,
+        "max_estimate": 11.0,
+        "min_estimate": 5.0,
+        "source": "fdc:fixture"
+      }
+    },
+    "reasons": [
+      "adequate scale cues and stable camera pose"
+    ],
+    "request_id": "req_accept_top_down_depth"
+  }
+}

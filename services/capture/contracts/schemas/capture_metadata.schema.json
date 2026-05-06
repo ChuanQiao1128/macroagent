@@ -1,0 +1,148 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "barcode_payload": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Barcode Payload"
+    },
+    "barcode_payload_safe": {
+      "default": false,
+      "title": "Barcode Payload Safe",
+      "type": "boolean"
+    },
+    "camera_position": {
+      "enum": [
+        "front",
+        "back",
+        "unknown"
+      ],
+      "title": "Camera Position",
+      "type": "string"
+    },
+    "capture_timestamp": {
+      "format": "date-time",
+      "title": "Capture Timestamp",
+      "type": "string"
+    },
+    "depth_available": {
+      "title": "Depth Available",
+      "type": "boolean"
+    },
+    "depth_quality": {
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "unknown"
+      ],
+      "title": "Depth Quality",
+      "type": "string"
+    },
+    "device_model": {
+      "minLength": 1,
+      "title": "Device Model",
+      "type": "string"
+    },
+    "focal_length_mm": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Focal Length Mm"
+    },
+    "lens_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lens Hint"
+    },
+    "lidar_available": {
+      "title": "Lidar Available",
+      "type": "boolean"
+    },
+    "ocr_text_snippets": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ocr Text Snippets",
+      "type": "array"
+    },
+    "orientation": {
+      "enum": [
+        "portrait",
+        "portrait_upside_down",
+        "landscape_left",
+        "landscape_right",
+        "face_up",
+        "face_down",
+        "unknown"
+      ],
+      "title": "Orientation",
+      "type": "string"
+    },
+    "os_version": {
+      "minLength": 1,
+      "title": "Os Version",
+      "type": "string"
+    },
+    "pitch_degrees": {
+      "maximum": 180,
+      "minimum": -180,
+      "title": "Pitch Degrees",
+      "type": "number"
+    },
+    "reference_object_hint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference Object Hint"
+    },
+    "roll_degrees": {
+      "maximum": 180,
+      "minimum": -180,
+      "title": "Roll Degrees",
+      "type": "number"
+    }
+  },
+  "required": [
+    "device_model",
+    "os_version",
+    "camera_position",
+    "orientation",
+    "pitch_degrees",
+    "roll_degrees",
+    "depth_available",
+    "depth_quality",
+    "lidar_available",
+    "capture_timestamp"
+  ],
+  "title": "DeviceCaptureMetadata",
+  "type": "object"
+}
