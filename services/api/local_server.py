@@ -47,6 +47,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
     server_version = "MacroAgentLocalHTTP/1.0"
 
+    def send_error(
+        self,
+        code: int,
+        message: str | None = None,
+        explain: str | None = None,
+    ) -> None:
+        del explain
+        if code == HTTPStatus.NOT_IMPLEMENTED:
+            self._handle_unsupported_method()
+            return
+        super().send_error(code, message=message)
+
     def do_GET(self) -> None:
         path = _normalize_path(self.path)
         if path == _HEALTH_PATH:
