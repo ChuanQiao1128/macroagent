@@ -173,6 +173,28 @@ def test_trace_store_accepts_image_sha256_without_raw_image_payload() -> None:
     assert stored[0].image_sha256 == "abc123"
 
 
+@pytest.mark.parametrize(
+    "forbidden_key",
+    ["barcode_payload", "ocr_text_snippets", "local_image_path"],
+)
+def test_trace_store_rejects_nested_forbidden_capture_payload_keys(forbidden_key: str) -> None:
+    store = TraceStore()
+    event = TraceEvent(
+        trace_id="trace-1",
+        stage="CaptureScaleEvidenceAdapter",
+        event_name="capture.scale_evidence_resolved",
+        payload={
+            "capture_artifact": {
+                "image_identity": {"image_sha256": "abc123"},
+                forbidden_key: "x",
+            }
+        },
+    )
+
+    with pytest.raises(ValueError, match="forbidden raw-image keys"):
+        store.append(event)
+
+
 def test_privacy_trace_boundary_doc_exists_and_mentions_image_hash_contract() -> None:
     doc_path = Path("docs/privacy_trace_boundary.md")
 

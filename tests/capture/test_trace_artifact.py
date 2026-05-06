@@ -165,3 +165,29 @@ def test_build_sanitized_capture_trace_artifact_stores_barcode_value_only_when_s
     assert unsafe["barcode_value_stored"] is False
     assert safe["barcode_detected"] is True
     assert safe["barcode_value_stored"] is True
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("barcode_payload", "data:image/jpeg;base64," + ("A" * 96)),
+        ("lens_hint", "Q" * 128),
+    ],
+)
+def test_build_sanitized_capture_trace_artifact_rejects_base64_image_content(
+    field: str,
+    value: str,
+) -> None:
+    payload = _request_payload()
+    payload["capture_metadata"][field] = value
+    request = PhotoAnalyzeRequest.model_validate(payload)
+    scale_evidence = resolve_scale_evidence_from_capture(
+        trace_id="trace-capture-base64",
+        capture_metadata=request.capture_metadata,
+    )
+
+    with pytest.raises(ValueError, match="base64 image content is not allowed"):
+        build_sanitized_capture_trace_artifact(
+            request=request,
+            scale_evidence=scale_evidence,
+        )
