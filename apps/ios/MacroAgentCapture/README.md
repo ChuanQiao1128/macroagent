@@ -1,7 +1,8 @@
 # MacroAgentCapture (iOS Camera Smoke App)
 
 This folder contains the native iOS SwiftUI smoke app source for capture metadata flow.
-TASK-045 adds a real AVFoundation photo capture path and SHA-256 image identity generation.
+The sibling `MacroAgentCapture.xcodeproj` opens these sources as a runnable iPhone
+smoke-test app.
 
 ## Minimum iOS Version
 
@@ -10,12 +11,12 @@ TASK-045 adds a real AVFoundation photo capture path and SHA-256 image identity 
 
 ## Required Capabilities / Permissions
 
-For smoke testing on a real iPhone, configure these in your Xcode target:
+For smoke testing on a real iPhone, the checked-in Xcode target includes:
 
 - Camera permission: `NSCameraUsageDescription`
 - Local network permission: `NSLocalNetworkUsageDescription` (for calling Mac LAN server)
 - Motion permission: `NSMotionUsageDescription` (used for pitch/roll near shutter time)
-- App Transport Security exception for local HTTP development traffic as needed
+- App Transport Security exception for local HTTP development traffic
 
 ## Real Device Requirement
 
@@ -64,6 +65,20 @@ cd /Users/qc/Documents/Claude/Projects/NutritionAI
 python -m services.api.local_server --host 0.0.0.0 --port 8765
 ```
 
+## Open / Install on iPhone
+
+1. Open the project in Xcode:
+
+```bash
+open /Users/qc/Documents/Claude/Projects/NutritionAI/apps/ios/MacroAgentCapture.xcodeproj
+```
+
+2. In Xcode, select the `MacroAgentCapture` scheme.
+3. Select your connected iPhone as the run destination.
+4. In **Signing & Capabilities**, choose your Apple development team if Xcode asks.
+5. Press Run. The app should install on the iPhone and show the `Capture`,
+   `Metadata`, and `Result` tabs.
+
 ## Manual Phone-to-Mac Smoke Test Runbook
 
 1. Find your Mac LAN IP (same Wi-Fi network as iPhone).
@@ -86,7 +101,7 @@ python -m services.api.local_server --host 0.0.0.0 --port 8765
 ```
 
 3. Configure server URL on iPhone.
-- Open `MacroAgentCapture`.
+- Open `MacroAgentCapture` on the iPhone after installing it from Xcode.
 - In `Capture` tab, set server URL to `http://<mac-lan-ip>:8765`.
 
 4. Take a photo.
@@ -110,18 +125,6 @@ python -m services.api.local_server --host 0.0.0.0 --port 8765
 - Server bind: ensure server is started with `--host 0.0.0.0`.
 - macOS firewall: System Settings -> Network -> Firewall; allow incoming connections for Terminal/Python (or temporarily disable firewall for local test), then retry.
 - Health check: use `Run Health Check` in app before `Analyze`; if health fails, fix network path first.
-
-## Create / Open Xcode Project Manually
-
-If this repo does not generate an Xcode project automatically:
-
-1. Open Xcode and create a new **iOS App** project.
-2. Product Name: `MacroAgentCapture`.
-3. Interface: **SwiftUI**. Language: **Swift**.
-4. Set the deployment target to **iOS 17.0** (or newer).
-5. Add all `*.swift` files from this folder to the app target.
-6. Remove or ignore the default generated `ContentView.swift`/`<App>.swift` files if duplicates exist.
-7. Confirm target includes the permission keys listed above.
 
 ## Included Seams
 

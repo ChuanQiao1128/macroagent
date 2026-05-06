@@ -69,6 +69,7 @@ final class CaptureFlowStore: ObservableObject {
         self.apiClientFactory = apiClientFactory
         self.serverURLText = initialServerURL
         self.selectedCaptureMode = .camera
+        let selectedReferenceObjectHint = ReferenceObjectHint.none
         self.selectedReferenceObjectHint = .none
 
         let draft = captureService.initialDraft(referenceObjectHint: selectedReferenceObjectHint.metadataValue)

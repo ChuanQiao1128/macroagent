@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import CoreMotion
 import CryptoKit
 import Foundation
@@ -199,7 +199,7 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             }
 
             sessionQueue.async { [weak self] in
-                guard let self else {
+                guard self != nil else {
                     continuation.resume(throwing: CaptureServiceError.captureServiceReleased)
                     return
                 }
@@ -250,7 +250,8 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
     }
 
     private func startSession(_ session: AVCaptureSession) async throws {
-        try await withCheckedThrowingContinuation { [weak self] continuation in
+        try await withCheckedThrowingContinuation {
+            [weak self] (continuation: CheckedContinuation<Void, Error>) in
             guard let self else {
                 continuation.resume(throwing: CaptureServiceError.captureServiceReleased)
                 return
@@ -301,7 +302,8 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let captureTimestamp = Date()
         let motionSnapshot = motionSampler.snapshot()
 
-        let photo = try await withCheckedThrowingContinuation { [weak self] continuation in
+        let photo: AVCapturePhoto = try await withCheckedThrowingContinuation {
+            [weak self] (continuation: CheckedContinuation<AVCapturePhoto, Error>) in
             guard let self else {
                 continuation.resume(throwing: CaptureServiceError.captureServiceReleased)
                 return

@@ -108,6 +108,17 @@ Wire the iOS app to the local Mac server, send the v0.4 payload, and show the
 backend response. Add a runbook for using the iPhone on the same Wi-Fi network as
 the Mac.
 
+### TASK-048 - Runnable Xcode Project
+
+Status: verified in `apps/ios/MacroAgentCapture.xcodeproj`,
+`apps/ios/MacroAgentCapture/Info.plist`, and
+`tests/ios/test_task_048_xcode_project_static.py`.
+
+The smoke app now has a checked-in Xcode project, shared scheme, iOS 17.0 target,
+automatic signing style, and real-device permission strings for camera, motion,
+local network, and local HTTP development traffic. This converts the Swift source
+folder into an app that can be opened in Xcode and installed on a connected iPhone.
+
 ## Expected Smoke Test Command Flow
 
 On the Mac:
@@ -116,6 +127,19 @@ On the Mac:
 cd /Users/qc/Documents/Claude/Projects/NutritionAI
 python -m services.api.local_server --host 0.0.0.0 --port 8765
 ```
+
+Open the checked-in iOS project:
+
+```bash
+open /Users/qc/Documents/Claude/Projects/NutritionAI/apps/ios/MacroAgentCapture.xcodeproj
+```
+
+In Xcode:
+
+- select the `MacroAgentCapture` scheme;
+- select a connected physical iPhone;
+- set your Apple development team in Signing & Capabilities if prompted;
+- press Run to install the smoke app.
 
 On the iPhone:
 
