@@ -7,8 +7,10 @@ import pytest
 from services.capture import (
     PhotoAnalyzeRequest,
     build_sanitized_capture_trace_artifact,
+    emit_sanitized_capture_trace_event,
     resolve_scale_evidence_from_capture,
 )
+from services.meal.takeoff.trace import InMemoryTraceEmitter
 
 
 def _request_payload(
@@ -191,3 +193,31 @@ def test_build_sanitized_capture_trace_artifact_rejects_base64_image_content(
             request=request,
             scale_evidence=scale_evidence,
         )
+
+
+def test_emit_sanitized_capture_trace_event_emits_safe_capture_artifact_payload() -> None:
+    emitter = InMemoryTraceEmitter()
+    request = _request(barcode_payload="0123456789012", ocr_text_snippets=["Nutrition Facts"])
+    scale_evidence = resolve_scale_evidence_from_capture(
+        trace_id="trace-capture-emit",
+        capture_metadata=request.capture_metadata,
+    )
+
+    artifact = emit_sanitized_capture_trace_event(
+        emitter=emitter,
+        trace_id="trace-capture-emit",
+        request=request,
+        scale_evidence=scale_evidence,
+        model_version="vision_model_placeholder",
+        prompt_version="vision_prompt_placeholder",
+        barcode_marked_safe=False,
+    )
+
+    event = emitter.get_trace("trace-capture-emit")[0]
+    assert event.stage == "CaptureTraceArtifact"
+    assert event.event_name == "capture.trace_artifact_sanitized"
+    assert event.image_sha256 == "a" * 64
+    assert event.payload["capture_artifact"] == artifact
+    assert "barcode_payload" not in artifact
+    assert "ocr_text_snippets" not in artifact
+    assert artifact["barcode_value_stored"] is False
