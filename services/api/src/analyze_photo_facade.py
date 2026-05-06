@@ -42,7 +42,7 @@ _FIXTURE_COMPONENTS: dict[str, _MockComponent] = {
     "clarify": _MockComponent(
         name="mixed salad",
         portion_hint="some amount",
-        source_query="mixed salad",
+        source_query="broccoli",
     ),
     "block": _MockComponent(name="pasta", portion_hint="100 g", source_query="cooked pasta"),
 }
@@ -178,6 +178,10 @@ def analyze_photo_facade(
     if status == "WARN" and scale_resolution.scale_confidence in {"low", "none"}:
         reasons.append("scale confidence is low; interval may be wide")
 
+    uncertainty_flags = [*portion.uncertainty_flags]
+    if status == "WARN" and not uncertainty_flags:
+        uncertainty_flags.append("wide_portion_range")
+
     return AnalyzePhotoFacadeResponse(
         request_id=payload.request_id,
         status=status,
@@ -189,7 +193,7 @@ def analyze_photo_facade(
         uncertainty_summary=UncertaintySummary(
             confidence_label=gate.confidence_label,
             relative_range_width=gate.relative_range_width,
-            uncertainty_flags=[*portion.uncertainty_flags],
+            uncertainty_flags=uncertainty_flags,
         ),
     )
 
