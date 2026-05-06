@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from services.capture.src.schemas import PhotoAnalyzeRequest
 from services.meal.takeoff.schemas import MealScaleEvidence
+from services.meal.takeoff.trace import TraceEmitter, emit_stage_event
 
 _LOCAL_PATH_PATTERN = re.compile(
     r"(^~?/)|(^/Users/)|(^/private/)|(^/var/)|(^[A-Za-z]:\\)|(^\\\\)"
@@ -13,6 +14,7 @@ _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _LONG_DIGIT_PATTERN = re.compile(r"\d{9,}")
 _BASE64_DATA_URL_PATTERN = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,", re.IGNORECASE)
 _BASE64_BLOB_PATTERN = re.compile(r"^[A-Za-z0-9+/=\s]{64,}$")
+_CAPTURE_TRACE_STAGE = "CaptureTraceArtifact"
 
 
 def build_sanitized_capture_trace_artifact(
@@ -91,6 +93,35 @@ def build_sanitized_capture_trace_artifact(
     return artifact
 
 
+def emit_sanitized_capture_trace_event(
+    *,
+    emitter: TraceEmitter,
+    trace_id: str,
+    request: PhotoAnalyzeRequest,
+    scale_evidence: MealScaleEvidence,
+    model_version: str | None = None,
+    prompt_version: str | None = None,
+    barcode_marked_safe: bool = False,
+) -> dict[str, object]:
+    """Build and emit one capture trace event with a sanitized artifact payload."""
+    artifact = build_sanitized_capture_trace_artifact(
+        request=request,
+        scale_evidence=scale_evidence,
+        model_version=model_version,
+        prompt_version=prompt_version,
+        barcode_marked_safe=barcode_marked_safe,
+    )
+    emit_stage_event(
+        emitter,
+        trace_id=trace_id,
+        stage=_CAPTURE_TRACE_STAGE,
+        event_name="capture.trace_artifact_sanitized",
+        image_sha256=request.image_identity.image_sha256,
+        payload={"capture_artifact": artifact},
+    )
+    return artifact
+
+
 def _reject_ocr_pii(snippets: Sequence[str]) -> None:
     for snippet in snippets:
         normalized = snippet.strip()
@@ -134,4 +165,4 @@ def _looks_like_base64_image_content(value: str) -> bool:
     return all(char in allowed_chars for char in compact)
 
 
-__all__ = ["build_sanitized_capture_trace_artifact"]
+__all__ = ["build_sanitized_capture_trace_artifact", "emit_sanitized_capture_trace_event"]
