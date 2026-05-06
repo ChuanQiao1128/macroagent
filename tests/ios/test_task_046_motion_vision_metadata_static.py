@@ -5,6 +5,7 @@ from pathlib import Path
 IOS_APP_DIR = Path("apps/ios/MacroAgentCapture")
 CAPTURE_SERVICE = IOS_APP_DIR / "CaptureService.swift"
 CAPTURE_SCREEN = IOS_APP_DIR / "CaptureScreenView.swift"
+CAPTURE_FLOW_STORE = IOS_APP_DIR / "CaptureFlowStore.swift"
 METADATA_BUILDER = IOS_APP_DIR / "MetadataBuilder.swift"
 MODELS = IOS_APP_DIR / "Models.swift"
 README = IOS_APP_DIR / "README.md"
@@ -129,6 +130,38 @@ def test_ui_exposes_server_url_and_reference_object_hint_controls() -> None:
     assert 'Picker("Hint", selection: $store.selectedReferenceObjectHint)' in text
     assert "ForEach(ReferenceObjectHint.allCases)" in text
     assert "capture_metadata.reference_object_hint" in text
+
+
+def test_capture_flow_store_propagates_reference_object_hint_to_metadata_preview() -> None:
+    text = _read(CAPTURE_FLOW_STORE)
+
+    assert "@Published var selectedReferenceObjectHint: ReferenceObjectHint" in text
+    assert "didSet {" in text
+    assert "applyReferenceHintSelection()" in text
+    assert "self.selectedReferenceObjectHint = .none" in text
+
+    assert (
+        "captureService.initialDraft(referenceObjectHint: "
+        "selectedReferenceObjectHint.metadataValue)"
+        in text
+    )
+    assert "referenceObjectHint: selectedReferenceObjectHint.metadataValue" in text
+
+    assert "let selectedHint = selectedReferenceObjectHint.metadataValue" in text
+    assert "referenceObjectHint: selectedHint," in text
+    assert "metadataPreview = metadataBuilder.buildRequestEnvelope(from: captureDraft)" in text
+
+
+def test_reference_object_hint_contract_values_match_expected_backend_hints() -> None:
+    text = _read(MODELS)
+
+    assert "enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable" in text
+    assert "case none" in text
+    assert 'case standardFork = "standard_fork"' in text
+    assert "case tablespoon" in text
+    assert 'case sodaCan = "soda_can_330ml"' in text
+    assert "var metadataValue: String?" in text
+    assert "self == .none ? nil : rawValue" in text
 
 
 def test_readme_documents_local_vision_and_privacy_for_barcode_and_ocr() -> None:
