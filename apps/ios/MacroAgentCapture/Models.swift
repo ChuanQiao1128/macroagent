@@ -49,7 +49,6 @@ enum CaptureSourceMode: String, Codable, CaseIterable, Identifiable {
 
 enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable {
     case none
-    case creditCard = "credit_card"
     case standardFork = "standard_fork"
     case tablespoon
     case sodaCan = "soda_can_330ml"
@@ -60,8 +59,6 @@ enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .none:
             return "None"
-        case .creditCard:
-            return "Credit Card"
         case .standardFork:
             return "Standard Fork"
         case .tablespoon:

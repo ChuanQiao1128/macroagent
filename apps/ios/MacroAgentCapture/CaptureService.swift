@@ -430,7 +430,7 @@ private enum VisionMetadataExtractor {
     ]
 
     static func extract(from encodedBytes: Data) -> VisionCaptureMetadata {
-        guard let cgImage = cgImage(from: encodedBytes) else {
+        guard let image = decodedImage(from: encodedBytes) else {
             return VisionCaptureMetadata(barcodePayload: nil, barcodePayloadSafe: false, ocrTextSnippets: [])
         }
 
@@ -441,8 +441,14 @@ private enum VisionMetadataExtractor {
         textRequest.recognitionLanguages = ["en-US"]
 
         do {
-            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-            try handler.perform([barcodeRequest, textRequest])
+            let cgImage = image.cgImage
+            if image.orientation == .up {
+                let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+                try handler.perform([barcodeRequest, textRequest])
+            } else {
+                let handler = VNImageRequestHandler(cgImage: cgImage, orientation: image.orientation, options: [:])
+                try handler.perform([barcodeRequest, textRequest])
+            }
         } catch {
             return VisionCaptureMetadata(barcodePayload: nil, barcodePayloadSafe: false, ocrTextSnippets: [])
         }
@@ -464,14 +470,30 @@ private enum VisionMetadataExtractor {
         )
     }
 
-    private static func cgImage(from data: Data) -> CGImage? {
+    private static func decodedImage(from data: Data) -> (cgImage: CGImage, orientation: CGImagePropertyOrientation)? {
         guard let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
         else {
             return nil
         }
 
-        return image
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        let orientation = imageOrientation(from: properties)
+        return (image, orientation)
+    }
+
+    private static func imageOrientation(from properties: [CFString: Any]?) -> CGImagePropertyOrientation {
+        if let rawValue = properties?[kCGImagePropertyOrientation] as? UInt32,
+           let orientation = CGImagePropertyOrientation(rawValue: rawValue) {
+            return orientation
+        }
+
+        if let rawNumber = properties?[kCGImagePropertyOrientation] as? NSNumber,
+           let orientation = CGImagePropertyOrientation(rawValue: rawNumber.uint32Value) {
+            return orientation
+        }
+
+        return .up
     }
 
     private static func firstSafeBarcodePayload(in payloads: [String]) -> (payload: String?, safe: Bool) {
