@@ -16,7 +16,9 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import ValidationError
 
 from services.api import AnalyzePhotoFacadeRequest, analyze_photo_facade
+from services.meal.takeoff.schemas import TraceEvent
 from services.storage import (
+    TraceStore,
     fetch_user_daily_totals,
     fetch_user_meal_history,
     initialize_sqlite_ledger,
@@ -39,6 +41,18 @@ _SUPPORTED_PATHS = {
 
 _LEDGER_DB_ENV_VAR = "MACROAGENT_LEDGER_DB_PATH"
 _DEFAULT_LEDGER_DB_PATH = Path(tempfile.gettempdir()) / "macroagent" / "local_server_ledger.sqlite3"
+
+
+class _TraceStoreEmitter:
+    def __init__(self, *, trace_store: TraceStore) -> None:
+        self._trace_store = trace_store
+
+    def emit(self, event: TraceEvent) -> None:
+        self._trace_store.append(event)
+
+
+_TRACE_STORE = TraceStore()
+_TRACE_EMITTER = _TraceStoreEmitter(trace_store=_TRACE_STORE)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -330,6 +344,7 @@ class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
                 local_date=local_date,
                 include_inactive=include_inactive,
                 limit=limit,
+                emitter=_TRACE_EMITTER,
             )
         except ValueError as exc:
             self._write_error(
@@ -362,6 +377,7 @@ class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
                 _ledger_database_path(),
                 user_id=user_id,
                 local_date=local_date,
+                emitter=_TRACE_EMITTER,
             )
         except ValueError as exc:
             self._write_error(
@@ -384,6 +400,7 @@ class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
                 _ledger_database_path(),
                 user_id=user_id,
                 local_date=local_date,
+                emitter=_TRACE_EMITTER,
             )
         except ValueError as exc:
             self._write_error(
@@ -674,12 +691,17 @@ def _optional_str_field(body: dict[str, Any], key: str) -> str | None:
 
 def _local_date_from_capture_timestamp(capture_timestamp: str | datetime) -> str:
     if isinstance(capture_timestamp, datetime):
-        return capture_timestamp.date().isoformat()
+        parsed = capture_timestamp
+        if parsed.tzinfo is None:
+            return parsed.date().isoformat()
+        return parsed.astimezone().date().isoformat()
     try:
         parsed = datetime.fromisoformat(capture_timestamp)
     except ValueError:
         return datetime.now().astimezone().date().isoformat()
-    return parsed.date().isoformat()
+    if parsed.tzinfo is None:
+        return parsed.date().isoformat()
+    return parsed.astimezone().date().isoformat()
 
 
 def _ledger_database_path() -> str:

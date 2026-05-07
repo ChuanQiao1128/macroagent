@@ -326,9 +326,37 @@ final class CaptureFlowStore: ObservableObject {
 
     private static func localDateFromTimestamp(_ timestamp: String) -> String {
         let trimmed = timestamp.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count >= 10 {
-            return String(trimmed.prefix(10))
+        if let parsedDate = parseISO8601Timestamp(trimmed) {
+            return localDayFormatter.string(from: parsedDate)
         }
-        return ISO8601DateFormatter().string(from: Date()).prefix(10).description
+        return localDayFormatter.string(from: Date())
     }
+
+    private static func parseISO8601Timestamp(_ value: String) -> Date? {
+        if let parsed = iso8601WithFractionalSeconds.date(from: value) {
+            return parsed
+        }
+        return iso8601Standard.date(from: value)
+    }
+
+    private static let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let iso8601Standard: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let localDayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }
