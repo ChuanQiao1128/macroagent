@@ -401,21 +401,28 @@ class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
         request: AnalyzePhotoFacadeRequest,
         response: Any,
     ) -> None:
-        if response.status == "BLOCK" or response.nutrition is None:
+        if response.status not in {"ACCEPT", "WARN"} or response.nutrition is None:
             return
 
         local_date = _local_date_from_capture_timestamp(
             request.payload.capture_metadata.capture_timestamp
         )
+        meal_id = f"meal:{request.payload.request_id}"
+        superseded_entry_id = self._find_active_deterministic_meal_entry_id(
+            user_id=request.payload.user_id,
+            meal_id=meal_id,
+            local_date=local_date,
+        )
         try:
             insert_user_nutrition_ledger_entry(
                 _ledger_database_path(),
                 user_id=request.payload.user_id,
-                meal_id=f"meal:{request.payload.request_id}",
-                entry_kind="accepted",
+                meal_id=meal_id,
+                entry_kind="corrected" if superseded_entry_id is not None else "accepted",
                 source="deterministic",
-                local_date=local_date,
+                local_date=None if superseded_entry_id is not None else local_date,
                 created_at=request.payload.capture_metadata.capture_timestamp,
+                supersedes_entry_id=superseded_entry_id,
                 trace_id=response.trace_id,
                 note=f"captured via local_server status={response.status}",
                 kcal=response.nutrition.kcal.best_estimate,
@@ -429,6 +436,29 @@ class LocalAnalyzePhotoHandler(BaseHTTPRequestHandler):
         except ValueError:
             # Keep analyze responses deterministic even when persistence fails.
             return
+
+    def _find_active_deterministic_meal_entry_id(
+        self,
+        *,
+        user_id: str,
+        meal_id: str,
+        local_date: str,
+    ) -> str | None:
+        try:
+            history = fetch_user_meal_history(
+                _ledger_database_path(),
+                user_id=user_id,
+                local_date=local_date,
+                include_inactive=False,
+                limit=10_000,
+            )
+        except ValueError:
+            return None
+
+        for entry in history:
+            if entry.meal_id == meal_id and entry.source == "deterministic":
+                return entry.entry_id
+        return None
 
     def _handle_unsupported_method(self) -> None:
         path = _normalize_path(self.path)
