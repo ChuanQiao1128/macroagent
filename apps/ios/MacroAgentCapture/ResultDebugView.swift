@@ -39,6 +39,25 @@ struct ResultDebugView: View {
                         }
                     }
 
+                    if !response.quickCorrections.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("quick_corrections")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach(response.quickCorrections) { correction in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(correction.correctionID)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(correction.label)
+                                    Text(correction.options.joined(separator: " / "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
                     if let nutrition = response.nutrition {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("nutrition")

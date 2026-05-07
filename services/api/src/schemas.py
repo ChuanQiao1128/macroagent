@@ -39,6 +39,18 @@ class ClarifyQuestion(StrictModel):
     text: str = Field(min_length=1)
 
 
+class QuickCorrection(StrictModel):
+    correction_id: str = Field(min_length=1)
+    label: str = Field(min_length=1)
+    correction_type: Literal[
+        "portion_size",
+        "hidden_ingredient",
+        "consumed_amount",
+        "preparation",
+    ]
+    options: list[str] = Field(min_length=2, max_length=4)
+
+
 class UncertaintySummary(StrictModel):
     confidence_label: Literal["high", "medium", "low"]
     relative_range_width: float | None = Field(default=None, ge=0)
@@ -80,6 +92,7 @@ class AnalyzePhotoFacadeResponse(StrictModel):
     nutrition: NutritionIntervals | None = None
     reasons: list[str] = Field(default_factory=list)
     clarify_questions: list[ClarifyQuestion] = Field(default_factory=list)
+    quick_corrections: list[QuickCorrection] = Field(default_factory=list, max_length=4)
     trace_id: str = Field(min_length=1)
     ledger_entry_id: str | None = None
     uncertainty_summary: UncertaintySummary
@@ -100,5 +113,6 @@ __all__ = [
     "ClarifyQuestion",
     "NutritionInterval",
     "NutritionIntervals",
+    "QuickCorrection",
     "UncertaintySummary",
 ]

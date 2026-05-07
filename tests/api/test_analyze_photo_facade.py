@@ -52,6 +52,14 @@ def _assert_complete_nutrition(response) -> None:
         assert metric.source.startswith("deterministic:")
 
 
+def _assert_single_photo_quick_corrections(response) -> None:
+    assert 1 <= len(response.quick_corrections) <= 4
+    for correction in response.quick_corrections:
+        assert correction.correction_id
+        assert correction.label
+        assert 2 <= len(correction.options) <= 4
+
+
 def test_accept_fixture_returns_complete_response() -> None:
     response = analyze_photo_facade(_request("req_accept_fixture"))
 
@@ -61,6 +69,7 @@ def test_accept_fixture_returns_complete_response() -> None:
     assert response.trace_id == "trace:req_accept_fixture"
     assert response.ledger_entry_id is None
     assert response.uncertainty_summary.confidence_label == "high"
+    _assert_single_photo_quick_corrections(response)
 
 
 def test_accept_fixture_uses_derived_volume_when_capture_metadata_provides_it() -> None:
@@ -95,6 +104,9 @@ def test_accept_fixture_uses_derived_volume_when_capture_metadata_provides_it() 
     assert response.nutrition.kcal.max_estimate == 257.4
     assert "volume_geometry_estimate" in response.uncertainty_summary.uncertainty_flags
     assert "volume_density_estimate" in response.uncertainty_summary.uncertainty_flags
+    correction_ids = {correction.correction_id for correction in response.quick_corrections}
+    assert "portion_size_quick_adjust" in correction_ids
+    assert "hidden_sauce_oil_check" in correction_ids
 
 
 def test_accept_fixture_uses_manual_container_when_no_depth_volume_is_available() -> None:
@@ -124,6 +136,8 @@ def test_accept_fixture_uses_manual_container_when_no_depth_volume_is_available(
     assert response.nutrition.kcal.max_estimate == 374.4
     assert "manual_container_volume_estimate" in response.uncertainty_summary.uncertainty_flags
     assert "volume_density_estimate" in response.uncertainty_summary.uncertainty_flags
+    correction_ids = {correction.correction_id for correction in response.quick_corrections}
+    assert "portion_size_quick_adjust" in correction_ids
 
 
 def test_warn_fixture_returns_complete_response_with_uncertainty_flags() -> None:
@@ -136,6 +150,7 @@ def test_warn_fixture_returns_complete_response_with_uncertainty_flags() -> None
     assert response.ledger_entry_id is None
     assert response.uncertainty_summary.confidence_label == "medium"
     assert response.uncertainty_summary.uncertainty_flags
+    _assert_single_photo_quick_corrections(response)
 
 
 def test_clarify_fixture_returns_questions_without_log_anyway() -> None:
@@ -147,6 +162,7 @@ def test_clarify_fixture_returns_questions_without_log_anyway() -> None:
     assert response.trace_id == "trace:req_clarify_fixture"
     assert response.ledger_entry_id is None
     assert response.uncertainty_summary.confidence_label == "low"
+    _assert_single_photo_quick_corrections(response)
 
 
 def test_clarify_fixture_can_log_anyway_and_write_ledger_entry() -> None:
@@ -165,6 +181,7 @@ def test_clarify_fixture_can_log_anyway_and_write_ledger_entry() -> None:
     assert entry.trace_id == "trace:req_clarify_fixture_log_anyway"
     assert entry.user_accepted_wide_range is True
     assert entry.user_decline_clarify_reason == "trusts_estimate"
+    _assert_single_photo_quick_corrections(response)
 
 
 def test_block_fixture_refuses_llm_raw_macro_input() -> None:
@@ -177,3 +194,4 @@ def test_block_fixture_refuses_llm_raw_macro_input() -> None:
     assert response.trace_id == "trace:req_block_fixture"
     assert response.ledger_entry_id is None
     assert response.uncertainty_summary.confidence_label == "low"
+    assert response.quick_corrections == []

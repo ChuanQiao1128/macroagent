@@ -249,6 +249,22 @@ struct ClarifyQuestion: Codable, Hashable, Identifiable {
     }
 }
 
+struct QuickCorrection: Codable, Hashable, Identifiable {
+    let correctionID: String
+    let label: String
+    let correctionType: String
+    let options: [String]
+
+    var id: String { correctionID }
+
+    enum CodingKeys: String, CodingKey {
+        case correctionID = "correction_id"
+        case label
+        case correctionType = "correction_type"
+        case options
+    }
+}
+
 struct UncertaintySummary: Codable, Hashable {
     let confidenceLabel: String
     let relativeRangeWidth: Double?
@@ -267,6 +283,7 @@ struct AnalyzePhotoResponse: Codable, Hashable {
     let nutrition: NutritionMetrics?
     let reasons: [String]
     let clarifyQuestions: [ClarifyQuestion]
+    let quickCorrections: [QuickCorrection]
     let traceID: String
     let ledgerEntryID: String?
     let uncertaintySummary: UncertaintySummary
@@ -277,6 +294,7 @@ struct AnalyzePhotoResponse: Codable, Hashable {
         case nutrition
         case reasons
         case clarifyQuestions = "clarify_questions"
+        case quickCorrections = "quick_corrections"
         case traceID = "trace_id"
         case ledgerEntryID = "ledger_entry_id"
         case uncertaintySummary = "uncertainty_summary"

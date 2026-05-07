@@ -2,10 +2,9 @@
 
 ## Decision
 
-Do not start with a full Web frontend. For serious food photo estimation, the next
-stage is a backend API contract plus an iOS-native capture vertical slice. Web can
-stay as an internal debug console because browser capture cannot reliably provide
-the device signals needed for portion estimation.
+Serious food photo estimation should default to one photo. The next stage is a
+backend API contract plus an iOS-native capture vertical slice that returns an
+estimate and quick correction hooks without requiring multi-angle capture.
 
 The v0.4 automation starts with mock-first backend and contract work. It does not
 add live model calls, does not ask an LLM for calories or macros, and does not store
@@ -16,12 +15,13 @@ raw meal images in trace artifacts.
 Target user flow:
 
 ```text
-iPhone guided capture
+iPhone single-photo capture
 -> image hash and capture metadata
 -> strict backend request schema
 -> scale evidence resolution
 -> deterministic meal takeoff
 -> nutrition response with ACCEPT/WARN/CLARIFY/BLOCK
+-> quick corrections for high-impact uncertainty
 -> append-only ledger or log-anyway path
 ```
 
@@ -41,6 +41,7 @@ Web is still useful, but mainly for internal QA:
 - upload fixture images;
 - inspect vision output, source matches, portion ranges, trace events, and ledger
   decisions;
+- inspect quick corrections and high-impact uncertainty choices;
 - reproduce CLARIFY/BLOCK cases quickly.
 
 ## v0.4 Automated Tasks

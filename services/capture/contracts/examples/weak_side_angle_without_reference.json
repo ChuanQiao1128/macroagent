@@ -46,6 +46,38 @@
         "source": "deterministic:usda_seed_0013"
       }
     },
+    "quick_corrections": [
+      {
+        "correction_id": "portion_size_quick_adjust",
+        "correction_type": "portion_size",
+        "label": "Adjust visible portion size",
+        "options": [
+          "smaller than estimate",
+          "estimate looks right",
+          "larger than estimate"
+        ]
+      },
+      {
+        "correction_id": "hidden_sauce_oil_check",
+        "correction_type": "hidden_ingredient",
+        "label": "Sauce or cooking oil",
+        "options": [
+          "none or very little",
+          "some",
+          "heavy"
+        ]
+      },
+      {
+        "correction_id": "consumed_amount_check",
+        "correction_type": "consumed_amount",
+        "label": "Amount eaten",
+        "options": [
+          "ate all",
+          "ate about half",
+          "left some"
+        ]
+      }
+    ],
     "reasons": [
       "range_width_gt_accept_max",
       "scale confidence is low; interval may be wide"

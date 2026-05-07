@@ -40,13 +40,15 @@ def test_metadata_preview_is_explicitly_present_before_analyze_action() -> None:
     assert "Review the Metadata tab preview before sending Analyze." in capture_text
 
 
-def test_result_view_renders_status_reasons_trace_id_clarify_questions_and_seven_metrics() -> None:
+def test_result_view_renders_status_reasons_trace_id_corrections_and_seven_metrics() -> None:
     text = _read(RESULT_DEBUG)
 
     assert 'DebugRow(label: "status", value: response.status.rawValue)' in text
     assert 'DebugRow(label: "trace_id", value: response.traceID)' in text
     assert 'Text("reasons")' in text
     assert 'Text("clarify_questions")' in text
+    assert 'Text("quick_corrections")' in text
+    assert "response.quickCorrections" in text
 
     expected_metric_rows = (
         'NutritionMetricRow(label: "kcal", metric: nutrition.kcal)',
@@ -85,6 +87,7 @@ def test_v0_4_response_contract_field_names_are_statically_referenced() -> None:
 
     assert 'case requestID = "request_id"' in text
     assert 'case clarifyQuestions = "clarify_questions"' in text
+    assert 'case quickCorrections = "quick_corrections"' in text
     assert 'case traceID = "trace_id"' in text
     assert 'case ledgerEntryID = "ledger_entry_id"' in text
     assert 'case uncertaintySummary = "uncertainty_summary"' in text

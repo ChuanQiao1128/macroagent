@@ -9,6 +9,7 @@ from services.api.src.schemas import (
     ClarifyQuestion,
     NutritionInterval,
     NutritionIntervals,
+    QuickCorrection,
     UncertaintySummary,
 )
 from services.capture import resolve_scale_evidence_from_capture
@@ -159,6 +160,7 @@ def analyze_photo_facade(
             nutrition=None,
             reasons=reasons,
             clarify_questions=[],
+            quick_corrections=[],
             trace_id=trace_id,
             ledger_entry_id=None,
             uncertainty_summary=UncertaintySummary(
@@ -191,6 +193,12 @@ def analyze_photo_facade(
     if status == "WARN" and not uncertainty_flags:
         uncertainty_flags.append("wide_portion_range")
 
+    quick_corrections = _build_quick_corrections(
+        component=component,
+        status=status,
+        uncertainty_flags=uncertainty_flags,
+    )
+
     return AnalyzePhotoFacadeResponse(
         request_id=payload.request_id,
         status=status,
@@ -200,6 +208,7 @@ def analyze_photo_facade(
         ),
         reasons=reasons,
         clarify_questions=clarify_questions,
+        quick_corrections=quick_corrections,
         trace_id=trace_id,
         ledger_entry_id=gate.ledger_entry_id,
         uncertainty_summary=UncertaintySummary(
@@ -234,6 +243,70 @@ def _resolve_portion_range(*, component: _MockComponent, capture_metadata):
         component_name=component.source_query,
         volume_estimate=volume_estimate,
     )
+
+
+def _build_quick_corrections(
+    *,
+    component: _MockComponent,
+    status: str,
+    uncertainty_flags: list[str],
+) -> list[QuickCorrection]:
+    if status == "BLOCK":
+        return []
+
+    component_text = f"{component.name} {component.source_query}".casefold()
+    flags = set(uncertainty_flags)
+    corrections: list[QuickCorrection] = []
+
+    if flags.intersection(
+        {
+            "approximate_quantity",
+            "unknown_portion_hint",
+            "wide_portion_range",
+            "volume_geometry_estimate",
+            "manual_container_volume_estimate",
+            "volume_density_estimate",
+        }
+    ):
+        corrections.append(
+            QuickCorrection(
+                correction_id="portion_size_quick_adjust",
+                label="Adjust visible portion size",
+                correction_type="portion_size",
+                options=["smaller than estimate", "estimate looks right", "larger than estimate"],
+            )
+        )
+
+    if any(token in component_text for token in ("salad", "chicken", "mixed", "rice")):
+        corrections.append(
+            QuickCorrection(
+                correction_id="hidden_sauce_oil_check",
+                label="Sauce or cooking oil",
+                correction_type="hidden_ingredient",
+                options=["none or very little", "some", "heavy"],
+            )
+        )
+
+    if any(token in component_text for token in ("coffee", "tea", "drink", "milk")):
+        corrections.append(
+            QuickCorrection(
+                correction_id="drink_add_ins_check",
+                label="Sugar, milk, or cream",
+                correction_type="hidden_ingredient",
+                options=["plain", "some milk or sugar", "sweet or creamy"],
+            )
+        )
+
+    corrections.append(
+        QuickCorrection(
+            correction_id="consumed_amount_check",
+            label="Amount eaten",
+            correction_type="consumed_amount",
+            options=["ate all", "ate about half", "left some"],
+        )
+    )
+
+    return corrections[:4]
 
 
 def _volume_estimate_from_capture(capture_metadata) -> VolumeEstimate | None:

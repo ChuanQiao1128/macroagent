@@ -132,11 +132,13 @@ def test_analyze_photo_accepts_raw_photo_request() -> None:
     assert payload["request_id"] == request_id
     assert payload["trace_id"] == f"trace:{request_id}"
     assert payload["status"] in {"ACCEPT", "WARN", "CLARIFY", "BLOCK"}
+    assert "quick_corrections" in payload
     assert "nutrition" in payload or payload["status"] == "BLOCK"
     if payload["status"] == "BLOCK":
         assert payload["reasons"]
     else:
         assert payload["nutrition"] is not None
+        assert 1 <= len(payload["quick_corrections"]) <= 4
 
     forbidden_keys = {
         "image",
@@ -169,6 +171,7 @@ def test_analyze_photo_accepts_facade_request_shape() -> None:
     assert payload["request_id"] == request_id
     assert payload["status"] == "WARN"
     assert payload["trace_id"] == f"trace:{request_id}"
+    assert payload["quick_corrections"]
 
 
 def test_invalid_json_returns_structured_error() -> None:

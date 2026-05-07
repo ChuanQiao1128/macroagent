@@ -9,6 +9,10 @@ This plan starts from the current local pipeline state:
 
 ## Product Direction
 
+Current product strategy is single-photo first. Normal users should not be
+expected to take multiple angles, photograph menus, or use fixed containers. Those
+signals remain optional evidence.
+
 The product should stay split into three layers:
 
 1. Perception: Claude Vision reads the image and returns structured candidates, portion hints, hidden-ingredient risks, and uncertainty.
@@ -17,47 +21,42 @@ The product should stay split into three layers:
 
 Do not put nutrition arithmetic or database facts into the LLM. Use the LLM for uncertain visual understanding and user-facing explanation only.
 
-## Stage 1: Web Testing Shell
+See [single_photo_product_strategy.md](single_photo_product_strategy.md) for the
+current strategy baseline.
 
-Goal: make the product testable by a human in a browser before building mobile.
+## Stage 1: Single-Photo Result Contract
+
+Goal: make one-photo analysis return a useful estimate plus correction hooks.
 
 Build:
 
-- FastAPI endpoint for meal analysis jobs.
-- React/Tailwind web app under `apps/web`.
-- Upload image screen.
-- Job progress states: `queued`, `running_vision`, `matching`, `needs_confirmation`, `complete`, `failed`.
-- Result screen showing the seven metrics, range, matched foods, portion estimates, and uncertainty.
-- One-click correction controls for grams, pieces, sugar packet used/not used, sauce/mayo yes/no.
-- Local SQLite persistence for jobs, images metadata, estimates, and corrections.
+- Fast first response for one photo.
+- Seven metrics with best/min/max values.
+- `quick_corrections` for portion size, hidden sauce/oil, drink add-ins, and amount consumed.
+- Confidence and uncertainty drivers.
+- Append-only correction capture for future personal priors.
 
 Acceptance:
 
-- User can upload `sushi.jpg` or `coffee.jpg` from the browser.
-- UI returns a result without opening terminal.
-- If Claude CLI is slow or fails, the job remains visible with a recoverable status.
-- Offline fixture mode can replay `local_outputs/sushi_vision.json` and `local_outputs/coffee_vision.json` for frontend demos without spending model calls.
-
-Why Web first:
-
-- Faster iteration than iOS.
-- Easier to debug the analysis trace.
-- Lets us validate the correction UX before committing to native mobile flows.
-- Playwright can protect the UI cheaply in CI.
+- User can take or upload one image and receive a result without extra capture steps.
+- The result never claims scale-grade precision from a single photo.
+- The app asks at most one or two high-impact questions before logging.
+- Quick corrections are structured in the backend response and renderable by iOS/web.
 
 ## Stage 2: Reliability Before Mobile
 
-Goal: make the analysis path stable enough that a mobile client can depend on it.
+Goal: make the one-photo path stable enough for repeated real use.
 
 Build:
 
 - Background worker for analysis jobs; do not run long Claude calls inside the request thread.
 - Raw Claude response capture for debugging failed schema parses.
 - Vision provider health checks and clear failure categories.
-- Timeout budget: first visible UI response under 1 second; final result target under 15-30 seconds when Claude is healthy.
+- Timeout budget: first visible UI response under 1 second; final result target under 10-20 seconds when Claude is healthy.
 - Cache by normalized image hash, model, prompt hash, and schema version.
 - Golden fixture tests for sushi, coffee, rice/chicken, mixed dish with sauce, and failed/blurred image.
 - High-impact uncertainty gate: ask user only when estimated impact is meaningful.
+- Background second-pass review for difficult mixed meals; do not block the first result with every agent.
 
 Acceptance:
 
@@ -160,12 +159,10 @@ After those pass, create or run the next briefs:
 
 ## Immediate Decision
 
-Build Web first. Do not start iOS native until the browser flow proves:
+Keep building the iOS smoke app and backend around single-photo behavior:
 
-- upload works,
-- results are understandable,
-- hidden uncertainty can be corrected,
-- the backend job model handles slow Claude calls,
-- and the seven-metric output is stable across fixture and real runs.
-
-Starting iOS before that would mostly move uncertainty into Swift code and slow down iteration.
+- one photo is the default;
+- depth, containers, OCR, and menus are optional evidence;
+- API responses must carry quick corrections;
+- LLMs identify and explain uncertainty but do not calculate final macros;
+- multi-agent work should support offline review and hard cases, not every normal request.
