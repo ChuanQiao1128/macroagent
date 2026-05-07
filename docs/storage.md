@@ -1,16 +1,26 @@
 # SQLite Ledger
 
-`services.storage` provides the local-only SQLite persistence layer for meal estimates and daily ledger totals.
+`services.storage` provides the local-only SQLite persistence layer for meal estimates, user meal history, daily ledger totals, and HealthKit export prep.
 
 ## Public API
 
 - `initialize_sqlite_ledger(database_path)`
 - `insert_meal_estimate(database_path, meal_estimate, local_date=None, meal_id=None, created_at=None)`
+- `insert_user_nutrition_ledger_entry(database_path, user_id, meal_id, entry_kind, source='deterministic', local_date=None, created_at=None, supersedes_entry_id=None, trace_id=None, note=None, kcal=None, protein_g=None, carbs_g=None, fat_g=None, sugar_g=None, sodium_mg=None, fiber_g=None, entry_id=None)`
 - `fetch_meal_by_id(database_path, meal_id)`
 - `fetch_daily_totals(database_path, local_date)`
+- `fetch_user_meal_history(database_path, user_id, local_date=None, include_inactive=False, limit=100, emitter=None)`
+- `fetch_user_daily_totals(database_path, user_id, local_date, emitter=None)`
+- `prepare_healthkit_export(database_path, user_id, local_date, emitter=None)`
 - `export_ledger_backup(database_path)`
 - `StoredMealEstimate`
 - `DailyLedgerTotals`
+- `UserNutritionLedgerEntry`
+- `UserDailyNutritionTotals`
+- `UserNutritionValues`
+- `HealthKitExportPreparation`
+- `HealthKitPreparedEntry`
+- `HealthKitPreparedQuantity`
 
 ## Backup Export
 
@@ -52,9 +62,15 @@ Each exported component includes:
 - Initializes a replayable schema and records applied versions in `schema_migrations`.
 - Creates one row per meal in `meals`.
 - Creates one row per meal component in `meal_component_estimates`.
+- Stores user nutrition ledger rows in `user_nutrition_ledger_entries` with append-only corrections and a unique supersession chain.
 - Stores local date strings as `YYYY-MM-DD`.
 - Stores timestamps as ISO-formatted strings.
 - Persists the seven core nutrition ranges, best estimates, component traces, source trace JSON, and serialized meal estimate JSON.
+- `fetch_user_meal_history()` filters by `user_id` and optional `local_date`, sorts newest-first by `created_at` then `entry_id`, and can include inactive superseded rows when requested.
+- `fetch_user_daily_totals()` aggregates only deterministic accepted/corrected rows for the selected user and day, and excludes any entry that has been superseded.
+- Corrected entries supersede earlier accepted entries without mutating the append-only history records themselves.
+- `prepare_healthkit_export()` maps the supported nutrition metrics to HealthKit quantity identifiers, emits `ready` quantities for available values, and marks unavailable values as `skipped` with `skip_reason="value_unavailable"`.
+- `fetch_user_meal_history()`, `fetch_user_daily_totals()`, and `prepare_healthkit_export()` emit trace events on the local trace store when an emitter is provided.
 - Round-trips `MealEstimate.trace_versions` through the stored `meal_estimate_json` payload.
 - Keeps the ledger local-first and does not require any cloud or network service.
 - Treats repeated inserts with the same `meal_id` and identical payload as idempotent.

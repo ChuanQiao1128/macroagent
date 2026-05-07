@@ -15,7 +15,7 @@ The default queue is:
 5. `TASK-054` - Image Privacy, Cache, and Retention Policy
 6. `TASK-055` - Real Food Evaluation Fixtures
 7. `TASK-056` - Dish Template and RAG Seed Layer
-8. `TASK-057` - User History, Daily Totals, and HealthKit Export Prep
+8. `TASK-057` - User History, Daily Totals, and HealthKit Export Prep (verified in `services/storage/src/sqlite_ledger.py`, `services/api/local_server.py`, `apps/ios/MacroAgentCapture`, and `tests/storage/test_user_history_healthkit_export.py`, `tests/api/test_local_server.py`, `tests/ios/test_task_057_ios_history_totals_static.py`)
 
 ## Dry Run
 

@@ -152,6 +152,9 @@ Tap Analyze
 See ACCEPT/WARN/CLARIFY/BLOCK response
 ```
 
+- Open the `History` tab and confirm the selected user/day meal history, daily
+  totals, and HealthKit export prep for the same local date.
+
 ## Out of Scope
 
 - App Store/TestFlight setup.

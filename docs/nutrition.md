@@ -179,7 +179,7 @@ The shared version constants used in meal traces live in [docs/trace.md](trace.m
 
 ## Persistence
 
-`services.storage` persists meal estimates and daily totals in a local SQLite ledger and exposes a JSON backup export API for inspection and backup. See [docs/storage.md](storage.md).
+`services.storage` persists meal estimates, user meal history, daily totals, and HealthKit export prep in a local SQLite ledger and exposes a JSON backup export API for inspection and backup. See [docs/storage.md](storage.md).
 
 ## Verification
 
