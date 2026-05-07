@@ -382,6 +382,53 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
         ALTER TABLE meal_component_estimates ADD COLUMN best_fiber_g_method TEXT;
         """,
     ),
+    _SchemaMigration(
+        version=4,
+        sql="""
+        CREATE TABLE IF NOT EXISTS user_nutrition_ledger_entries (
+            entry_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            meal_id TEXT NOT NULL,
+            entry_kind TEXT NOT NULL
+                CHECK (entry_kind IN ('accepted', 'corrected')),
+            source TEXT NOT NULL
+                CHECK (source IN ('deterministic', 'manual_entry')),
+            supersedes_entry_id TEXT,
+            active INTEGER NOT NULL CHECK (active IN (0, 1)),
+            trace_id TEXT,
+            note TEXT,
+            kcal REAL CHECK (kcal IS NULL OR kcal >= 0),
+            protein_g REAL CHECK (protein_g IS NULL OR protein_g >= 0),
+            carbs_g REAL CHECK (carbs_g IS NULL OR carbs_g >= 0),
+            fat_g REAL CHECK (fat_g IS NULL OR fat_g >= 0),
+            sugar_g REAL CHECK (sugar_g IS NULL OR sugar_g >= 0),
+            sodium_mg REAL CHECK (sodium_mg IS NULL OR sodium_mg >= 0),
+            fiber_g REAL CHECK (fiber_g IS NULL OR fiber_g >= 0),
+            CHECK (
+                kcal IS NOT NULL
+                OR protein_g IS NOT NULL
+                OR carbs_g IS NOT NULL
+                OR fat_g IS NOT NULL
+                OR sugar_g IS NOT NULL
+                OR sodium_mg IS NOT NULL
+                OR fiber_g IS NOT NULL
+            ),
+            FOREIGN KEY (supersedes_entry_id)
+                REFERENCES user_nutrition_ledger_entries(entry_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_user_date
+            ON user_nutrition_ledger_entries(user_id, local_date, created_at, entry_id);
+
+        CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_active
+            ON user_nutrition_ledger_entries(user_id, local_date, active);
+
+        CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_supersedes
+            ON user_nutrition_ledger_entries(supersedes_entry_id);
+        """,
+    ),
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
@@ -398,50 +445,6 @@ _HEALTHKIT_QUANTITY_MAPPINGS: tuple[tuple[str, str, str], ...] = (
     ("sodium_mg", "HKQuantityTypeIdentifierDietarySodium", "mg"),
     ("fiber_g", "HKQuantityTypeIdentifierDietaryFiber", "g"),
 )
-_USER_NUTRITION_LEDGER_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS user_nutrition_ledger_entries (
-    entry_id TEXT PRIMARY KEY,
-    created_at TEXT NOT NULL,
-    local_date TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    meal_id TEXT NOT NULL,
-    entry_kind TEXT NOT NULL
-        CHECK (entry_kind IN ('accepted', 'corrected')),
-    source TEXT NOT NULL
-        CHECK (source IN ('deterministic', 'manual_entry')),
-    supersedes_entry_id TEXT,
-    active INTEGER NOT NULL CHECK (active IN (0, 1)),
-    trace_id TEXT,
-    note TEXT,
-    kcal REAL CHECK (kcal IS NULL OR kcal >= 0),
-    protein_g REAL CHECK (protein_g IS NULL OR protein_g >= 0),
-    carbs_g REAL CHECK (carbs_g IS NULL OR carbs_g >= 0),
-    fat_g REAL CHECK (fat_g IS NULL OR fat_g >= 0),
-    sugar_g REAL CHECK (sugar_g IS NULL OR sugar_g >= 0),
-    sodium_mg REAL CHECK (sodium_mg IS NULL OR sodium_mg >= 0),
-    fiber_g REAL CHECK (fiber_g IS NULL OR fiber_g >= 0),
-    CHECK (
-        kcal IS NOT NULL
-        OR protein_g IS NOT NULL
-        OR carbs_g IS NOT NULL
-        OR fat_g IS NOT NULL
-        OR sugar_g IS NOT NULL
-        OR sodium_mg IS NOT NULL
-        OR fiber_g IS NOT NULL
-    ),
-    FOREIGN KEY (supersedes_entry_id)
-        REFERENCES user_nutrition_ledger_entries(entry_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_user_date
-    ON user_nutrition_ledger_entries(user_id, local_date, created_at, entry_id);
-
-CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_active
-    ON user_nutrition_ledger_entries(user_id, local_date, active);
-
-CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_supersedes
-    ON user_nutrition_ledger_entries(supersedes_entry_id);
-"""
 
 
 def initialize_sqlite_ledger(database_path: str | Path) -> None:
@@ -1090,9 +1093,21 @@ def insert_user_nutrition_ledger_entry(
         if resolved_supersedes_entry_id is not None:
             superseded_row = connection.execute(
                 """
-                SELECT user_id, active, meal_id, local_date
-                FROM user_nutrition_ledger_entries
-                WHERE entry_id = ?
+                SELECT
+                    candidate.user_id,
+                    candidate.meal_id,
+                    candidate.local_date,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM user_nutrition_ledger_entries AS superseding
+                            WHERE superseding.supersedes_entry_id = candidate.entry_id
+                        )
+                        THEN 0
+                        ELSE 1
+                    END AS active
+                FROM user_nutrition_ledger_entries AS candidate
+                WHERE candidate.entry_id = ?
                 """,
                 (resolved_supersedes_entry_id,),
             ).fetchone()
@@ -1114,14 +1129,6 @@ def insert_user_nutrition_ledger_entry(
                 raise ValueError(
                     "corrected entry local_date must match superseded entry local_date"
                 )
-            connection.execute(
-                """
-                UPDATE user_nutrition_ledger_entries
-                SET active = 0
-                WHERE entry_id = ?
-                """,
-                (resolved_supersedes_entry_id,),
-            )
 
         try:
             connection.execute(
@@ -1195,32 +1202,48 @@ def fetch_user_meal_history(
         where_clauses.append("local_date = ?")
         params.append(resolved_local_date)
     if not include_inactive:
-        where_clauses.append("active = 1")
+        where_clauses.append(
+            """
+            NOT EXISTS (
+                SELECT 1
+                FROM user_nutrition_ledger_entries AS superseding
+                WHERE superseding.supersedes_entry_id = entries.entry_id
+            )
+            """
+        )
     params.append(limit)
 
     query = f"""
         SELECT
-            entry_id,
-            created_at,
-            local_date,
-            user_id,
-            meal_id,
-            entry_kind,
-            source,
-            supersedes_entry_id,
-            active,
-            trace_id,
-            note,
-            kcal,
-            protein_g,
-            carbs_g,
-            fat_g,
-            sugar_g,
-            sodium_mg,
-            fiber_g
-        FROM user_nutrition_ledger_entries
+            entries.entry_id,
+            entries.created_at,
+            entries.local_date,
+            entries.user_id,
+            entries.meal_id,
+            entries.entry_kind,
+            entries.source,
+            entries.supersedes_entry_id,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM user_nutrition_ledger_entries AS superseding
+                    WHERE superseding.supersedes_entry_id = entries.entry_id
+                )
+                THEN 0
+                ELSE 1
+            END AS active,
+            entries.trace_id,
+            entries.note,
+            entries.kcal,
+            entries.protein_g,
+            entries.carbs_g,
+            entries.fat_g,
+            entries.sugar_g,
+            entries.sodium_mg,
+            entries.fiber_g
+        FROM user_nutrition_ledger_entries AS entries
         WHERE {" AND ".join(where_clauses)}
-        ORDER BY created_at DESC, entry_id DESC
+        ORDER BY entries.created_at DESC, entries.entry_id DESC
         LIMIT ?
     """
 
@@ -1268,12 +1291,16 @@ def fetch_user_daily_totals(
                 COALESCE(SUM(sugar_g), 0) AS sugar_g,
                 COALESCE(SUM(sodium_mg), 0) AS sodium_mg,
                 COALESCE(SUM(fiber_g), 0) AS fiber_g
-            FROM user_nutrition_ledger_entries
-            WHERE user_id = ?
-              AND local_date = ?
-              AND active = 1
-              AND source = 'deterministic'
-              AND entry_kind IN ('accepted', 'corrected')
+            FROM user_nutrition_ledger_entries AS entries
+            WHERE entries.user_id = ?
+              AND entries.local_date = ?
+              AND entries.source = 'deterministic'
+              AND entries.entry_kind IN ('accepted', 'corrected')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM user_nutrition_ledger_entries AS superseding
+                  WHERE superseding.supersedes_entry_id = entries.entry_id
+              )
             """,
             (resolved_user_id, resolved_local_date),
         ).fetchone()
@@ -1327,31 +1354,43 @@ def prepare_healthkit_export(
         rows = connection.execute(
             """
             SELECT
-                entry_id,
-                created_at,
-                local_date,
-                user_id,
-                meal_id,
-                entry_kind,
-                source,
-                supersedes_entry_id,
-                active,
-                trace_id,
-                note,
-                kcal,
-                protein_g,
-                carbs_g,
-                fat_g,
-                sugar_g,
-                sodium_mg,
-                fiber_g
-            FROM user_nutrition_ledger_entries
-            WHERE user_id = ?
-              AND local_date = ?
-              AND active = 1
-              AND source = 'deterministic'
-              AND entry_kind IN ('accepted', 'corrected')
-            ORDER BY created_at ASC, entry_id ASC
+                entries.entry_id,
+                entries.created_at,
+                entries.local_date,
+                entries.user_id,
+                entries.meal_id,
+                entries.entry_kind,
+                entries.source,
+                entries.supersedes_entry_id,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM user_nutrition_ledger_entries AS superseding
+                        WHERE superseding.supersedes_entry_id = entries.entry_id
+                    )
+                    THEN 0
+                    ELSE 1
+                END AS active,
+                entries.trace_id,
+                entries.note,
+                entries.kcal,
+                entries.protein_g,
+                entries.carbs_g,
+                entries.fat_g,
+                entries.sugar_g,
+                entries.sodium_mg,
+                entries.fiber_g
+            FROM user_nutrition_ledger_entries AS entries
+            WHERE entries.user_id = ?
+              AND entries.local_date = ?
+              AND entries.source = 'deterministic'
+              AND entries.entry_kind IN ('accepted', 'corrected')
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM user_nutrition_ledger_entries AS superseding
+                  WHERE superseding.supersedes_entry_id = entries.entry_id
+              )
+            ORDER BY entries.created_at ASC, entries.entry_id ASC
             """,
             (resolved_user_id, resolved_local_date),
         ).fetchall()
@@ -1556,6 +1595,43 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
             ORDER BY created_at ASC, correction_id ASC
             """
         ).fetchall()
+        user_nutrition_rows = connection.execute(
+            """
+            SELECT
+                entries.entry_id,
+                entries.created_at,
+                entries.local_date,
+                entries.user_id,
+                entries.meal_id,
+                entries.entry_kind,
+                entries.source,
+                entries.supersedes_entry_id,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM user_nutrition_ledger_entries AS superseding
+                        WHERE superseding.supersedes_entry_id = entries.entry_id
+                    )
+                    THEN 0
+                    ELSE 1
+                END AS active,
+                entries.trace_id,
+                entries.note,
+                entries.kcal,
+                entries.protein_g,
+                entries.carbs_g,
+                entries.fat_g,
+                entries.sugar_g,
+                entries.sodium_mg,
+                entries.fiber_g
+            FROM user_nutrition_ledger_entries AS entries
+            ORDER BY
+                entries.user_id ASC,
+                entries.local_date ASC,
+                entries.created_at ASC,
+                entries.entry_id ASC
+            """
+        ).fetchall()
 
     ledger_schema_version = max((int(row["version"]) for row in schema_rows), default=0)
 
@@ -1578,6 +1654,9 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
         _build_portion_correction_record(row).model_dump(mode="json")
         for row in correction_rows
     ]
+    user_nutrition_payload = [
+        _build_user_nutrition_entry(row).model_dump(mode="json") for row in user_nutrition_rows
+    ]
 
     return {
         "format": _EXPORT_FORMAT,
@@ -1592,6 +1671,8 @@ def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
         ],
         "portion_correction_count": len(portion_corrections_payload),
         "portion_corrections": portion_corrections_payload,
+        "user_nutrition_ledger_entry_count": len(user_nutrition_payload),
+        "user_nutrition_ledger_entries": user_nutrition_payload,
         "meal_count": len(meals_payload),
         "meals": meals_payload,
     }
@@ -1831,12 +1912,6 @@ def _apply_migrations(
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (migration.version, datetime.now().astimezone().isoformat(timespec="seconds")),
         )
-
-    _ensure_user_nutrition_ledger_schema(connection)
-
-
-def _ensure_user_nutrition_ledger_schema(connection: sqlite3.Connection) -> None:
-    connection.executescript(_USER_NUTRITION_LEDGER_SCHEMA_SQL)
 
 
 def _build_best_estimate_set_from_row(row: sqlite3.Row) -> MacroBestEstimateSet:

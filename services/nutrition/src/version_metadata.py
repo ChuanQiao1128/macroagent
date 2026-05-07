@@ -19,7 +19,7 @@ NUTRITION_CATALOG_VERSION = "nutrition_catalog_seed_fdc_core7_v3"
 MATCHER_VERSION = "matcher_state_aware_fdc_v2"
 PORTION_ENGINE_VERSION = "portion_parser_v1"
 MACRO_CALCULATOR_VERSION = "nutrition_interval_core7_v2"
-LEDGER_SCHEMA_VERSION = 3
+LEDGER_SCHEMA_VERSION = 4
 
 
 class TraceVersionMetadata(BaseModel):
