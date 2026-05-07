@@ -49,6 +49,7 @@ def test_result_view_renders_status_reasons_trace_id_corrections_and_seven_metri
     assert 'Text("clarify_questions")' in text
     assert 'Text("quick_corrections")' in text
     assert "response.quickCorrections" in text
+    assert "await store.applyQuickCorrection(" in text
 
     expected_metric_rows = (
         'NutritionMetricRow(label: "kcal", metric: nutrition.kcal)',
@@ -86,6 +87,7 @@ def test_v0_4_response_contract_field_names_are_statically_referenced() -> None:
     text = _read(MODELS)
 
     assert 'case requestID = "request_id"' in text
+    assert 'case quickCorrectionSelections = "quick_correction_selections"' in text
     assert 'case clarifyQuestions = "clarify_questions"' in text
     assert 'case quickCorrections = "quick_corrections"' in text
     assert 'case traceID = "trace_id"' in text
@@ -102,6 +104,21 @@ def test_v0_4_response_contract_field_names_are_statically_referenced() -> None:
     )
     for key in expected_nutrition_keys:
         assert key in text
+
+
+def test_ios_store_sends_quick_correction_selections_on_reanalyze() -> None:
+    store_text = _read(CAPTURE_FLOW_STORE)
+    metadata_builder_text = _read(IOS_APP_DIR / "MetadataBuilder.swift")
+
+    assert "quickCorrectionSelections: []" in metadata_builder_text
+    assert "@Published private(set) var quickCorrectionSelections" in store_text
+    assert (
+        "func applyQuickCorrection(correctionID: String, selectedOption: String) async"
+        in store_text
+    )
+    assert "upsertQuickCorrectionSelection" in store_text
+    assert "rebuildMetadataPreview()" in store_text
+    assert "quickCorrectionSelections: selections" in store_text
 
 
 def test_readme_runbook_documents_lan_ip_server_start_and_response_verification() -> None:

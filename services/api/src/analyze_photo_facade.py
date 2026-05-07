@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from services.accounting import PortionGramBounds, calculate_food_macro_interval
+from services.accounting import (
+    PortionGramBounds,
+    aggregate_meal_macro_interval,
+    calculate_food_macro_interval,
+)
 from services.api.src.schemas import (
     AnalyzePhotoFacadeRequest,
     AnalyzePhotoFacadeResponse,
@@ -10,6 +14,7 @@ from services.api.src.schemas import (
     NutritionInterval,
     NutritionIntervals,
     QuickCorrection,
+    QuickCorrectionSelection,
     UncertaintySummary,
 )
 from services.capture import resolve_scale_evidence_from_capture
@@ -55,6 +60,21 @@ _FIXTURE_COMPONENTS: dict[str, _MockComponent] = {
 }
 _WARN_FIXTURE_GRAM_MULTIPLIER_MIN = 0.75
 _WARN_FIXTURE_GRAM_MULTIPLIER_MAX = 1.25
+_PORTION_CORRECTION_FACTORS = {
+    "smaller than estimate": 0.75,
+    "estimate looks right": 1.0,
+    "larger than estimate": 1.25,
+}
+_CONSUMED_AMOUNT_FACTORS = {
+    "ate all": 1.0,
+    "ate about half": 0.5,
+    "left some": 0.75,
+}
+_HIDDEN_OIL_GRAM_BOUNDS = {
+    "none or very little": None,
+    "some": (3.0, 8.0, 15.0),
+    "heavy": (10.0, 20.0, 30.0),
+}
 
 
 def analyze_photo_facade(
@@ -96,14 +116,10 @@ def analyze_photo_facade(
         },
     )
 
-    portion_bounds = PortionGramBounds(
-        grams_min=portion.grams_min,
-        grams_max=portion.grams_max,
-        grams_p10=portion.grams_p10,
-        grams_p50=portion.grams_p50,
-        grams_p90=portion.grams_p90,
-        percentiles_available=True,
-    )
+    correction_selections = _correction_selection_map(request.options.quick_correction_selections)
+    correction_flags = _correction_uncertainty_flags(correction_selections)
+
+    portion_bounds = _portion_bounds_from_portion(portion)
     if fixture_id == "warn":
         warn_grams_min = portion.grams_p50 * _WARN_FIXTURE_GRAM_MULTIPLIER_MIN
         warn_grams_max = portion.grams_p50 * _WARN_FIXTURE_GRAM_MULTIPLIER_MAX
@@ -115,8 +131,20 @@ def analyze_photo_facade(
             grams_p90=warn_grams_max,
             percentiles_available=True,
         )
+    portion_bounds = _apply_portion_corrections(
+        portion_bounds,
+        selections=correction_selections,
+    )
 
-    meal_interval = calculate_food_macro_interval(entry, portion_bounds)
+    food_intervals = [calculate_food_macro_interval(entry, portion_bounds)]
+    hidden_oil_interval = _hidden_oil_interval(correction_selections)
+    if hidden_oil_interval is not None:
+        food_intervals.append(hidden_oil_interval)
+    meal_interval = (
+        aggregate_meal_macro_interval(food_intervals)
+        if len(food_intervals) > 1
+        else food_intervals[0]
+    )
 
     claims = _build_claims(
         fixture_id=fixture_id,
@@ -144,7 +172,7 @@ def analyze_photo_facade(
         user_id=payload.user_id,
         trace_id=trace_id,
         entry_id=f"entry:{payload.request_id}",
-        top_uncertainty_drivers=[*portion.uncertainty_flags],
+        top_uncertainty_drivers=[*portion.uncertainty_flags, *correction_flags],
         meal_signature_hash=f"sig:{payload.image_identity.image_sha256[:16]}",
     )
 
@@ -189,9 +217,11 @@ def analyze_photo_facade(
     if status == "WARN" and scale_resolution.scale_confidence in {"low", "none"}:
         reasons.append("scale confidence is low; interval may be wide")
 
-    uncertainty_flags = [*portion.uncertainty_flags]
+    uncertainty_flags = [*portion.uncertainty_flags, *correction_flags]
     if status == "WARN" and not uncertainty_flags:
         uncertainty_flags.append("wide_portion_range")
+    if correction_flags:
+        reasons.append("quick corrections applied")
 
     quick_corrections = _build_quick_corrections(
         component=component,
@@ -243,6 +273,95 @@ def _resolve_portion_range(*, component: _MockComponent, capture_metadata):
         component_name=component.source_query,
         volume_estimate=volume_estimate,
     )
+
+
+def _correction_selection_map(
+    selections: list[QuickCorrectionSelection],
+) -> dict[str, str]:
+    return {
+        selection.correction_id: selection.selected_option.strip().casefold()
+        for selection in selections
+    }
+
+
+def _portion_bounds_from_portion(portion) -> PortionGramBounds:
+    return PortionGramBounds(
+        grams_min=portion.grams_min,
+        grams_max=portion.grams_max,
+        grams_p10=portion.grams_p10,
+        grams_p50=portion.grams_p50,
+        grams_p90=portion.grams_p90,
+        percentiles_available=True,
+    )
+
+
+def _apply_portion_corrections(
+    portion_bounds: PortionGramBounds,
+    *,
+    selections: dict[str, str],
+) -> PortionGramBounds:
+    factor = _PORTION_CORRECTION_FACTORS.get(
+        selections.get("portion_size_quick_adjust", ""),
+        1.0,
+    )
+    factor *= _CONSUMED_AMOUNT_FACTORS.get(
+        selections.get("consumed_amount_check", ""),
+        1.0,
+    )
+    if factor == 1.0:
+        return portion_bounds
+    return _scale_portion_bounds(portion_bounds, factor)
+
+
+def _hidden_oil_interval(selections: dict[str, str]):
+    oil_bounds = _HIDDEN_OIL_GRAM_BOUNDS.get(selections.get("hidden_sauce_oil_check", ""))
+    if oil_bounds is None:
+        return None
+
+    matches = match_food_name("olive oil")
+    if not matches:
+        raise ValueError("no deterministic nutrition match for hidden oil correction")
+    grams_min, grams_p50, grams_max = oil_bounds
+    portion_bounds = PortionGramBounds(
+        grams_min=grams_min,
+        grams_max=grams_max,
+        grams_p10=grams_min,
+        grams_p50=grams_p50,
+        grams_p90=grams_max,
+        percentiles_available=True,
+    )
+    consumed_factor = _CONSUMED_AMOUNT_FACTORS.get(
+        selections.get("consumed_amount_check", ""),
+        1.0,
+    )
+    if consumed_factor != 1.0:
+        portion_bounds = _scale_portion_bounds(portion_bounds, consumed_factor)
+    return calculate_food_macro_interval(matches[0].entry, portion_bounds)
+
+
+def _scale_portion_bounds(portion_bounds: PortionGramBounds, factor: float) -> PortionGramBounds:
+    return PortionGramBounds(
+        grams_min=round(portion_bounds.grams_min * factor, 1),
+        grams_max=round(portion_bounds.grams_max * factor, 1),
+        grams_p10=round(portion_bounds.grams_p10 * factor, 1),
+        grams_p50=round(portion_bounds.grams_p50 * factor, 1),
+        grams_p90=round(portion_bounds.grams_p90 * factor, 1),
+        percentiles_available=True,
+    )
+
+
+def _correction_uncertainty_flags(selections: dict[str, str]) -> list[str]:
+    flags: list[str] = []
+    if selections.get("portion_size_quick_adjust") in {
+        "smaller than estimate",
+        "larger than estimate",
+    }:
+        flags.append("user_corrected_portion_size")
+    if selections.get("hidden_sauce_oil_check") in {"some", "heavy"}:
+        flags.append("user_corrected_hidden_sauce_oil")
+    if selections.get("consumed_amount_check") in {"ate about half", "left some"}:
+        flags.append("user_corrected_consumed_amount")
+    return flags
 
 
 def _build_quick_corrections(

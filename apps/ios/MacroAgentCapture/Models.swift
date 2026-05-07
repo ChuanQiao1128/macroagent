@@ -191,10 +191,12 @@ struct AnalyzePhotoRequest: Codable, Hashable {
 struct AnalyzePhotoOptions: Codable, Hashable {
     let logAnyway: Bool
     let logAnywayReason: String?
+    let quickCorrectionSelections: [QuickCorrectionSelection]
 
     enum CodingKeys: String, CodingKey {
         case logAnyway = "log_anyway"
         case logAnywayReason = "log_anyway_reason"
+        case quickCorrectionSelections = "quick_correction_selections"
     }
 }
 
@@ -262,6 +264,18 @@ struct QuickCorrection: Codable, Hashable, Identifiable {
         case label
         case correctionType = "correction_type"
         case options
+    }
+}
+
+struct QuickCorrectionSelection: Codable, Hashable, Identifiable {
+    let correctionID: String
+    let selectedOption: String
+
+    var id: String { correctionID }
+
+    enum CodingKeys: String, CodingKey {
+        case correctionID = "correction_id"
+        case selectedOption = "selected_option"
     }
 }
 

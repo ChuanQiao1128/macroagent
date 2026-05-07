@@ -5,6 +5,8 @@ from services.api.src import (
     ClarifyQuestion,
     NutritionInterval,
     NutritionIntervals,
+    QuickCorrection,
+    QuickCorrectionSelection,
     UncertaintySummary,
     analyze_photo_facade,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "ClarifyQuestion",
     "NutritionInterval",
     "NutritionIntervals",
+    "QuickCorrection",
+    "QuickCorrectionSelection",
     "UncertaintySummary",
     "analyze_photo_facade",
 ]

@@ -149,7 +149,8 @@ def test_capture_flow_store_propagates_reference_object_hint_to_metadata_preview
 
     assert "let selectedHint = selectedReferenceObjectHint.metadataValue" in text
     assert "referenceObjectHint: selectedHint," in text
-    assert "metadataPreview = metadataBuilder.buildRequestEnvelope(from: captureDraft)" in text
+    assert "rebuildMetadataPreview()" in text
+    assert "metadataBuilder.buildRequestEnvelope(from: captureDraft)" in text
 
 
 def test_reference_object_hint_contract_values_match_expected_backend_hints() -> None:

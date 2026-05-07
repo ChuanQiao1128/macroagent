@@ -51,6 +51,7 @@ final class CaptureFlowStore: ObservableObject {
     @Published private(set) var latestAnalyzeError: AnalyzeErrorState?
     @Published private(set) var debugMessage: String
     @Published private(set) var isAnalyzing: Bool
+    @Published private(set) var quickCorrectionSelections: [QuickCorrectionSelection]
 
     private let captureService: CaptureService
     private let metadataBuilder: MetadataBuilder
@@ -74,7 +75,11 @@ final class CaptureFlowStore: ObservableObject {
 
         let draft = captureService.initialDraft(referenceObjectHint: selectedReferenceObjectHint.metadataValue)
         self.captureDraft = draft
-        self.metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
+        self.quickCorrectionSelections = []
+        self.metadataPreview = Self.envelopeWithCorrections(
+            metadataBuilder.buildRequestEnvelope(from: draft),
+            selections: []
+        )
 
         self.latestHealth = nil
         self.latestResponse = nil
@@ -94,7 +99,8 @@ final class CaptureFlowStore: ObservableObject {
                 referenceObjectHint: selectedReferenceObjectHint.metadataValue
             )
             captureDraft = draft
-            metadataPreview = metadataBuilder.buildRequestEnvelope(from: draft)
+            quickCorrectionSelections = []
+            rebuildMetadataPreview()
             latestResponse = nil
             latestAnalyzeError = nil
             debugMessage = "Prepared \(draft.captureSourceMode.displayName.lowercased()) draft with \(draft.imageIdentity.byteSize) bytes."
@@ -142,9 +148,36 @@ final class CaptureFlowStore: ObservableObject {
         isAnalyzing = false
     }
 
+    func applyQuickCorrection(correctionID: String, selectedOption: String) async {
+        upsertQuickCorrectionSelection(
+            QuickCorrectionSelection(
+                correctionID: correctionID,
+                selectedOption: selectedOption
+            )
+        )
+        debugMessage = "Applying quick correction: \(correctionID)=\(selectedOption)."
+        await analyze()
+    }
+
     private func currentAPIClient() -> MacroAgentAPIClient {
         let configuration = LocalServerConfiguration(baseURLString: serverURLText)
         return apiClientFactory(configuration)
+    }
+
+    private func upsertQuickCorrectionSelection(_ selection: QuickCorrectionSelection) {
+        var selections = quickCorrectionSelections.filter {
+            $0.correctionID != selection.correctionID
+        }
+        selections.append(selection)
+        quickCorrectionSelections = selections
+        rebuildMetadataPreview()
+    }
+
+    private func rebuildMetadataPreview() {
+        metadataPreview = Self.envelopeWithCorrections(
+            metadataBuilder.buildRequestEnvelope(from: captureDraft),
+            selections: quickCorrectionSelections
+        )
     }
 
     private func applyReferenceHintSelection() {
@@ -195,7 +228,21 @@ final class CaptureFlowStore: ObservableObject {
             captureMetadata: updatedMetadata,
             encodedImageBytes: captureDraft.encodedImageBytes
         )
-        metadataPreview = metadataBuilder.buildRequestEnvelope(from: captureDraft)
+        rebuildMetadataPreview()
+    }
+
+    private static func envelopeWithCorrections(
+        _ envelope: AnalyzePhotoRequestEnvelope,
+        selections: [QuickCorrectionSelection]
+    ) -> AnalyzePhotoRequestEnvelope {
+        AnalyzePhotoRequestEnvelope(
+            payload: envelope.payload,
+            options: AnalyzePhotoOptions(
+                logAnyway: envelope.options.logAnyway,
+                logAnywayReason: envelope.options.logAnywayReason,
+                quickCorrectionSelections: selections
+            )
+        )
     }
 
     private func classifyAnalyzeError(_ error: Error) -> AnalyzeErrorState {

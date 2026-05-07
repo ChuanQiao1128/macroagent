@@ -6,6 +6,8 @@ from services.api.src.schemas import (
     ClarifyQuestion,
     NutritionInterval,
     NutritionIntervals,
+    QuickCorrection,
+    QuickCorrectionSelection,
     UncertaintySummary,
 )
 
@@ -16,6 +18,8 @@ __all__ = [
     "ClarifyQuestion",
     "NutritionInterval",
     "NutritionIntervals",
+    "QuickCorrection",
+    "QuickCorrectionSelection",
     "UncertaintySummary",
     "analyze_photo_facade",
 ]

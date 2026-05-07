@@ -74,4 +74,10 @@ The user should see:
 - quick correction controls.
 
 The first mobile implementation may expose these in debug form, but the contract
-should already carry them as structured fields.
+already carries them as structured fields:
+
+- `quick_corrections` in the response tells the client which controls to render;
+- `options.quick_correction_selections` in the next request tells the backend
+  which options the user selected;
+- the backend recomputes nutrition deterministically from source-backed entries
+  and fixed portion/correction rules.

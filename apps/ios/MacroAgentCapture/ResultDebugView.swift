@@ -53,6 +53,20 @@ struct ResultDebugView: View {
                                     Text(correction.options.joined(separator: " / "))
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    ForEach(correction.options, id: \.self) { option in
+                                        Button(option) {
+                                            Task { [weak store] in
+                                                guard let store else {
+                                                    return
+                                                }
+                                                await store.applyQuickCorrection(
+                                                    correctionID: correction.correctionID,
+                                                    selectedOption: option
+                                                )
+                                            }
+                                        }
+                                        .disabled(store.isAnalyzing)
+                                    }
                                 }
                             }
                         }

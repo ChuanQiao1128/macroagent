@@ -153,6 +153,59 @@ def test_warn_fixture_returns_complete_response_with_uncertainty_flags() -> None
     _assert_single_photo_quick_corrections(response)
 
 
+def test_quick_correction_selections_recompute_nutrition_deterministically() -> None:
+    baseline = analyze_photo_facade(_request("req_accept_fixture"))
+    data: dict[str, Any] = {
+        "payload": _payload("req_accept_fixture_corrected"),
+        "options": {
+            "log_anyway": False,
+            "quick_correction_selections": [
+                {
+                    "correction_id": "portion_size_quick_adjust",
+                    "selected_option": "larger than estimate",
+                },
+                {
+                    "correction_id": "hidden_sauce_oil_check",
+                    "selected_option": "some",
+                },
+            ],
+        },
+    }
+
+    corrected = analyze_photo_facade(AnalyzePhotoFacadeRequest.model_validate(data))
+
+    assert baseline.nutrition is not None
+    assert corrected.nutrition is not None
+    assert corrected.nutrition.kcal.best_estimate > baseline.nutrition.kcal.best_estimate
+    assert corrected.nutrition.fat_g.best_estimate > baseline.nutrition.fat_g.best_estimate
+    assert "quick corrections applied" in corrected.reasons
+    assert "user_corrected_portion_size" in corrected.uncertainty_summary.uncertainty_flags
+    assert "user_corrected_hidden_sauce_oil" in corrected.uncertainty_summary.uncertainty_flags
+
+
+def test_consumed_amount_quick_correction_scales_estimate_down() -> None:
+    baseline = analyze_photo_facade(_request("req_accept_fixture"))
+    data: dict[str, Any] = {
+        "payload": _payload("req_accept_fixture_half_eaten"),
+        "options": {
+            "log_anyway": False,
+            "quick_correction_selections": [
+                {
+                    "correction_id": "consumed_amount_check",
+                    "selected_option": "ate about half",
+                },
+            ],
+        },
+    }
+
+    corrected = analyze_photo_facade(AnalyzePhotoFacadeRequest.model_validate(data))
+
+    assert baseline.nutrition is not None
+    assert corrected.nutrition is not None
+    assert corrected.nutrition.kcal.best_estimate < baseline.nutrition.kcal.best_estimate
+    assert "user_corrected_consumed_amount" in corrected.uncertainty_summary.uncertainty_flags
+
+
 def test_clarify_fixture_returns_questions_without_log_anyway() -> None:
     response = analyze_photo_facade(_request("req_clarify_fixture"))
 

@@ -51,6 +51,11 @@ class QuickCorrection(StrictModel):
     options: list[str] = Field(min_length=2, max_length=4)
 
 
+class QuickCorrectionSelection(StrictModel):
+    correction_id: str = Field(min_length=1)
+    selected_option: str = Field(min_length=1)
+
+
 class UncertaintySummary(StrictModel):
     confidence_label: Literal["high", "medium", "low"]
     relative_range_width: float | None = Field(default=None, ge=0)
@@ -60,6 +65,10 @@ class UncertaintySummary(StrictModel):
 class AnalyzePhotoOptions(StrictModel):
     log_anyway: bool = False
     log_anyway_reason: LogAnywayReason | None = None
+    quick_correction_selections: list[QuickCorrectionSelection] = Field(
+        default_factory=list,
+        max_length=4,
+    )
 
     @model_validator(mode="after")
     def _validate_reason_pairing(self) -> AnalyzePhotoOptions:
@@ -114,5 +123,6 @@ __all__ = [
     "NutritionInterval",
     "NutritionIntervals",
     "QuickCorrection",
+    "QuickCorrectionSelection",
     "UncertaintySummary",
 ]

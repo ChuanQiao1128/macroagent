@@ -15,7 +15,8 @@ struct PlaceholderMetadataBuilder: MetadataBuilder {
 
         let options = AnalyzePhotoOptions(
             logAnyway: false,
-            logAnywayReason: nil
+            logAnywayReason: nil,
+            quickCorrectionSelections: []
         )
 
         return AnalyzePhotoRequestEnvelope(payload: payload, options: options)
