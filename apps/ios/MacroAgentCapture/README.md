@@ -80,7 +80,7 @@ open /Users/qc/Documents/Claude/Projects/NutritionAI/apps/ios/MacroAgentCapture.
 3. Select your connected iPhone as the run destination.
 4. In **Signing & Capabilities**, choose your Apple development team if Xcode asks.
 5. Press Run. The app should install on the iPhone and show the `Capture`,
-   `Metadata`, and `Result` tabs.
+   `Result`, `Debug`, and `Metadata` tabs.
 
 ## Manual Phone-to-Mac Smoke Test Runbook
 
@@ -113,9 +113,12 @@ python -m services.api.local_server --host 0.0.0.0 --port 8765
 
 5. Send request.
 - Open `Metadata` tab and confirm the request preview for `/v1/meals/analyze-photo`.
-- Return to `Capture` or `Result` tab and tap `Analyze`.
+- Return to `Capture` tab and tap `Analyze Captured Payload`.
 
 6. Verify response.
+- Open `Result` tab and confirm user-facing status, confidence, seven metrics,
+  ranges, uncertainty drivers, and quick correction controls.
+- Open `Debug` tab to confirm `status`, `trace_id`, and `reasons`.
 - Confirm `status`, `trace_id`, and `reasons`.
 - Confirm seven nutrition metrics render when status is not `BLOCK`:
   `kcal`, `protein_g`, `carbs_g`, `fat_g`, `sugar_g`, `sodium_mg`, `fiber_g`.
