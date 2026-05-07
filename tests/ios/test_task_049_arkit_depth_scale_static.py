@@ -49,9 +49,29 @@ def test_capture_service_samples_arkit_scene_depth_without_persisting_depth_maps
     assert "frame?.smoothedSceneDepth ?? frame?.sceneDepth" in text
     assert "cameraIntrinsicsAvailable: frame != nil" in text
     assert "ARKitConfidenceEstimator.mediumOrHighCoverage" in text
+    assert "ARKitFoodVolumeEstimator.estimate" in text
     assert "let arDepthSnapshot = await ARKitDepthSnapshotSampler.capture()" in text
     assert "encodedImageBytes: encodedBytes" in text
     assert "depthMap" not in _read(MODELS)
+
+
+def test_capture_service_builds_conservative_center_region_volume_proxy() -> None:
+    text = _read(CAPTURE_SERVICE)
+
+    assert "private enum ARKitFoodVolumeEstimator" in text
+    assert "CVPixelBufferGetPixelFormatType(depthMap) == kCVPixelFormatType_DepthFloat32" in text
+    assert "frame.camera.intrinsics" in text
+    assert "frame.camera.imageResolution" in text
+    assert "CVPixelBufferGetWidth(map) == width" in text
+    assert "CVPixelBufferGetHeight(map) == height" in text
+    assert "centerRegion(width: width, height: height)" in text
+    assert "supportDepth - sample.depth" in text
+    assert "volumeCubicMeters += heightMeters * pixelAreaSquareMeters * sampleFootprint" in text
+    assert "volumeML * 0.55" in text
+    assert "volumeML * 1.65" in text
+    assert 'let method = "arkit_depth_region"' in text
+    assert "foodVolumeEstimateMLP10: arDepthSnapshot.foodVolumeEstimate?.volumeMLP10" in text
+    assert "foodVolumeEstimateMethod: arDepthSnapshot.foodVolumeEstimate?.method" in text
 
 
 def test_capture_screen_exposes_arkit_debug_fields_for_real_device_testing() -> None:

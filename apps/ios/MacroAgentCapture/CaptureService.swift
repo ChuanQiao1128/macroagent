@@ -91,6 +91,7 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let depthMapHeightPX: Int?
         let confidenceCoverage: Double?
         let cameraIntrinsicsAvailable: Bool
+        let foodVolumeEstimate: ARKitFoodVolumeEstimate?
 
         static let unsupported = ARKitDepthSnapshot(
             sceneDepthSupported: false,
@@ -101,8 +102,17 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             depthMapWidthPX: nil,
             depthMapHeightPX: nil,
             confidenceCoverage: nil,
-            cameraIntrinsicsAvailable: false
+            cameraIntrinsicsAvailable: false,
+            foodVolumeEstimate: nil
         )
+    }
+
+    fileprivate struct ARKitFoodVolumeEstimate {
+        let volumeMLP10: Double
+        let volumeMLP50: Double
+        let volumeMLP90: Double
+        let confidence: Double
+        let method = "arkit_depth_region"
     }
 
     private final class ARKitDepthSnapshotSampler: NSObject, ARSessionDelegate, @unchecked Sendable {
@@ -138,7 +148,8 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
                     depthMapWidthPX: nil,
                     depthMapHeightPX: nil,
                     confidenceCoverage: nil,
-                    cameraIntrinsicsAvailable: false
+                    cameraIntrinsicsAvailable: false,
+                    foodVolumeEstimate: nil
                 )
             }
 
@@ -216,6 +227,11 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             let confidenceCoverage = ARKitConfidenceEstimator.mediumOrHighCoverage(
                 from: depthData?.confidenceMap
             )
+            let foodVolumeEstimate = ARKitFoodVolumeEstimator.estimate(
+                from: frame,
+                depthMap: depthMap,
+                confidenceMap: depthData?.confidenceMap
+            )
 
             return ARKitDepthSnapshot(
                 sceneDepthSupported: sceneDepthSupported,
@@ -229,7 +245,8 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
                 depthMapWidthPX: width,
                 depthMapHeightPX: height,
                 confidenceCoverage: confidenceCoverage,
-                cameraIntrinsicsAvailable: frame != nil
+                cameraIntrinsicsAvailable: frame != nil,
+                foodVolumeEstimate: foodVolumeEstimate
             )
         }
     }
@@ -315,11 +332,11 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             arkitDepthMapHeightPX: arDepthSnapshot.depthMapHeightPX,
             arkitConfidenceCoverage: arDepthSnapshot.confidenceCoverage,
             cameraIntrinsicsAvailable: arDepthSnapshot.cameraIntrinsicsAvailable,
-            foodVolumeEstimateMLP10: nil,
-            foodVolumeEstimateMLP50: nil,
-            foodVolumeEstimateMLP90: nil,
-            foodVolumeEstimateConfidence: nil,
-            foodVolumeEstimateMethod: nil,
+            foodVolumeEstimateMLP10: arDepthSnapshot.foodVolumeEstimate?.volumeMLP10,
+            foodVolumeEstimateMLP50: arDepthSnapshot.foodVolumeEstimate?.volumeMLP50,
+            foodVolumeEstimateMLP90: arDepthSnapshot.foodVolumeEstimate?.volumeMLP90,
+            foodVolumeEstimateConfidence: arDepthSnapshot.foodVolumeEstimate?.confidence,
+            foodVolumeEstimateMethod: arDepthSnapshot.foodVolumeEstimate?.method,
             barcodePayload: visionMetadata.barcodePayload,
             barcodePayloadSafe: visionMetadata.barcodePayloadSafe,
             ocrTextSnippets: visionMetadata.ocrTextSnippets,
@@ -931,6 +948,176 @@ private enum ARKitConfidenceEstimator {
         }
 
         return Double(usablePixels) / Double(totalPixels)
+    }
+}
+
+private enum ARKitFoodVolumeEstimator {
+    private static let minimumUsableDepthMeters: Float = 0.15
+    private static let maximumUsableDepthMeters: Float = 2.50
+    private static let minimumFoodHeightMeters: Float = 0.006
+    private static let minimumSampleCount = 50
+    private static let maximumReportedVolumeML = 2_500.0
+
+    static func estimate(
+        from frame: ARFrame?,
+        depthMap: CVPixelBuffer?,
+        confidenceMap: CVPixelBuffer?
+    ) -> AVFoundationCaptureService.ARKitFoodVolumeEstimate? {
+        guard let frame,
+              let depthMap,
+              CVPixelBufferGetPixelFormatType(depthMap) == kCVPixelFormatType_DepthFloat32
+        else {
+            return nil
+        }
+
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        guard width > 0, height > 0 else {
+            return nil
+        }
+
+        let intrinsics = frame.camera.intrinsics
+        let imageResolution = frame.camera.imageResolution
+        guard imageResolution.width > 0, imageResolution.height > 0 else {
+            return nil
+        }
+
+        let fx = Float(width) / Float(imageResolution.width) * intrinsics[0][0]
+        let fy = Float(height) / Float(imageResolution.height) * intrinsics[1][1]
+        guard fx > 0, fy > 0 else {
+            return nil
+        }
+
+        let roi = centerRegion(width: width, height: height)
+        let stepX = max(1, roi.width / 36)
+        let stepY = max(1, roi.height / 36)
+        let sampleFootprint = Float(stepX * stepY)
+
+        var samples: [(depth: Float, x: Int, y: Int)] = []
+        let possibleSampleCount = max(1, ((roi.width + stepX - 1) / stepX) * ((roi.height + stepY - 1) / stepY))
+
+        let alignedConfidenceMap = confidenceMap.flatMap { map -> CVPixelBuffer? in
+            guard CVPixelBufferGetWidth(map) == width,
+                  CVPixelBufferGetHeight(map) == height
+            else {
+                return nil
+            }
+            return map
+        }
+
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        if let alignedConfidenceMap {
+            CVPixelBufferLockBaseAddress(alignedConfidenceMap, .readOnly)
+        }
+        defer {
+            if let alignedConfidenceMap {
+                CVPixelBufferUnlockBaseAddress(alignedConfidenceMap, .readOnly)
+            }
+            CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
+        }
+
+        guard let depthBaseAddress = CVPixelBufferGetBaseAddress(depthMap) else {
+            return nil
+        }
+        let depthBytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+        let depthPointer = depthBaseAddress.assumingMemoryBound(to: Float32.self)
+
+        let confidenceBaseAddress = alignedConfidenceMap.flatMap(CVPixelBufferGetBaseAddress)
+        let confidenceBytesPerRow = alignedConfidenceMap.map(CVPixelBufferGetBytesPerRow) ?? 0
+        let confidencePointer = confidenceBaseAddress?.assumingMemoryBound(to: UInt8.self)
+
+        for y in stride(from: roi.minY, to: roi.maxY, by: stepY) {
+            let depthRow = depthPointer.advanced(by: y * depthBytesPerRow / MemoryLayout<Float32>.stride)
+            let confidenceRow = confidencePointer?.advanced(by: y * confidenceBytesPerRow)
+
+            for x in stride(from: roi.minX, to: roi.maxX, by: stepX) {
+                if let confidenceRow, confidenceRow[x] < 1 {
+                    continue
+                }
+
+                let depth = depthRow[x]
+                guard depth.isFinite,
+                      depth >= minimumUsableDepthMeters,
+                      depth <= maximumUsableDepthMeters
+                else {
+                    continue
+                }
+                samples.append((depth: depth, x: x, y: y))
+            }
+        }
+
+        guard samples.count >= minimumSampleCount else {
+            return nil
+        }
+
+        let sortedDepths = samples.map(\.depth).sorted()
+        let supportDepth = percentile(sortedDepths, fraction: 0.90)
+        var volumeCubicMeters: Float = 0
+        var raisedSampleCount = 0
+
+        for sample in samples {
+            let heightMeters = max(0, supportDepth - sample.depth)
+            if heightMeters < minimumFoodHeightMeters {
+                continue
+            }
+
+            let pixelAreaSquareMeters = (sample.depth * sample.depth) / (fx * fy)
+            volumeCubicMeters += heightMeters * pixelAreaSquareMeters * sampleFootprint
+            raisedSampleCount += 1
+        }
+
+        guard raisedSampleCount > 0 else {
+            return nil
+        }
+
+        let volumeML = min(
+            maximumReportedVolumeML,
+            max(1.0, Double(volumeCubicMeters) * 1_000_000.0)
+        )
+        let coverage = min(1.0, Double(samples.count) / Double(possibleSampleCount))
+        let raisedShare = min(1.0, Double(raisedSampleCount) / Double(samples.count))
+        let confidence = min(0.62, max(0.25, 0.20 + 0.30 * coverage + 0.25 * raisedShare))
+
+        return AVFoundationCaptureService.ARKitFoodVolumeEstimate(
+            volumeMLP10: roundedVolume(max(1.0, volumeML * 0.55)),
+            volumeMLP50: roundedVolume(volumeML),
+            volumeMLP90: roundedVolume(min(maximumReportedVolumeML, volumeML * 1.65)),
+            confidence: roundToTwoDecimals(confidence)
+        )
+    }
+
+    private static func centerRegion(width: Int, height: Int) -> (
+        minX: Int,
+        maxX: Int,
+        minY: Int,
+        maxY: Int,
+        width: Int,
+        height: Int
+    ) {
+        let roiWidth = max(8, Int(Double(width) * 0.34))
+        let roiHeight = max(8, Int(Double(height) * 0.34))
+        let minX = max(0, (width - roiWidth) / 2)
+        let minY = max(0, (height - roiHeight) / 2)
+        let maxX = min(width, minX + roiWidth)
+        let maxY = min(height, minY + roiHeight)
+        return (minX, maxX, minY, maxY, maxX - minX, maxY - minY)
+    }
+
+    private static func percentile(_ sortedValues: [Float], fraction: Double) -> Float {
+        guard !sortedValues.isEmpty else {
+            return 0
+        }
+        let clamped = min(1.0, max(0.0, fraction))
+        let index = min(sortedValues.count - 1, max(0, Int(Double(sortedValues.count - 1) * clamped)))
+        return sortedValues[index]
+    }
+
+    private static func roundedVolume(_ value: Double) -> Double {
+        (value * 10.0).rounded() / 10.0
+    }
+
+    private static func roundToTwoDecimals(_ value: Double) -> Double {
+        (value * 100.0).rounded() / 100.0
     }
 }
 

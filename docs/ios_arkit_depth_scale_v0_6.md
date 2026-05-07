@@ -54,6 +54,42 @@ food_volume_estimate_ml_p10/p50/p90
 This keeps LLMs out of calorie and macro arithmetic. If volume fields are absent,
 the API falls back to the existing portion-hint parser.
 
+## v0.8 On-Device Volume Proxy
+
+The iOS smoke app now attempts a conservative on-device volume proxy when ARKit
+scene depth is available:
+
+```text
+ARFrame sceneDepth/smoothedSceneDepth
+-> center food-region proxy
+-> medium/high confidence depth samples
+-> support-depth estimate from far central samples
+-> raised height integration with camera intrinsics
+-> food_volume_estimate_ml_p10/p50/p90
+```
+
+This is not a final food segmentation model. It assumes the user places the food
+near the center of the frame and it caps confidence because the algorithm has no
+semantic mask yet. The output is deliberately a wide interval.
+
+## Reducing Measurement Error
+
+The product should guide users toward capture conditions that reduce the largest
+portion-estimation errors:
+
+- Keep the food centered so the current center-region proxy samples the actual
+  portion, not the table or plate rim.
+- Prefer a slightly top-down angle; side angles make table/plate support depth
+  harder to infer.
+- Include the whole plate or bowl and avoid cropping food edges.
+- Avoid shiny liquids, transparent containers, and heavy steam when possible;
+  depth maps are weaker on reflective or textureless surfaces.
+- Use a known-size reference object or personal container when LiDAR/depth is
+  unavailable or low quality.
+- Treat volume as an intermediate estimate. Weight still depends on density:
+  the same 200 ml can be much lighter for salad than rice and much heavier for
+  meat or sauce.
+
 ## Backend Policy
 
 `arkit_scene_depth` is now a first-class scale evidence type. It outranks regular
