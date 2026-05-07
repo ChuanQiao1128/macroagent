@@ -23,6 +23,16 @@ from services.nutrition.src.version_metadata import (
     NUTRITION_CATALOG_VERSION,
     PORTION_ENGINE_VERSION,
 )
+from services.nutrition.src.volume_portion import (
+    DensityProfile,
+    ManualContainerID,
+    ManualContainerProfile,
+    VolumeEstimate,
+    estimate_portion_from_volume,
+    parse_volume_portion_range,
+    resolve_density_profile,
+    resolve_manual_container_volume_estimate,
+)
 
 _FDC_LOCAL_EXPORTS = frozenset(
     {
@@ -43,12 +53,17 @@ __all__ = [
     "FDC_LOCAL_DEFAULT_DB_PATH",
     "FDC_LOCAL_LOOKUP_ENABLED_ENV",
     "FdcLocalImportResult",
+    "DensityProfile",
     "MATCHER_VERSION",
+    "ManualContainerID",
+    "ManualContainerProfile",
     "NUTRITION_CATALOG_VERSION",
     "NutritionEntry",
     "PortionGramRange",
     "PORTION_ENGINE_VERSION",
+    "VolumeEstimate",
     "build_fdc_local_database",
+    "estimate_portion_from_volume",
     "fdc_local_database_available",
     "find_macro_entry",
     "find_macro_entry_candidates",
@@ -63,6 +78,9 @@ __all__ = [
     "match_food_name",
     "parse_component_portion_range",
     "parse_portion_range",
+    "parse_volume_portion_range",
+    "resolve_density_profile",
+    "resolve_manual_container_volume_estimate",
 ]
 
 

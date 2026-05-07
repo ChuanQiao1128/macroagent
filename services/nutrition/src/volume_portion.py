@@ -8,6 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from services.nutrition.src.portion_parser import PortionGramRange
 
 VolumeEstimateMethod = Literal["arkit_depth_region", "manual_container", "recipe_template"]
+ManualContainerID = Literal[
+    "container_coffee_mug_240ml",
+    "container_rice_bowl_300ml",
+    "container_meal_prep_750ml",
+    "container_measuring_cup_240ml",
+]
 DensityClass = Literal[
     "cooked_grain",
     "cooked_pasta",
@@ -55,6 +61,24 @@ class DensityProfile(BaseModel):
             <= self.density_g_per_ml_p90
         ):
             raise ValueError("density percentiles must satisfy p10 <= p50 <= p90")
+        return self
+
+
+class ManualContainerProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    container_id: ManualContainerID
+    volume_ml_p10: float = Field(..., gt=0)
+    volume_ml_p50: float = Field(..., gt=0)
+    volume_ml_p90: float = Field(..., gt=0)
+    confidence: float = Field(..., ge=0, le=1)
+    aliases: tuple[str, ...]
+    reason: str = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_container_percentiles(self) -> ManualContainerProfile:
+        if not self.volume_ml_p10 <= self.volume_ml_p50 <= self.volume_ml_p90:
+            raise ValueError("container volume percentiles must satisfy p10 <= p50 <= p90")
         return self
 
 
@@ -125,6 +149,45 @@ _DENSITY_PROFILES: dict[DensityClass, DensityProfile] = {
     ),
 }
 
+_MANUAL_CONTAINER_PROFILES: dict[ManualContainerID, ManualContainerProfile] = {
+    "container_coffee_mug_240ml": ManualContainerProfile(
+        container_id="container_coffee_mug_240ml",
+        volume_ml_p10=200.0,
+        volume_ml_p50=240.0,
+        volume_ml_p90=300.0,
+        confidence=0.72,
+        aliases=("coffee mug", "standard coffee mug", "240 ml mug", "mug 240 ml"),
+        reason="user-selected 240 ml coffee mug container",
+    ),
+    "container_rice_bowl_300ml": ManualContainerProfile(
+        container_id="container_rice_bowl_300ml",
+        volume_ml_p10=280.0,
+        volume_ml_p50=300.0,
+        volume_ml_p90=320.0,
+        confidence=0.70,
+        aliases=("rice bowl", "300 ml rice bowl", "small rice bowl"),
+        reason="user-selected 300 ml rice bowl container",
+    ),
+    "container_meal_prep_750ml": ManualContainerProfile(
+        container_id="container_meal_prep_750ml",
+        volume_ml_p10=650.0,
+        volume_ml_p50=750.0,
+        volume_ml_p90=900.0,
+        confidence=0.78,
+        aliases=("meal prep container", "750 ml container", "lunch box 750 ml"),
+        reason="user-selected 750 ml meal prep container",
+    ),
+    "container_measuring_cup_240ml": ManualContainerProfile(
+        container_id="container_measuring_cup_240ml",
+        volume_ml_p10=230.0,
+        volume_ml_p50=240.0,
+        volume_ml_p90=250.0,
+        confidence=0.86,
+        aliases=("measuring cup", "240 ml measuring cup", "one cup measure"),
+        reason="user-selected 240 ml measuring cup container",
+    ),
+}
+
 _DENSITY_KEYWORDS: tuple[tuple[DensityClass, tuple[str, ...]], ...] = (
     ("cooked_grain", ("rice", "grain", "quinoa", "barley", "couscous", "oatmeal")),
     ("cooked_pasta", ("pasta", "noodle", "spaghetti", "macaroni", "ramen", "udon")),
@@ -166,6 +229,37 @@ def resolve_density_profile(
     return _DENSITY_PROFILES["generic_mixed_food"]
 
 
+def resolve_manual_container_volume_estimate(
+    reference_object_hint: str | None,
+) -> VolumeEstimate | None:
+    """Resolve explicit user-selected container hints into volume percentiles.
+
+    Generic reference objects such as forks, plates, or soda cans are not treated
+    as food containers. This function only accepts explicit `container_*` ids or
+    close aliases for known serving vessels.
+    """
+    normalized_hint = _normalize_hint(reference_object_hint)
+    if not normalized_hint:
+        return None
+
+    for profile in _MANUAL_CONTAINER_PROFILES.values():
+        normalized_id = _normalize_hint(profile.container_id)
+        normalized_aliases = {_normalize_hint(alias) for alias in profile.aliases}
+        if normalized_hint != normalized_id and normalized_hint not in normalized_aliases:
+            continue
+
+        return VolumeEstimate(
+            volume_ml_p10=profile.volume_ml_p10,
+            volume_ml_p50=profile.volume_ml_p50,
+            volume_ml_p90=profile.volume_ml_p90,
+            confidence=profile.confidence,
+            method="manual_container",
+            evidence_ids=(f"scale:manual_container:{profile.container_id}",),
+        )
+
+    return None
+
+
 def estimate_portion_from_volume(
     *,
     component_name: str,
@@ -187,7 +281,10 @@ def estimate_portion_from_volume(
         * Decimal(str(density.density_g_per_ml_p90))
     )
 
-    uncertainty_flags = ["volume_geometry_estimate", "volume_density_estimate"]
+    uncertainty_flags = [
+        _volume_uncertainty_flag(volume_estimate.method),
+        "volume_density_estimate",
+    ]
     if density.density_class == "generic_mixed_food":
         uncertainty_flags.append("generic_density_profile")
 
@@ -226,12 +323,29 @@ def _round_to_tenth(value: Decimal) -> float:
     return float(value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
+def _volume_uncertainty_flag(method: VolumeEstimateMethod) -> str:
+    if method == "manual_container":
+        return "manual_container_volume_estimate"
+    if method == "recipe_template":
+        return "recipe_template_volume_estimate"
+    return "volume_geometry_estimate"
+
+
+def _normalize_hint(value: str | None) -> str:
+    if value is None:
+        return ""
+    return " ".join(value.casefold().replace("_", " ").replace("-", " ").split())
+
+
 __all__ = [
     "DensityClass",
     "DensityProfile",
+    "ManualContainerID",
+    "ManualContainerProfile",
     "VolumeEstimate",
     "VolumeEstimateMethod",
     "estimate_portion_from_volume",
     "parse_volume_portion_range",
     "resolve_density_profile",
+    "resolve_manual_container_volume_estimate",
 ]

@@ -139,6 +139,36 @@ Behavior:
 - Uses a conservative fallback range when the hint is missing, invalid, or unrecognized.
 - Runs locally only; it does not call an LLM or any network service.
 
+## Volume and Container Portions
+
+When capture metadata contains a derived food-volume interval, the backend can
+convert volume to grams before macro calculation:
+
+```text
+food volume p10/p50/p90
+-> deterministic density profile
+-> gram p10/p50/p90
+-> nutrition database per-100g values
+```
+
+Public API:
+
+- `VolumeEstimate`
+- `estimate_portion_from_volume(component_name, volume_estimate, category_hint=None)`
+- `parse_volume_portion_range(...)` as a compatibility alias
+- `resolve_density_profile(component_name, category_hint=None)`
+- `resolve_manual_container_volume_estimate(reference_object_hint)`
+
+Manual container behavior:
+
+- Only explicit known-container hints such as `container_rice_bowl_300ml` or
+  `container_coffee_mug_240ml` are converted into `manual_container` volume
+  estimates.
+- Generic reference objects such as forks, plates, and soda cans are not treated
+  as food volume.
+- The result still carries uncertainty flags, because the final weight depends on
+  food density and fill level.
+
 ## Meal Analysis
 
 `services.meal` builds on this catalog and parser to map `FoodComponent` objects into component estimates and meal-level macro intervals. See [docs/meal.md](meal.md).

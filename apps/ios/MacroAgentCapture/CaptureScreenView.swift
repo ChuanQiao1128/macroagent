@@ -33,7 +33,7 @@ struct CaptureScreenView: View {
                     }
                 }
 
-                Text("Optional scale hint passed as capture_metadata.reference_object_hint.")
+                Text("Optional scale or known-container hint passed as capture_metadata.reference_object_hint.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

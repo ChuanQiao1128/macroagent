@@ -164,6 +164,29 @@ def test_reference_hints_produce_weak_or_medium_evidence_signals() -> None:
     assert resolution.scale_confidence == "low"
 
 
+def test_explicit_container_hint_maps_to_personal_container_scale_evidence() -> None:
+    result = resolve_scale_evidence_from_capture(
+        trace_id="trace-container",
+        capture_metadata=_metadata(reference_object_hint="container_rice_bowl_300ml"),
+    )
+
+    resolution = _resolution(result)
+    container_candidate = next(
+        candidate
+        for candidate in result.candidates
+        if candidate.evidence_type == "personal_container"
+    )
+
+    assert container_candidate.evidence_id == (
+        "scale:manual_container:container_rice_bowl_300ml"
+    )
+    assert container_candidate.detection_source == "user_selected"
+    assert resolution.selected_candidate_id == container_candidate.evidence_id
+    assert resolution.status == "confirmed"
+    assert resolution.scale_confidence == "medium"
+    assert not any(candidate.evidence_type == "reference_object" for candidate in result.candidates)
+
+
 def test_weak_side_angle_reference_prompts_for_user_reference() -> None:
     result = resolve_scale_evidence_from_capture(
         trace_id="trace-side-angle",

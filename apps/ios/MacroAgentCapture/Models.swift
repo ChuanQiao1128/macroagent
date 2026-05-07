@@ -52,6 +52,10 @@ enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable {
     case standardFork = "standard_fork"
     case tablespoon
     case sodaCan = "soda_can_330ml"
+    case containerCoffeeMug = "container_coffee_mug_240ml"
+    case containerRiceBowl = "container_rice_bowl_300ml"
+    case containerMealPrep = "container_meal_prep_750ml"
+    case containerMeasuringCup = "container_measuring_cup_240ml"
 
     var id: String { rawValue }
 
@@ -65,6 +69,14 @@ enum ReferenceObjectHint: String, Codable, CaseIterable, Identifiable {
             return "Tablespoon"
         case .sodaCan:
             return "330ml Soda Can"
+        case .containerCoffeeMug:
+            return "Container: Coffee Mug 240ml"
+        case .containerRiceBowl:
+            return "Container: Rice Bowl 300ml"
+        case .containerMealPrep:
+            return "Container: Meal Prep 750ml"
+        case .containerMeasuringCup:
+            return "Container: Measuring Cup 240ml"
         }
     }
 

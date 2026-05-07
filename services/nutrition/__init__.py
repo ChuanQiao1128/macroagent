@@ -25,10 +25,13 @@ from services.nutrition.src.version_metadata import (
 )
 from services.nutrition.src.volume_portion import (
     DensityProfile,
+    ManualContainerID,
+    ManualContainerProfile,
     VolumeEstimate,
     estimate_portion_from_volume,
     parse_volume_portion_range,
     resolve_density_profile,
+    resolve_manual_container_volume_estimate,
 )
 
 _FDC_LOCAL_EXPORTS = frozenset(
@@ -52,6 +55,8 @@ __all__ = [
     "FdcLocalImportResult",
     "DensityProfile",
     "MATCHER_VERSION",
+    "ManualContainerID",
+    "ManualContainerProfile",
     "NUTRITION_CATALOG_VERSION",
     "NutritionEntry",
     "PortionGramRange",
@@ -75,6 +80,7 @@ __all__ = [
     "parse_portion_range",
     "parse_volume_portion_range",
     "resolve_density_profile",
+    "resolve_manual_container_volume_estimate",
 ]
 
 

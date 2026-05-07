@@ -51,6 +51,7 @@ _REFERENCE_WEAK_TOKENS = {
     "phone",
     "hand",
 }
+_MANUAL_CONTAINER_PREFIX = "container_"
 _LABEL_TOKENS = {
     "nutrition facts",
     "serving",
@@ -87,6 +88,10 @@ def resolve_scale_evidence_from_capture(
     label_candidate = _build_label_candidate(capture_metadata)
     if label_candidate is not None:
         candidates.append(label_candidate)
+
+    container_candidate = _build_personal_container_candidate(capture_metadata)
+    if container_candidate is not None:
+        candidates.append(container_candidate)
 
     reference_candidate = _build_reference_candidate(capture_metadata)
     if reference_candidate is not None:
@@ -205,9 +210,29 @@ def _build_label_candidate(metadata: DeviceCaptureMetadata) -> ScaleEvidenceCand
     )
 
 
+def _build_personal_container_candidate(
+    metadata: DeviceCaptureMetadata,
+) -> ScaleEvidenceCandidate | None:
+    hint = (metadata.reference_object_hint or "").strip().lower()
+    if not hint.startswith(_MANUAL_CONTAINER_PREFIX):
+        return None
+
+    return ScaleEvidenceCandidate(
+        evidence_id=f"scale:manual_container:{hint}",
+        evidence_type="personal_container",
+        object_type=hint,
+        detection_source="user_selected",
+        confidence_label="medium",
+        confidence_score=0.78,
+        usable_for_scale=True,
+    )
+
+
 def _build_reference_candidate(metadata: DeviceCaptureMetadata) -> ScaleEvidenceCandidate | None:
     hint = (metadata.reference_object_hint or "").strip().lower()
     if not hint:
+        return None
+    if hint.startswith(_MANUAL_CONTAINER_PREFIX):
         return None
 
     if _is_pii_card_like_reference(hint):
@@ -306,6 +331,19 @@ def _resolve(
                 policy_refs=_POLICY_REFS,
             )
 
+        if selected.evidence_type == "personal_container":
+            return ScaleEvidenceResolution(
+                resolution_id="scale_resolution:capture:1",
+                status="confirmed",
+                candidate_ids=candidate_ids,
+                selected_candidate_id=selected.evidence_id,
+                scale_confidence="medium",
+                expected_range_reduction_kcal=35.0,
+                prompt_user_for_reference=False,
+                trace_message="User-selected known container metadata selected for scale.",
+                policy_refs=_POLICY_REFS,
+            )
+
         return ScaleEvidenceResolution(
             resolution_id="scale_resolution:capture:1",
             status="weak",
@@ -358,9 +396,10 @@ def _select_preferred_usable_candidate(
     priority = {
         "arkit_scene_depth": 0,
         "lidar_depth": 1,
-        "barcode_serving": 2,
-        "label_ocr_serving": 3,
-        "reference_object": 4,
+        "personal_container": 2,
+        "barcode_serving": 3,
+        "label_ocr_serving": 4,
+        "reference_object": 5,
     }
     usable_candidates = [candidate for candidate in candidates if candidate.usable_for_scale]
     if not usable_candidates:

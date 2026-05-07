@@ -99,3 +99,20 @@ def test_capture_metadata_contract_names_match_v0_4_payload_shape() -> None:
     )
     for key in expected_keys:
         assert key in text
+
+
+def test_ios_reference_picker_includes_explicit_known_container_hints() -> None:
+    text = _read(MODELS)
+    screen_text = _read(IOS_APP_DIR / "CaptureScreenView.swift")
+
+    for expected in (
+        'case containerCoffeeMug = "container_coffee_mug_240ml"',
+        'case containerRiceBowl = "container_rice_bowl_300ml"',
+        'case containerMealPrep = "container_meal_prep_750ml"',
+        'case containerMeasuringCup = "container_measuring_cup_240ml"',
+        'return "Container: Coffee Mug 240ml"',
+        'return "Container: Rice Bowl 300ml"',
+    ):
+        assert expected in text
+
+    assert "known-container hint" in screen_text

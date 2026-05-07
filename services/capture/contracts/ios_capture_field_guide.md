@@ -92,7 +92,10 @@ from `analyze_photo_facade_response`:
   - Source: local Vision OCR (`VNRecognizeTextRequest`) short snippets.
   - Keep to non-PII food/package context only.
 - `reference_object_hint`
-  - Source: user-selected known-size helper (coin/card/fork/plate) in UI.
+  - Source: user-selected known-size helper or explicit known container in UI.
+  - Generic reference objects such as forks, plates, and soda cans are scale hints only.
+  - Explicit values prefixed with `container_` may be resolved as `manual_container`
+    volume estimates by the backend.
 - `capture_timestamp`
   - Source: capture time in RFC3339/ISO-8601 with timezone offset.
 

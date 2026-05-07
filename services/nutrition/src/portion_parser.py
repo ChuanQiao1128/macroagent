@@ -110,6 +110,8 @@ PortionUncertaintyFlag = Literal[
     "implicit_quantity",
     "approximate_quantity",
     "volume_geometry_estimate",
+    "manual_container_volume_estimate",
+    "recipe_template_volume_estimate",
     "volume_density_estimate",
     "generic_density_profile",
 ]

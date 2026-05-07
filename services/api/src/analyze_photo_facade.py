@@ -22,6 +22,7 @@ from services.nutrition import (
     estimate_portion_from_volume,
     match_food_name,
     parse_portion_range,
+    resolve_manual_container_volume_estimate,
 )
 from services.storage.ledger import AppendOnlyLedger
 
@@ -219,6 +220,10 @@ def _fixture_id_from_request_id(request_id: str) -> str:
 
 def _resolve_portion_range(*, component: _MockComponent, capture_metadata):
     volume_estimate = _volume_estimate_from_capture(capture_metadata)
+    if volume_estimate is None:
+        volume_estimate = resolve_manual_container_volume_estimate(
+            capture_metadata.reference_object_hint
+        )
     if volume_estimate is None:
         return parse_portion_range(
             component_name=component.name,

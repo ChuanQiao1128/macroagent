@@ -8,6 +8,7 @@ from services.nutrition import (
     estimate_portion_from_volume,
     parse_volume_portion_range,
     resolve_density_profile,
+    resolve_manual_container_volume_estimate,
 )
 
 
@@ -87,6 +88,36 @@ def test_parse_volume_portion_range_alias_matches_primary_function() -> None:
     )
 
     assert alias == primary
+
+
+def test_manual_container_hint_resolves_to_volume_estimate_without_reference_objects() -> None:
+    estimate = resolve_manual_container_volume_estimate("container_rice_bowl_300ml")
+
+    assert estimate is not None
+    assert estimate.method == "manual_container"
+    assert estimate.volume_ml_p10 == 280.0
+    assert estimate.volume_ml_p50 == 300.0
+    assert estimate.volume_ml_p90 == 320.0
+    assert estimate.confidence == pytest.approx(0.70)
+    assert estimate.evidence_ids == ("scale:manual_container:container_rice_bowl_300ml",)
+    assert resolve_manual_container_volume_estimate("soda_can_330ml") is None
+    assert resolve_manual_container_volume_estimate("standard fork") is None
+
+
+def test_manual_container_portion_uses_specific_uncertainty_flag() -> None:
+    estimate = resolve_manual_container_volume_estimate("container_measuring_cup_240ml")
+    assert estimate is not None
+
+    portion = estimate_portion_from_volume(
+        component_name="cooked white rice",
+        volume_estimate=estimate,
+    )
+
+    assert portion.grams_p50 == 180.0
+    assert portion.uncertainty_flags == (
+        "manual_container_volume_estimate",
+        "volume_density_estimate",
+    )
 
 
 def test_volume_estimate_rejects_invalid_percentile_ordering() -> None:

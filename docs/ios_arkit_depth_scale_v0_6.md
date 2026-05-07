@@ -72,6 +72,26 @@ This is not a final food segmentation model. It assumes the user places the food
 near the center of the frame and it caps confidence because the algorithm has no
 semantic mask yet. The output is deliberately a wide interval.
 
+## v0.9 Known Container Fallback
+
+The iOS app now exposes explicit `container_*` choices in the capture screen, such
+as:
+
+- `container_coffee_mug_240ml`
+- `container_rice_bowl_300ml`
+- `container_meal_prep_750ml`
+- `container_measuring_cup_240ml`
+
+These are treated differently from generic reference objects. A fork, plate, or
+soda can can still help scale reasoning, but it is not interpreted as the food's
+volume. Only explicit known-container hints can produce a `manual_container`
+volume interval on the backend.
+
+Known containers are useful when ARKit depth is unavailable or the food is in a
+repeated personal vessel. The backend still converts container volume through a
+food density profile before computing nutrition, so the container hint does not
+let the app invent calories directly.
+
 ## Reducing Measurement Error
 
 The product should guide users toward capture conditions that reduce the largest
