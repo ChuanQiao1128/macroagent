@@ -46,6 +46,18 @@ struct CaptureScreenView: View {
                 KeyValueRow(label: "image_format", value: store.captureDraft.imageIdentity.imageFormat)
                 KeyValueRow(label: "image_size", value: "\(store.captureDraft.imageIdentity.widthPX)x\(store.captureDraft.imageIdentity.heightPX)")
                 KeyValueRow(label: "bytes", value: "\(store.captureDraft.imageIdentity.byteSize)")
+                KeyValueRow(label: "pitch_degrees", value: formatted(store.captureDraft.captureMetadata.pitchDegrees))
+                KeyValueRow(label: "roll_degrees", value: formatted(store.captureDraft.captureMetadata.rollDegrees))
+                KeyValueRow(label: "depth_available", value: "\(store.captureDraft.captureMetadata.depthAvailable)")
+                KeyValueRow(label: "depth_quality", value: store.captureDraft.captureMetadata.depthQuality.rawValue)
+                KeyValueRow(label: "lidar_available", value: "\(store.captureDraft.captureMetadata.lidarAvailable)")
+                KeyValueRow(label: "barcode_payload", value: store.captureDraft.captureMetadata.barcodePayload ?? "<none>")
+                KeyValueRow(
+                    label: "ocr_text_snippets",
+                    value: store.captureDraft.captureMetadata.ocrTextSnippets.isEmpty
+                        ? "<none>"
+                        : store.captureDraft.captureMetadata.ocrTextSnippets.joined(separator: " | ")
+                )
                 KeyValueRow(label: "reference_object_hint", value: store.captureDraft.captureMetadata.referenceObjectHint ?? "<none>")
 
                 Button("Capture Now") {
@@ -97,6 +109,13 @@ struct CaptureScreenView: View {
             }
         }
         .navigationTitle("Capture")
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 96)
+        }
+    }
+
+    private func formatted(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 }
 
