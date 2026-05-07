@@ -26,6 +26,11 @@ def test_capture_metadata_adds_arkit_scene_depth_contract_fields() -> None:
         'case arkitDepthMapHeightPX = "arkit_depth_map_height_px"',
         'case arkitConfidenceCoverage = "arkit_confidence_coverage"',
         'case cameraIntrinsicsAvailable = "camera_intrinsics_available"',
+        'case foodVolumeEstimateMLP10 = "food_volume_estimate_ml_p10"',
+        'case foodVolumeEstimateMLP50 = "food_volume_estimate_ml_p50"',
+        'case foodVolumeEstimateMLP90 = "food_volume_estimate_ml_p90"',
+        'case foodVolumeEstimateConfidence = "food_volume_estimate_confidence"',
+        'case foodVolumeEstimateMethod = "food_volume_estimate_method"',
     )
     for key in expected_keys:
         assert key in models_text
@@ -60,6 +65,9 @@ def test_capture_screen_exposes_arkit_debug_fields_for_real_device_testing() -> 
         "arkit_depth_map_size",
         "arkit_confidence_coverage",
         "camera_intrinsics_available",
+        "food_volume_estimate_ml",
+        "food_volume_estimate_confidence",
+        "food_volume_estimate_method",
     ):
         assert field in text
 
@@ -76,6 +84,11 @@ def test_reference_hint_rebuild_preserves_arkit_depth_fields() -> None:
         "arkitDepthMapHeightPX: currentMetadata.arkitDepthMapHeightPX",
         "arkitConfidenceCoverage: currentMetadata.arkitConfidenceCoverage",
         "cameraIntrinsicsAvailable: currentMetadata.cameraIntrinsicsAvailable",
+        "foodVolumeEstimateMLP10: currentMetadata.foodVolumeEstimateMLP10",
+        "foodVolumeEstimateMLP50: currentMetadata.foodVolumeEstimateMLP50",
+        "foodVolumeEstimateMLP90: currentMetadata.foodVolumeEstimateMLP90",
+        "foodVolumeEstimateConfidence: currentMetadata.foodVolumeEstimateConfidence",
+        "foodVolumeEstimateMethod: currentMetadata.foodVolumeEstimateMethod",
     )
     for field in expected_preserved_fields:
         assert field in text

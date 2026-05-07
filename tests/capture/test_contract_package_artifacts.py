@@ -136,5 +136,8 @@ def test_ios_field_guide_covers_required_iphone_api_mappings() -> None:
         "arkit_depth_quality",
         "arkit_confidence_coverage",
         "camera_intrinsics_available",
+        "food_volume_estimate_ml_p10",
+        "food_volume_estimate_confidence",
+        "food_volume_estimate_method",
     ):
         assert expected_phrase in guide

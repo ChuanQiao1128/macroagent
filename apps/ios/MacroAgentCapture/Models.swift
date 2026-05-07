@@ -109,6 +109,11 @@ struct CaptureMetadata: Codable, Hashable {
     let arkitDepthMapHeightPX: Int?
     let arkitConfidenceCoverage: Double?
     let cameraIntrinsicsAvailable: Bool
+    let foodVolumeEstimateMLP10: Double?
+    let foodVolumeEstimateMLP50: Double?
+    let foodVolumeEstimateMLP90: Double?
+    let foodVolumeEstimateConfidence: Double?
+    let foodVolumeEstimateMethod: String?
     let barcodePayload: String?
     let barcodePayloadSafe: Bool
     let ocrTextSnippets: [String]
@@ -135,6 +140,11 @@ struct CaptureMetadata: Codable, Hashable {
         case arkitDepthMapHeightPX = "arkit_depth_map_height_px"
         case arkitConfidenceCoverage = "arkit_confidence_coverage"
         case cameraIntrinsicsAvailable = "camera_intrinsics_available"
+        case foodVolumeEstimateMLP10 = "food_volume_estimate_ml_p10"
+        case foodVolumeEstimateMLP50 = "food_volume_estimate_ml_p50"
+        case foodVolumeEstimateMLP90 = "food_volume_estimate_ml_p90"
+        case foodVolumeEstimateConfidence = "food_volume_estimate_confidence"
+        case foodVolumeEstimateMethod = "food_volume_estimate_method"
         case barcodePayload = "barcode_payload"
         case barcodePayloadSafe = "barcode_payload_safe"
         case ocrTextSnippets = "ocr_text_snippets"

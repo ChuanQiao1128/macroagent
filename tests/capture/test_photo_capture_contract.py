@@ -37,6 +37,11 @@ def _valid_request_payload() -> dict:
             "arkit_depth_map_height_px": 192,
             "arkit_confidence_coverage": 0.84,
             "camera_intrinsics_available": True,
+            "food_volume_estimate_ml_p10": 180.0,
+            "food_volume_estimate_ml_p50": 200.0,
+            "food_volume_estimate_ml_p90": 220.0,
+            "food_volume_estimate_confidence": 0.74,
+            "food_volume_estimate_method": "arkit_depth_region",
             "barcode_payload": "0123456789012",
             "ocr_text_snippets": ["2 tbsp olive oil", "chicken breast"],
             "reference_object_hint": "standard dinner plate",
@@ -63,6 +68,15 @@ def test_photo_analyze_request_accepts_realistic_iphone_metadata() -> None:
     assert request.image_identity.image_format == "heic"
     assert request.capture_metadata.device_model == "iPhone15,3"
     assert request.capture_metadata.capture_timestamp.isoformat() == "2026-05-01T12:34:56+00:00"
+    assert request.capture_metadata.food_volume_estimate_ml_p50 == 200.0
+
+
+def test_photo_analyze_request_rejects_partial_food_volume_estimate() -> None:
+    payload = _valid_request_payload()
+    payload["capture_metadata"]["food_volume_estimate_ml_p90"] = None
+
+    with pytest.raises(ValidationError, match="food volume estimate fields"):
+        PhotoAnalyzeRequest.model_validate(payload)
 
 
 def test_photo_analyze_request_rejects_invalid_extra_fields() -> None:

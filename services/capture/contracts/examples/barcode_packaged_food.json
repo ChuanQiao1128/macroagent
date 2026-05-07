@@ -107,6 +107,11 @@
       "depth_quality": "low",
       "device_model": "iPhone15,2",
       "focal_length_mm": 5.7,
+      "food_volume_estimate_confidence": null,
+      "food_volume_estimate_method": null,
+      "food_volume_estimate_ml_p10": null,
+      "food_volume_estimate_ml_p50": null,
+      "food_volume_estimate_ml_p90": null,
       "lens_hint": "wide",
       "lidar_available": false,
       "ocr_text_snippets": [

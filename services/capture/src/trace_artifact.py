@@ -70,6 +70,22 @@ def build_sanitized_capture_trace_artifact(
             metadata.arkit_confidence_coverage,
             3,
         )
+    if metadata.food_volume_estimate_ml_p50 is not None:
+        capture_quality_summary["food_volume_estimate_ml_p10"] = (
+            metadata.food_volume_estimate_ml_p10
+        )
+        capture_quality_summary["food_volume_estimate_ml_p50"] = (
+            metadata.food_volume_estimate_ml_p50
+        )
+        capture_quality_summary["food_volume_estimate_ml_p90"] = (
+            metadata.food_volume_estimate_ml_p90
+        )
+        capture_quality_summary["food_volume_estimate_confidence"] = (
+            metadata.food_volume_estimate_confidence
+        )
+        capture_quality_summary["food_volume_estimate_method"] = (
+            metadata.food_volume_estimate_method
+        )
     if metadata.lens_hint:
         capture_quality_summary["lens_hint"] = metadata.lens_hint
 

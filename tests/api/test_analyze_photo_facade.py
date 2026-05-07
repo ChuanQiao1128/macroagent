@@ -63,6 +63,40 @@ def test_accept_fixture_returns_complete_response() -> None:
     assert response.uncertainty_summary.confidence_label == "high"
 
 
+def test_accept_fixture_uses_derived_volume_when_capture_metadata_provides_it() -> None:
+    data: dict[str, Any] = {
+        "payload": _payload("req_accept_volume_fixture"),
+        "options": {"log_anyway": False},
+    }
+    data["payload"]["capture_metadata"].update(
+        {
+            "arkit_scene_depth_supported": True,
+            "arkit_smoothed_scene_depth_supported": True,
+            "arkit_depth_available": True,
+            "arkit_depth_quality": "high",
+            "arkit_depth_map_width_px": 256,
+            "arkit_depth_map_height_px": 192,
+            "arkit_confidence_coverage": 0.86,
+            "camera_intrinsics_available": True,
+            "food_volume_estimate_ml_p10": 180.0,
+            "food_volume_estimate_ml_p50": 200.0,
+            "food_volume_estimate_ml_p90": 220.0,
+            "food_volume_estimate_confidence": 0.74,
+            "food_volume_estimate_method": "arkit_depth_region",
+        }
+    )
+
+    response = analyze_photo_facade(AnalyzePhotoFacadeRequest.model_validate(data))
+
+    assert response.status == "WARN"
+    assert response.nutrition is not None
+    assert response.nutrition.kcal.min_estimate == 152.1
+    assert response.nutrition.kcal.best_estimate == 195.0
+    assert response.nutrition.kcal.max_estimate == 257.4
+    assert "volume_geometry_estimate" in response.uncertainty_summary.uncertainty_flags
+    assert "volume_density_estimate" in response.uncertainty_summary.uncertainty_flags
+
+
 def test_warn_fixture_returns_complete_response_with_uncertainty_flags() -> None:
     response = analyze_photo_facade(_request("req_warn_fixture"))
 

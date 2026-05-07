@@ -17,7 +17,12 @@ from services.meal.takeoff.evidence_arbitration import arbitrate_evidence_claims
 from services.meal.takeoff.ledger_gate import apply_ledger_gate
 from services.meal.takeoff.schemas import EvidenceClaim, MacroValueClaim, PortionQuantityClaim
 from services.meal.takeoff.trace import InMemoryTraceEmitter, emit_stage_event
-from services.nutrition import match_food_name, parse_portion_range
+from services.nutrition import (
+    VolumeEstimate,
+    estimate_portion_from_volume,
+    match_food_name,
+    parse_portion_range,
+)
 from services.storage.ledger import AppendOnlyLedger
 
 
@@ -69,10 +74,7 @@ def analyze_photo_facade(
     scale_resolution = scale.resolutions[0]
 
     component = _FIXTURE_COMPONENTS[fixture_id]
-    portion = parse_portion_range(
-        component_name=component.name,
-        portion_hint=component.portion_hint,
-    )
+    portion = _resolve_portion_range(component=component, capture_metadata=payload.capture_metadata)
     matches = match_food_name(component.source_query)
     if not matches:
         raise ValueError(f"no deterministic nutrition match for query {component.source_query!r}")
@@ -88,6 +90,7 @@ def analyze_photo_facade(
             "component_name": component.name,
             "portion_hint": component.portion_hint,
             "portion_source": portion.source,
+            "portion_reason": portion.reason,
         },
     )
 
@@ -212,6 +215,41 @@ def _fixture_id_from_request_id(request_id: str) -> str:
         if fixture in key:
             return fixture
     return "accept"
+
+
+def _resolve_portion_range(*, component: _MockComponent, capture_metadata):
+    volume_estimate = _volume_estimate_from_capture(capture_metadata)
+    if volume_estimate is None:
+        return parse_portion_range(
+            component_name=component.name,
+            portion_hint=component.portion_hint,
+        )
+
+    return estimate_portion_from_volume(
+        component_name=component.source_query,
+        volume_estimate=volume_estimate,
+    )
+
+
+def _volume_estimate_from_capture(capture_metadata) -> VolumeEstimate | None:
+    values = (
+        capture_metadata.food_volume_estimate_ml_p10,
+        capture_metadata.food_volume_estimate_ml_p50,
+        capture_metadata.food_volume_estimate_ml_p90,
+        capture_metadata.food_volume_estimate_confidence,
+        capture_metadata.food_volume_estimate_method,
+    )
+    if any(value is None for value in values):
+        return None
+
+    return VolumeEstimate(
+        volume_ml_p10=capture_metadata.food_volume_estimate_ml_p10,
+        volume_ml_p50=capture_metadata.food_volume_estimate_ml_p50,
+        volume_ml_p90=capture_metadata.food_volume_estimate_ml_p90,
+        confidence=capture_metadata.food_volume_estimate_confidence,
+        method=capture_metadata.food_volume_estimate_method,
+        evidence_ids=("scale:arkit_scene_depth:1",),
+    )
 
 
 def _build_claims(

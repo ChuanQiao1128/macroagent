@@ -109,6 +109,9 @@ PortionUncertaintyFlag = Literal[
     "non_positive_quantity",
     "implicit_quantity",
     "approximate_quantity",
+    "volume_geometry_estimate",
+    "volume_density_estimate",
+    "generic_density_profile",
 ]
 
 
@@ -125,6 +128,7 @@ class PortionGramRange(BaseModel):
     source: Literal[
         "portion_hint_weight_unit",
         "portion_hint_household_unit",
+        "volume_estimate_density_table",
         "fallback_default",
     ]
     reason: str = Field(..., min_length=1)

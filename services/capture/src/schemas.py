@@ -46,11 +46,41 @@ class DeviceCaptureMetadata(StrictModel):
     arkit_depth_map_height_px: int | None = Field(default=None, gt=0)
     arkit_confidence_coverage: float | None = Field(default=None, ge=0, le=1)
     camera_intrinsics_available: bool = False
+    food_volume_estimate_ml_p10: float | None = Field(default=None, gt=0)
+    food_volume_estimate_ml_p50: float | None = Field(default=None, gt=0)
+    food_volume_estimate_ml_p90: float | None = Field(default=None, gt=0)
+    food_volume_estimate_confidence: float | None = Field(default=None, ge=0, le=1)
+    food_volume_estimate_method: Literal[
+        "arkit_depth_region",
+        "manual_container",
+        "recipe_template",
+    ] | None = None
     barcode_payload: str | None = None
     barcode_payload_safe: bool = False
     ocr_text_snippets: list[str] = Field(default_factory=list)
     reference_object_hint: str | None = None
     capture_timestamp: datetime
+
+    @model_validator(mode="after")
+    def _validate_food_volume_estimate_bundle(self) -> DeviceCaptureMetadata:
+        fields = (
+            self.food_volume_estimate_ml_p10,
+            self.food_volume_estimate_ml_p50,
+            self.food_volume_estimate_ml_p90,
+            self.food_volume_estimate_confidence,
+            self.food_volume_estimate_method,
+        )
+        if all(field is None for field in fields):
+            return self
+        if any(field is None for field in fields):
+            raise ValueError("food volume estimate fields must be provided together")
+        if not (
+            self.food_volume_estimate_ml_p10
+            <= self.food_volume_estimate_ml_p50
+            <= self.food_volume_estimate_ml_p90
+        ):
+            raise ValueError("food volume estimate must satisfy p10 <= p50 <= p90")
+        return self
 
 
 class PhotoAnalyzeRequest(StrictModel):

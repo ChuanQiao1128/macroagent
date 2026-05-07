@@ -71,6 +71,18 @@ from `analyze_photo_facade_response`:
 - `camera_intrinsics_available`
   - Source: current `ARFrame.camera.intrinsics` availability.
   - Required before ARKit scene depth may be treated as high-confidence scale evidence.
+- `food_volume_estimate_ml_p10` / `food_volume_estimate_ml_p50` / `food_volume_estimate_ml_p90`
+  - Source: derived on-device food-region geometry from ARKit depth, manual container
+    calibration, or recipe template. These are optional until a calibrated food-region
+    estimator is available.
+  - Send volume percentiles only, never raw depth maps, confidence maps, point clouds, or
+    camera frames.
+- `food_volume_estimate_confidence`
+  - Source: client-side confidence policy for the derived food-volume interval.
+  - Must be present when volume percentiles are present.
+- `food_volume_estimate_method`
+  - Source: client-side estimator id, currently one of `arkit_depth_region`,
+    `manual_container`, or `recipe_template`.
 - `barcode_payload`
   - Source: local Vision barcode detection (`VNDetectBarcodesRequest`) string value.
   - Do not send raw image bytes.

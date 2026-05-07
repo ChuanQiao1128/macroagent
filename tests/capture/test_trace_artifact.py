@@ -210,6 +210,38 @@ def test_build_sanitized_capture_trace_artifact_keeps_only_derived_arkit_depth_s
     assert "arkit_confidence_map" not in artifact
 
 
+def test_build_sanitized_capture_trace_artifact_keeps_derived_volume_summary() -> None:
+    payload = _request_payload()
+    payload["capture_metadata"].update(
+        {
+            "food_volume_estimate_ml_p10": 180.0,
+            "food_volume_estimate_ml_p50": 200.0,
+            "food_volume_estimate_ml_p90": 220.0,
+            "food_volume_estimate_confidence": 0.74,
+            "food_volume_estimate_method": "arkit_depth_region",
+        }
+    )
+    request = PhotoAnalyzeRequest.model_validate(payload)
+    scale_evidence = resolve_scale_evidence_from_capture(
+        trace_id="trace-capture-volume",
+        capture_metadata=request.capture_metadata,
+    )
+
+    artifact = build_sanitized_capture_trace_artifact(
+        request=request,
+        scale_evidence=scale_evidence,
+    )
+
+    summary = artifact["capture_quality_summary"]
+    assert summary["food_volume_estimate_ml_p10"] == 180.0
+    assert summary["food_volume_estimate_ml_p50"] == 200.0
+    assert summary["food_volume_estimate_ml_p90"] == 220.0
+    assert summary["food_volume_estimate_confidence"] == 0.74
+    assert summary["food_volume_estimate_method"] == "arkit_depth_region"
+    assert "raw_depth_map" not in artifact
+    assert "point_cloud" not in artifact
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

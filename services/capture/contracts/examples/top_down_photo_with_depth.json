@@ -4,15 +4,15 @@
     "ledger_entry_id": null,
     "nutrition": {
       "carbs_g": {
-        "best_estimate": 28.2,
-        "max_estimate": 31.0,
-        "min_estimate": 25.4,
+        "best_estimate": 42.3,
+        "max_estimate": 55.8,
+        "min_estimate": 33.0,
         "source": "deterministic:usda_seed_0001"
       },
       "fat_g": {
-        "best_estimate": 0.3,
-        "max_estimate": 0.3,
-        "min_estimate": 0.3,
+        "best_estimate": 0.5,
+        "max_estimate": 0.6,
+        "min_estimate": 0.4,
         "source": "deterministic:usda_seed_0001"
       },
       "fiber_g": {
@@ -22,15 +22,15 @@
         "source": "deterministic:usda_seed_0001"
       },
       "kcal": {
-        "best_estimate": 130.0,
-        "max_estimate": 143.0,
-        "min_estimate": 117.0,
+        "best_estimate": 195.0,
+        "max_estimate": 257.4,
+        "min_estimate": 152.1,
         "source": "deterministic:usda_seed_0001"
       },
       "protein_g": {
-        "best_estimate": 2.4,
-        "max_estimate": 2.6,
-        "min_estimate": 2.2,
+        "best_estimate": 3.6,
+        "max_estimate": 4.8,
+        "min_estimate": 2.8,
         "source": "deterministic:usda_seed_0001"
       },
       "sodium_mg": {
@@ -47,15 +47,18 @@
       }
     },
     "reasons": [
-      "range_width_within_accept"
+      "range_width_gt_accept_max"
     ],
     "request_id": "req_accept_top_down_depth",
-    "status": "ACCEPT",
+    "status": "WARN",
     "trace_id": "trace:req_accept_top_down_depth",
     "uncertainty_summary": {
-      "confidence_label": "high",
-      "relative_range_width": 0.2,
-      "uncertainty_flags": []
+      "confidence_label": "medium",
+      "relative_range_width": 0.5399999999999999,
+      "uncertainty_flags": [
+        "volume_geometry_estimate",
+        "volume_density_estimate"
+      ]
     }
   },
   "capture_trace_artifact": {
@@ -73,6 +76,11 @@
       "camera_position": "back",
       "depth_available": true,
       "depth_quality": "high",
+      "food_volume_estimate_confidence": 0.74,
+      "food_volume_estimate_method": "arkit_depth_region",
+      "food_volume_estimate_ml_p10": 180.0,
+      "food_volume_estimate_ml_p50": 200.0,
+      "food_volume_estimate_ml_p90": 220.0,
       "lens_hint": "wide",
       "lidar_available": true,
       "orientation": "portrait",
@@ -114,6 +122,11 @@
       "depth_quality": "high",
       "device_model": "iPhone15,3",
       "focal_length_mm": 5.7,
+      "food_volume_estimate_confidence": 0.74,
+      "food_volume_estimate_method": "arkit_depth_region",
+      "food_volume_estimate_ml_p10": 180.0,
+      "food_volume_estimate_ml_p50": 200.0,
+      "food_volume_estimate_ml_p90": 220.0,
       "lens_hint": "wide",
       "lidar_available": true,
       "ocr_text_snippets": [
@@ -137,18 +150,18 @@
     "user_id": "user_demo_contract"
   },
   "photo_analyze_response": {
-    "decision": "ACCEPT",
+    "decision": "WARN",
     "metrics": {
       "carbs_g": {
-        "best_estimate": 28.2,
-        "max_estimate": 31.0,
-        "min_estimate": 25.4,
+        "best_estimate": 42.3,
+        "max_estimate": 55.8,
+        "min_estimate": 33.0,
         "source": "deterministic:usda_seed_0001"
       },
       "fat_g": {
-        "best_estimate": 0.3,
-        "max_estimate": 0.3,
-        "min_estimate": 0.3,
+        "best_estimate": 0.5,
+        "max_estimate": 0.6,
+        "min_estimate": 0.4,
         "source": "deterministic:usda_seed_0001"
       },
       "fiber_g": {
@@ -158,15 +171,15 @@
         "source": "deterministic:usda_seed_0001"
       },
       "kcal": {
-        "best_estimate": 130.0,
-        "max_estimate": 143.0,
-        "min_estimate": 117.0,
+        "best_estimate": 195.0,
+        "max_estimate": 257.4,
+        "min_estimate": 152.1,
         "source": "deterministic:usda_seed_0001"
       },
       "protein_g": {
-        "best_estimate": 2.4,
-        "max_estimate": 2.6,
-        "min_estimate": 2.2,
+        "best_estimate": 3.6,
+        "max_estimate": 4.8,
+        "min_estimate": 2.8,
         "source": "deterministic:usda_seed_0001"
       },
       "sodium_mg": {
@@ -183,7 +196,7 @@
       }
     },
     "reasons": [
-      "range_width_within_accept"
+      "range_width_gt_accept_max"
     ],
     "request_id": "req_accept_top_down_depth"
   }

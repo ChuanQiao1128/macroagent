@@ -30,6 +30,15 @@ class CaptureQualitySummary(StrictModel):
     arkit_depth_map_height_px: int | None = Field(default=None, gt=0)
     arkit_confidence_coverage: float | None = Field(default=None, ge=0, le=1)
     camera_intrinsics_available: bool = False
+    food_volume_estimate_ml_p10: float | None = Field(default=None, gt=0)
+    food_volume_estimate_ml_p50: float | None = Field(default=None, gt=0)
+    food_volume_estimate_ml_p90: float | None = Field(default=None, gt=0)
+    food_volume_estimate_confidence: float | None = Field(default=None, ge=0, le=1)
+    food_volume_estimate_method: Literal[
+        "arkit_depth_region",
+        "manual_container",
+        "recipe_template",
+    ] | None = None
     camera_position: Literal["front", "back", "unknown"]
     orientation: Literal[
         "portrait",
@@ -137,6 +146,11 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "arkit_depth_map_height_px": 192,
             "arkit_confidence_coverage": 0.86,
             "camera_intrinsics_available": True,
+            "food_volume_estimate_ml_p10": 180.0,
+            "food_volume_estimate_ml_p50": 200.0,
+            "food_volume_estimate_ml_p90": 220.0,
+            "food_volume_estimate_confidence": 0.74,
+            "food_volume_estimate_method": "arkit_depth_region",
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": ["brown rice", "grilled salmon"],
@@ -175,6 +189,11 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "arkit_depth_map_height_px": None,
             "arkit_confidence_coverage": None,
             "camera_intrinsics_available": False,
+            "food_volume_estimate_ml_p10": None,
+            "food_volume_estimate_ml_p50": None,
+            "food_volume_estimate_ml_p90": None,
+            "food_volume_estimate_confidence": None,
+            "food_volume_estimate_method": None,
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": [],
@@ -213,6 +232,11 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "arkit_depth_map_height_px": None,
             "arkit_confidence_coverage": None,
             "camera_intrinsics_available": False,
+            "food_volume_estimate_ml_p10": None,
+            "food_volume_estimate_ml_p50": None,
+            "food_volume_estimate_ml_p90": None,
+            "food_volume_estimate_confidence": None,
+            "food_volume_estimate_method": None,
             "barcode_payload": "049000042511",
             "barcode_payload_safe": True,
             "ocr_text_snippets": ["Nutrition Facts", "Serving size 55g"],
@@ -251,6 +275,11 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "arkit_depth_map_height_px": None,
             "arkit_confidence_coverage": None,
             "camera_intrinsics_available": False,
+            "food_volume_estimate_ml_p10": None,
+            "food_volume_estimate_ml_p50": None,
+            "food_volume_estimate_ml_p90": None,
+            "food_volume_estimate_confidence": None,
+            "food_volume_estimate_method": None,
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": [],
@@ -298,6 +327,11 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "arkit_depth_map_height_px": 192,
             "arkit_confidence_coverage": 0.86,
             "camera_intrinsics_available": True,
+            "food_volume_estimate_ml_p10": 180.0,
+            "food_volume_estimate_ml_p50": 200.0,
+            "food_volume_estimate_ml_p90": 220.0,
+            "food_volume_estimate_confidence": 0.74,
+            "food_volume_estimate_method": "arkit_depth_region",
             "camera_position": "back",
             "orientation": "portrait",
             "pitch_degrees": 1.2,

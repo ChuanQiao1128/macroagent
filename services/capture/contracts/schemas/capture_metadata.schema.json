@@ -137,6 +137,76 @@
       "default": null,
       "title": "Focal Length Mm"
     },
+    "food_volume_estimate_confidence": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Food Volume Estimate Confidence"
+    },
+    "food_volume_estimate_method": {
+      "anyOf": [
+        {
+          "enum": [
+            "arkit_depth_region",
+            "manual_container",
+            "recipe_template"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Food Volume Estimate Method"
+    },
+    "food_volume_estimate_ml_p10": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Food Volume Estimate Ml P10"
+    },
+    "food_volume_estimate_ml_p50": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Food Volume Estimate Ml P50"
+    },
+    "food_volume_estimate_ml_p90": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Food Volume Estimate Ml P90"
+    },
     "lens_hint": {
       "anyOf": [
         {

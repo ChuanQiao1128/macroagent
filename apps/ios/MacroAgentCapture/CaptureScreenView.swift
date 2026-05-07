@@ -79,6 +79,18 @@ struct CaptureScreenView: View {
                     label: "camera_intrinsics_available",
                     value: "\(store.captureDraft.captureMetadata.cameraIntrinsicsAvailable)"
                 )
+                KeyValueRow(
+                    label: "food_volume_estimate_ml",
+                    value: volumeEstimateRange(store.captureDraft.captureMetadata)
+                )
+                KeyValueRow(
+                    label: "food_volume_estimate_confidence",
+                    value: formattedOptional(store.captureDraft.captureMetadata.foodVolumeEstimateConfidence)
+                )
+                KeyValueRow(
+                    label: "food_volume_estimate_method",
+                    value: store.captureDraft.captureMetadata.foodVolumeEstimateMethod ?? "<none>"
+                )
                 KeyValueRow(label: "barcode_payload", value: store.captureDraft.captureMetadata.barcodePayload ?? "<none>")
                 KeyValueRow(
                     label: "ocr_text_snippets",
@@ -162,6 +174,17 @@ struct CaptureScreenView: View {
         }
 
         return "\(width)x\(height)"
+    }
+
+    private func volumeEstimateRange(_ metadata: CaptureMetadata) -> String {
+        guard let p10 = metadata.foodVolumeEstimateMLP10,
+              let p50 = metadata.foodVolumeEstimateMLP50,
+              let p90 = metadata.foodVolumeEstimateMLP90
+        else {
+            return "<none>"
+        }
+
+        return "\(formatted(p10)) / \(formatted(p50)) / \(formatted(p90))"
     }
 }
 
