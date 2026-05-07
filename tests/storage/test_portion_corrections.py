@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from services.meal import analyze_meal_components
+from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
 from services.storage import (
     build_portion_correction_prior_resolver,
     fetch_meal_by_id,
@@ -75,7 +76,9 @@ def test_portion_correction_migration_replay_preserves_existing_meal_data(tmp_pa
             ).fetchall()
         }
 
-    assert versions == [(1, 1), (2, 1), (3, 1)]
+    assert versions == [
+        (version, 1) for version in range(1, LEDGER_SCHEMA_VERSION + 1)
+    ]
     assert "portion_corrections" in tables
 
 

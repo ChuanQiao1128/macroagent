@@ -47,7 +47,9 @@ def test_initialize_sqlite_ledger_migration_replay_is_idempotent(tmp_path: Path)
             "SELECT version, COUNT(*) FROM schema_migrations GROUP BY version ORDER BY version"
         ).fetchall()
 
-    assert versions == [(1, 1), (2, 1), (3, 1)]
+    assert versions == [
+        (version, 1) for version in range(1, LEDGER_SCHEMA_VERSION + 1)
+    ]
 
 
 def test_insert_and_fetch_meal_round_trip_with_component_trace_storage(tmp_path: Path) -> None:
@@ -421,7 +423,9 @@ def test_export_ledger_backup_empty_db_has_metadata_and_no_meals(tmp_path: Path)
     assert payload["meal_count"] == 0
     assert payload["meals"] == []
     migrations = payload["schema_migrations"]
-    assert [migration["version"] for migration in migrations] == [1, 2, 3]
+    assert [migration["version"] for migration in migrations] == list(
+        range(1, LEDGER_SCHEMA_VERSION + 1)
+    )
     assert all(isinstance(migration["applied_at"], str) for migration in migrations)
 
 
