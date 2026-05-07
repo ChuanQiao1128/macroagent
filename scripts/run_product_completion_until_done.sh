@@ -11,6 +11,13 @@
 #   bash scripts/run_product_completion_until_done.sh TASK-050 TASK-051
 #
 #   V06_DRY_RUN=1 bash scripts/run_product_completion_until_done.sh
+#
+# Overnight behavior:
+#   - Existing dirty worktree changes are stashed before the queue when
+#     V06_AUTOSTASH=1.
+#   - Each task still gets the normal run_unattended repair loop.
+#   - If a task exhausts repairs, V06_CONTINUE_ON_FAILURE=1 records it as failed,
+#     preserves the failed branch or stash, and moves on to the next task.
 
 set -euo pipefail
 
@@ -40,6 +47,9 @@ AUTO_PUSH="${AUTO_PUSH:-1}"
 CODEX_PROVIDER_MODE="${CODEX_PROVIDER_MODE:-chatgpt}"
 MAX_REPAIR_ATTEMPTS="${MAX_REPAIR_ATTEMPTS:-3}"
 V06_DRY_RUN="${V06_DRY_RUN:-0}"
+V06_AUTOSTASH="${V06_AUTOSTASH:-1}"
+V06_CONTINUE_ON_FAILURE="${V06_CONTINUE_ON_FAILURE:-1}"
+FAILED_TASKS=()
 
 mkdir -p "$(dirname "$STATE_FILE")"
 touch "$STATE_FILE"
@@ -91,9 +101,57 @@ ensure_codex_cli_exists() {
   fi
 }
 
+stash_dirty_worktree_before_run() {
+  local stamp
+  local stash_ref
+
+  if [[ -z "$(git status --porcelain)" ]]; then
+    return
+  fi
+
+  if [[ "$V06_AUTOSTASH" != "1" ]]; then
+    echo "Worktree is dirty and V06_AUTOSTASH is not enabled; refusing to start." >&2
+    git status --short >&2
+    exit 1
+  fi
+
+  stamp="macroagent-v06-pre-run-$(date -u +%Y%m%dT%H%M%SZ)"
+  git stash push -u -m "$stamp"
+  stash_ref="$(git stash list --format='%gd %s' | awk -v stamp="$stamp" '$0 ~ stamp {print $1; exit}')"
+  echo "Saved pre-run dirty worktree in ${stash_ref:-git stash} ($stamp)."
+  record_task_state "__pre_run_stash" "SAVED" "${stash_ref:-unknown}:${stamp}"
+}
+
+recover_after_task_failure() {
+  local task_id="$1"
+  local status="$2"
+  local branch
+  local details
+  local stamp
+  local stash_ref
+
+  branch="$(git branch --show-current 2>/dev/null || true)"
+  details="exit=${status};branch=${branch:-unknown}"
+
+  if [[ -n "$(git status --porcelain)" ]]; then
+    stamp="macroagent-v06-failed-${task_id}-$(date -u +%Y%m%dT%H%M%SZ)"
+    git stash push -u -m "$stamp" || true
+    stash_ref="$(git stash list --format='%gd %s' | awk -v stamp="$stamp" '$0 ~ stamp {print $1; exit}')"
+    details="${details};stash=${stash_ref:-unknown}:${stamp}"
+    echo "Saved dirty failure state for $task_id in ${stash_ref:-git stash} ($stamp)."
+  fi
+
+  if git show-ref --verify --quiet "refs/heads/$MAIN_BRANCH"; then
+    git switch "$MAIN_BRANCH" >/dev/null 2>&1 || true
+  fi
+
+  record_task_state "$task_id" "FAILED" "$details"
+}
+
 ensure_briefs_exist
 if [[ "$V06_DRY_RUN" != "1" ]]; then
   ensure_codex_cli_exists
+  stash_dirty_worktree_before_run
 fi
 
 echo "MacroAgent v0.6 product completion queue"
@@ -104,6 +162,8 @@ echo "Remote base branch: $REMOTE_MAIN_BRANCH"
 echo "Remote push branch: $PUSH_BRANCH"
 echo "Mode: $UNATTENDED_MODE"
 echo "Dry run: $V06_DRY_RUN"
+echo "Auto stash dirty worktree: $V06_AUTOSTASH"
+echo "Continue after exhausted task repairs: $V06_CONTINUE_ON_FAILURE"
 
 for task_id in "${TASKS[@]}"; do
   if [[ "${RERUN_COMPLETED:-0}" != "1" ]] && task_done "$task_id"; then
@@ -133,11 +193,24 @@ for task_id in "${TASKS[@]}"; do
     record_task_state "$task_id" "DONE" "ok"
     echo "Completed $task_id"
   else
-    record_task_state "$task_id" "FAILED" "exit=${status}"
-    echo "Stopped at $task_id with exit code $status" >&2
-    echo "Inspect recent logs in .codex/runs/ and rerun this script after repair." >&2
+    FAILED_TASKS+=("$task_id")
+    recover_after_task_failure "$task_id" "$status"
+    echo "Task $task_id failed with exit code $status after its repair loop." >&2
+
+    if [[ "$V06_CONTINUE_ON_FAILURE" == "1" ]]; then
+      echo "Continuing to the next task because V06_CONTINUE_ON_FAILURE=1." >&2
+      continue
+    fi
+
+    echo "Stopped at $task_id. Rerun this script after repair." >&2
     exit "$status"
   fi
 done
+
+if [[ "${#FAILED_TASKS[@]}" -gt 0 ]]; then
+  echo "MacroAgent v0.6 product completion queue finished with failed tasks: ${FAILED_TASKS[*]}" >&2
+  echo "Rerun the same command to retry failed tasks; DONE tasks are skipped." >&2
+  exit 1
+fi
 
 echo "MacroAgent v0.6 product completion queue complete."

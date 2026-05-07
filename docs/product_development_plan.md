@@ -187,6 +187,7 @@ Run it from Terminal with:
 
 ```bash
 cd /Users/qc/Documents/Claude/Projects/NutritionAI
-CODEX_PROVIDER_MODE=chatgpt MAX_REPAIR_ATTEMPTS=3 UNATTENDED_MODE=branch AUTO_PUSH=1 \
+CODEX_PROVIDER_MODE=chatgpt MAX_REPAIR_ATTEMPTS=5 UNATTENDED_MODE=branch AUTO_PUSH=1 \
+  V06_AUTOSTASH=1 V06_CONTINUE_ON_FAILURE=1 \
   caffeinate -dimsu bash scripts/run_product_completion_until_done.sh
 ```
