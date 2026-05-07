@@ -10,7 +10,7 @@ The default queue is:
 
 1. `TASK-050` - Real Vision Job Provider and Image Intake
 2. `TASK-051` - Background Analysis Job Queue
-3. `TASK-052` - iOS User Result UI v1
+3. `TASK-052` - iOS User Result UI v1 (verified in `apps/ios/MacroAgentCapture` and `tests/ios/test_task_052_ios_user_result_ui_static.py`)
 4. `TASK-053` - Correction Persistence and Personal Priors
 5. `TASK-054` - Image Privacy, Cache, and Retention Policy
 6. `TASK-055` - Real Food Evaluation Fixtures

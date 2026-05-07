@@ -172,11 +172,13 @@ Keep building the iOS smoke app and backend around single-photo behavior:
 The next unattended queue is defined in
 [product_completion_runbook.md](product_completion_runbook.md).
 
-It covers the eight remaining product gaps:
+TASK-052 (iOS user-facing result UI) is already implemented and verified in
+`apps/ios/MacroAgentCapture` and `tests/ios/test_task_052_ios_user_result_ui_static.py`.
+
+It covers the seven remaining product gaps:
 
 - real vision job provider and image intake;
 - background analysis job queue;
-- iOS user-facing result UI;
 - append-only correction persistence and personal priors;
 - image privacy, cache, and retention policy;
 - real food evaluation fixtures;
