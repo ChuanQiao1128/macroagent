@@ -348,6 +348,165 @@ struct ResultView: View {
     }
 }
 
+struct HistoryView: View {
+    @ObservedObject var store: CaptureFlowStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    TextField("YYYY-MM-DD", text: $store.selectedHistoryDate)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .font(.footnote.monospaced())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.gray.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    Button {
+                        Task { [weak store] in
+                            guard let store else {
+                                return
+                            }
+                            await store.refreshHistoryAndTotals()
+                        }
+                    } label: {
+                        if store.isRefreshingHistory {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .frame(width: 20, height: 20)
+                        } else {
+                            Text("Refresh")
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(store.isRefreshingHistory)
+                }
+
+                Text("Querying user \(store.captureDraft.userID) for \(store.selectedHistoryDate).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                if let error = store.historyLoadError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+
+                if let totals = store.dailyTotals {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Daily totals")
+                            .font(.headline)
+                        Text("Meals: \(totals.mealCount) • Active entries: \(totals.activeEntryCount)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        HistoryMetricRow(label: "kcal", value: totals.kcal, decimals: 0)
+                        HistoryMetricRow(label: "protein_g", value: totals.proteinG, decimals: 1)
+                        HistoryMetricRow(label: "carbs_g", value: totals.carbsG, decimals: 1)
+                        HistoryMetricRow(label: "fat_g", value: totals.fatG, decimals: 1)
+                        HistoryMetricRow(label: "sugar_g", value: totals.sugarG, decimals: 1)
+                        HistoryMetricRow(label: "sodium_mg", value: totals.sodiumMG, decimals: 0)
+                        HistoryMetricRow(label: "fiber_g", value: totals.fiberG, decimals: 1)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.blue.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                } else {
+                    Text("No daily totals loaded.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let preparation = store.healthKitExportPreparation {
+                    let readyCount = preparation.entries.reduce(0) { partial, entry in
+                        partial + entry.quantities.filter { $0.status == "ready" }.count
+                    }
+                    let skippedCount = preparation.entries.reduce(0) { partial, entry in
+                        partial + entry.quantities.filter { $0.status == "skipped" }.count
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("HealthKit export prep")
+                            .font(.headline)
+                        Text("Entries: \(preparation.entryCount)")
+                            .font(.footnote)
+                        Text("Ready quantities: \(readyCount) • Skipped: \(skippedCount)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.green.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Meal history")
+                        .font(.headline)
+                    if store.mealHistory.isEmpty {
+                        Text("No entries found for this day.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(store.mealHistory) { entry in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(entry.entryKind.uppercased()) • \(entry.mealID)")
+                                    .font(.subheadline.weight(.semibold))
+                                Text("Created: \(entry.createdAt)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let kcal = entry.nutrition.kcal {
+                                    Text("kcal: \(formatted(kcal, decimals: 0))")
+                                        .font(.caption.monospacedDigit())
+                                }
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.gray.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("History")
+        .task {
+            if store.mealHistory.isEmpty && !store.isRefreshingHistory {
+                await store.refreshHistoryAndTotals()
+            }
+        }
+    }
+
+    private func formatted(_ value: Double, decimals: Int) -> String {
+        String(format: "%.\(decimals)f", value)
+    }
+}
+
+private struct HistoryMetricRow: View {
+    let label: String
+    let value: Double
+    let decimals: Int
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.footnote.monospaced())
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(String(format: "%.\(decimals)f", value))
+                .font(.footnote.monospacedDigit())
+        }
+    }
+}
+
 private struct UserNutritionMetricRow: View {
     let metricKey: String
     let displayName: String

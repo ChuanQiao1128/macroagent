@@ -39,6 +39,7 @@ enum AnalyzeErrorState: Equatable {
 final class CaptureFlowStore: ObservableObject {
     @Published var serverURLText: String
     @Published var selectedCaptureMode: CaptureSourceMode
+    @Published var selectedHistoryDate: String
     @Published var selectedReferenceObjectHint: ReferenceObjectHint {
         didSet {
             applyReferenceHintSelection()
@@ -51,7 +52,12 @@ final class CaptureFlowStore: ObservableObject {
     @Published private(set) var latestAnalyzeError: AnalyzeErrorState?
     @Published private(set) var debugMessage: String
     @Published private(set) var isAnalyzing: Bool
+    @Published private(set) var isRefreshingHistory: Bool
     @Published private(set) var quickCorrectionSelections: [QuickCorrectionSelection]
+    @Published private(set) var mealHistory: [UserNutritionLedgerHistoryEntry]
+    @Published private(set) var dailyTotals: UserDailyNutritionTotalsResponse?
+    @Published private(set) var healthKitExportPreparation: HealthKitExportPreparationResponse?
+    @Published private(set) var historyLoadError: String?
 
     private let captureService: CaptureService
     private let metadataBuilder: MetadataBuilder
@@ -75,6 +81,7 @@ final class CaptureFlowStore: ObservableObject {
 
         let draft = captureService.initialDraft(referenceObjectHint: selectedReferenceObjectHint.metadataValue)
         self.captureDraft = draft
+        self.selectedHistoryDate = Self.localDateFromTimestamp(draft.captureMetadata.captureTimestamp)
         self.quickCorrectionSelections = []
         self.metadataPreview = Self.envelopeWithCorrections(
             metadataBuilder.buildRequestEnvelope(from: draft),
@@ -86,6 +93,11 @@ final class CaptureFlowStore: ObservableObject {
         self.latestAnalyzeError = nil
         self.debugMessage = "Ready"
         self.isAnalyzing = false
+        self.isRefreshingHistory = false
+        self.mealHistory = []
+        self.dailyTotals = nil
+        self.healthKitExportPreparation = nil
+        self.historyLoadError = nil
     }
 
     func captureNow() async {
@@ -99,6 +111,7 @@ final class CaptureFlowStore: ObservableObject {
                 referenceObjectHint: selectedReferenceObjectHint.metadataValue
             )
             captureDraft = draft
+            selectedHistoryDate = Self.localDateFromTimestamp(draft.captureMetadata.captureTimestamp)
             quickCorrectionSelections = []
             rebuildMetadataPreview()
             latestResponse = nil
@@ -138,6 +151,7 @@ final class CaptureFlowStore: ObservableObject {
             latestResponse = response
             latestAnalyzeError = nil
             debugMessage = "Received \(response.status.rawValue) response for request \(response.requestID)."
+            await refreshHistoryAndTotals()
         } catch {
             latestResponse = nil
             let errorState = classifyAnalyzeError(error)
@@ -157,6 +171,46 @@ final class CaptureFlowStore: ObservableObject {
         )
         debugMessage = "Applying quick correction: \(correctionID)=\(selectedOption)."
         await analyze()
+    }
+
+    func refreshHistoryAndTotals() async {
+        let trimmedDate = selectedHistoryDate.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedDate.isEmpty {
+            historyLoadError = "History date must not be empty."
+            return
+        }
+
+        isRefreshingHistory = true
+        historyLoadError = nil
+
+        do {
+            let client = currentAPIClient()
+            let historyResponse = try await client.fetchMealHistory(
+                userID: captureDraft.userID,
+                localDate: trimmedDate,
+                includeInactive: false,
+                limit: 50
+            )
+            let totalsResponse = try await client.fetchDailyTotals(
+                userID: captureDraft.userID,
+                localDate: trimmedDate
+            )
+            let exportPreparation = try await client.prepareHealthKitExport(
+                userID: captureDraft.userID,
+                localDate: trimmedDate
+            )
+            mealHistory = historyResponse.entries
+            dailyTotals = totalsResponse
+            healthKitExportPreparation = exportPreparation
+            historyLoadError = nil
+        } catch {
+            mealHistory = []
+            dailyTotals = nil
+            healthKitExportPreparation = nil
+            historyLoadError = error.localizedDescription
+        }
+
+        isRefreshingHistory = false
     }
 
     private func currentAPIClient() -> MacroAgentAPIClient {
@@ -268,5 +322,13 @@ final class CaptureFlowStore: ObservableObject {
         }
 
         return .unknown(error.localizedDescription)
+    }
+
+    private static func localDateFromTimestamp(_ timestamp: String) -> String {
+        let trimmed = timestamp.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count >= 10 {
+            return String(trimmed.prefix(10))
+        }
+        return ISO8601DateFormatter().string(from: Date()).prefix(10).description
     }
 }

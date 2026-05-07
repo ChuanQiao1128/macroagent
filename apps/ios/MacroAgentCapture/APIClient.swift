@@ -3,6 +3,20 @@ import Foundation
 protocol MacroAgentAPIClient {
     func healthCheck() async throws -> HealthResponse
     func analyzePhoto(_ requestEnvelope: AnalyzePhotoRequestEnvelope) async throws -> AnalyzePhotoResponse
+    func fetchMealHistory(
+        userID: String,
+        localDate: String?,
+        includeInactive: Bool,
+        limit: Int
+    ) async throws -> UserMealHistoryResponse
+    func fetchDailyTotals(
+        userID: String,
+        localDate: String
+    ) async throws -> UserDailyNutritionTotalsResponse
+    func prepareHealthKitExport(
+        userID: String,
+        localDate: String
+    ) async throws -> HealthKitExportPreparationResponse
 }
 
 struct LocalServerConfiguration: Equatable {
@@ -98,11 +112,101 @@ struct LocalServerAPIClient: MacroAgentAPIClient {
         }
     }
 
-    private func makeURL(path: String) throws -> URL {
+    func fetchMealHistory(
+        userID: String,
+        localDate: String?,
+        includeInactive: Bool,
+        limit: Int
+    ) async throws -> UserMealHistoryResponse {
+        var queryItems = [
+            URLQueryItem(name: "user_id", value: userID),
+            URLQueryItem(name: "include_inactive", value: includeInactive ? "true" : "false"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if let localDate {
+            queryItems.append(URLQueryItem(name: "local_date", value: localDate))
+        }
+
+        var request = URLRequest(
+            url: try makeURL(path: "/v1/users/history", queryItems: queryItems)
+        )
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await urlSession.data(for: request)
+        try validate(response: response)
+        do {
+            return try decoder.decode(UserMealHistoryResponse.self, from: data)
+        } catch {
+            throw APIClientError.invalidResponse("response body does not match UserMealHistoryResponse")
+        }
+    }
+
+    func fetchDailyTotals(
+        userID: String,
+        localDate: String
+    ) async throws -> UserDailyNutritionTotalsResponse {
+        let queryItems = [
+            URLQueryItem(name: "user_id", value: userID),
+            URLQueryItem(name: "local_date", value: localDate),
+        ]
+        var request = URLRequest(
+            url: try makeURL(path: "/v1/users/daily-totals", queryItems: queryItems)
+        )
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await urlSession.data(for: request)
+        try validate(response: response)
+        do {
+            return try decoder.decode(UserDailyNutritionTotalsResponse.self, from: data)
+        } catch {
+            throw APIClientError.invalidResponse(
+                "response body does not match UserDailyNutritionTotalsResponse"
+            )
+        }
+    }
+
+    func prepareHealthKitExport(
+        userID: String,
+        localDate: String
+    ) async throws -> HealthKitExportPreparationResponse {
+        let queryItems = [
+            URLQueryItem(name: "user_id", value: userID),
+            URLQueryItem(name: "local_date", value: localDate),
+        ]
+        var request = URLRequest(
+            url: try makeURL(path: "/v1/users/healthkit-export-prep", queryItems: queryItems)
+        )
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await urlSession.data(for: request)
+        try validate(response: response)
+        do {
+            return try decoder.decode(HealthKitExportPreparationResponse.self, from: data)
+        } catch {
+            throw APIClientError.invalidResponse(
+                "response body does not match HealthKitExportPreparationResponse"
+            )
+        }
+    }
+
+    private func makeURL(path: String, queryItems: [URLQueryItem] = []) throws -> URL {
         guard let url = configuration.endpoint(path: path) else {
             throw APIClientError.invalidBaseURL(configuration.baseURLString)
         }
-        return url
+        guard !queryItems.isEmpty else {
+            return url
+        }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw APIClientError.invalidBaseURL(configuration.baseURLString)
+        }
+        components.queryItems = queryItems
+        guard let withQuery = components.url else {
+            throw APIClientError.invalidBaseURL(configuration.baseURLString)
+        }
+        return withQuery
     }
 
     private func validate(response: URLResponse) throws {

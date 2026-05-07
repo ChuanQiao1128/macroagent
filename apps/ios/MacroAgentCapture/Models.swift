@@ -318,3 +318,155 @@ struct AnalyzePhotoResponse: Codable, Hashable {
 struct HealthResponse: Codable, Hashable {
     let status: String
 }
+
+struct UserNutritionValues: Codable, Hashable {
+    let kcal: Double?
+    let proteinG: Double?
+    let carbsG: Double?
+    let fatG: Double?
+    let sugarG: Double?
+    let sodiumMG: Double?
+    let fiberG: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case kcal
+        case proteinG = "protein_g"
+        case carbsG = "carbs_g"
+        case fatG = "fat_g"
+        case sugarG = "sugar_g"
+        case sodiumMG = "sodium_mg"
+        case fiberG = "fiber_g"
+    }
+}
+
+struct UserNutritionLedgerHistoryEntry: Codable, Hashable, Identifiable {
+    let entryID: String
+    let createdAt: String
+    let localDate: String
+    let userID: String
+    let mealID: String
+    let entryKind: String
+    let source: String
+    let supersedesEntryID: String?
+    let active: Bool
+    let traceID: String?
+    let note: String?
+    let nutrition: UserNutritionValues
+
+    var id: String { entryID }
+
+    enum CodingKeys: String, CodingKey {
+        case entryID = "entry_id"
+        case createdAt = "created_at"
+        case localDate = "local_date"
+        case userID = "user_id"
+        case mealID = "meal_id"
+        case entryKind = "entry_kind"
+        case source
+        case supersedesEntryID = "supersedes_entry_id"
+        case active
+        case traceID = "trace_id"
+        case note
+        case nutrition
+    }
+}
+
+struct UserMealHistoryResponse: Codable, Hashable {
+    let userID: String
+    let localDate: String?
+    let includeInactive: Bool
+    let limit: Int
+    let entryCount: Int
+    let entries: [UserNutritionLedgerHistoryEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case localDate = "local_date"
+        case includeInactive = "include_inactive"
+        case limit
+        case entryCount = "entry_count"
+        case entries
+    }
+}
+
+struct UserDailyNutritionTotalsResponse: Codable, Hashable {
+    let userID: String
+    let localDate: String
+    let mealCount: Int
+    let activeEntryCount: Int
+    let kcal: Double
+    let proteinG: Double
+    let carbsG: Double
+    let fatG: Double
+    let sugarG: Double
+    let sodiumMG: Double
+    let fiberG: Double
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case localDate = "local_date"
+        case mealCount = "meal_count"
+        case activeEntryCount = "active_entry_count"
+        case kcal
+        case proteinG = "protein_g"
+        case carbsG = "carbs_g"
+        case fatG = "fat_g"
+        case sugarG = "sugar_g"
+        case sodiumMG = "sodium_mg"
+        case fiberG = "fiber_g"
+    }
+}
+
+struct HealthKitPreparedQuantityResponse: Codable, Hashable {
+    let metricKey: String
+    let healthkitIdentifier: String
+    let unit: String
+    let status: String
+    let value: Double?
+    let skipReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case metricKey = "metric_key"
+        case healthkitIdentifier = "healthkit_identifier"
+        case unit
+        case status
+        case value
+        case skipReason = "skip_reason"
+    }
+}
+
+struct HealthKitPreparedEntryResponse: Codable, Hashable, Identifiable {
+    let entryID: String
+    let mealID: String
+    let userID: String
+    let localDate: String
+    let createdAt: String
+    let quantities: [HealthKitPreparedQuantityResponse]
+
+    var id: String { entryID }
+
+    enum CodingKeys: String, CodingKey {
+        case entryID = "entry_id"
+        case mealID = "meal_id"
+        case userID = "user_id"
+        case localDate = "local_date"
+        case createdAt = "created_at"
+        case quantities
+    }
+}
+
+struct HealthKitExportPreparationResponse: Codable, Hashable {
+    let userID: String
+    let localDate: String
+    let preparedAt: String
+    let entryCount: Int
+    let entries: [HealthKitPreparedEntryResponse]
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case localDate = "local_date"
+        case preparedAt = "prepared_at"
+        case entryCount = "entry_count"
+        case entries
+    }
+}

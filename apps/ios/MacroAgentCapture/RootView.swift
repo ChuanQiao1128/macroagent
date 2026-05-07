@@ -28,6 +28,13 @@ struct RootView: View {
             }
 
             NavigationStack {
+                HistoryView(store: store)
+            }
+            .tabItem {
+                Label("History", systemImage: "calendar")
+            }
+
+            NavigationStack {
                 MetadataPreviewView(store: store)
             }
             .tabItem {
