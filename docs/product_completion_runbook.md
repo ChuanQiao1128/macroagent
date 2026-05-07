@@ -1,0 +1,67 @@
+# MacroAgent v0.6 Product Completion Runbook
+
+This runbook turns the current product gaps into an unattended Codex CLI queue.
+It is intentionally sequential because later tasks depend on earlier backend and
+iOS contracts.
+
+## Queue
+
+The default queue is:
+
+1. `TASK-050` - Real Vision Job Provider and Image Intake
+2. `TASK-051` - Background Analysis Job Queue
+3. `TASK-052` - iOS User Result UI v1
+4. `TASK-053` - Correction Persistence and Personal Priors
+5. `TASK-054` - Image Privacy, Cache, and Retention Policy
+6. `TASK-055` - Real Food Evaluation Fixtures
+7. `TASK-056` - Dish Template and RAG Seed Layer
+8. `TASK-057` - User History, Daily Totals, and HealthKit Export Prep
+
+## Dry Run
+
+Use this to prove the script can find every brief before starting agents:
+
+```bash
+cd /Users/qc/Documents/Claude/Projects/NutritionAI
+V06_DRY_RUN=1 bash scripts/run_product_completion_until_done.sh
+```
+
+## Unattended Run
+
+Use this command when Codex CLI is installed and authenticated:
+
+```bash
+cd /Users/qc/Documents/Claude/Projects/NutritionAI
+CODEX_PROVIDER_MODE=chatgpt MAX_REPAIR_ATTEMPTS=3 UNATTENDED_MODE=branch AUTO_PUSH=1 \
+  caffeinate -dimsu bash scripts/run_product_completion_until_done.sh
+```
+
+The script writes progress to:
+
+```text
+.codex/runs/product_completion_v06_state.tsv
+```
+
+If the run stops, inspect the last `.codex/runs/` log, repair the failing task,
+and rerun the same command. Completed tasks are skipped unless
+`RERUN_COMPLETED=1` is set.
+
+## Single Task Run
+
+To run only part of the queue:
+
+```bash
+cd /Users/qc/Documents/Claude/Projects/NutritionAI
+CODEX_PROVIDER_MODE=chatgpt MAX_REPAIR_ATTEMPTS=3 UNATTENDED_MODE=branch AUTO_PUSH=1 \
+  bash scripts/run_product_completion_until_done.sh TASK-050 TASK-051
+```
+
+## Boundaries
+
+- iOS remains a capture and review client.
+- Backend remains the source of truth for vision orchestration, FDC matching,
+  portion estimation, and nutrition calculation.
+- LLM/model outputs must stay behind strict schemas.
+- Final calories and macros must come from deterministic recomputation.
+- Raw meal images must not be stored in trace artifacts, ledger rows, committed
+  fixtures, or agent run outputs.

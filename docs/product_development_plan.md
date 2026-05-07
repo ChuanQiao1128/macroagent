@@ -166,3 +166,27 @@ Keep building the iOS smoke app and backend around single-photo behavior:
 - API responses must carry quick corrections;
 - LLMs identify and explain uncertainty but do not calculate final macros;
 - multi-agent work should support offline review and hard cases, not every normal request.
+
+## v0.6 Product Completion Queue
+
+The next unattended queue is defined in
+[product_completion_runbook.md](product_completion_runbook.md).
+
+It covers the eight remaining product gaps:
+
+- real vision job provider and image intake;
+- background analysis job queue;
+- iOS user-facing result UI;
+- append-only correction persistence and personal priors;
+- image privacy, cache, and retention policy;
+- real food evaluation fixtures;
+- dish template and RAG seed layer;
+- user history, daily totals, and HealthKit export preparation.
+
+Run it from Terminal with:
+
+```bash
+cd /Users/qc/Documents/Claude/Projects/NutritionAI
+CODEX_PROVIDER_MODE=chatgpt MAX_REPAIR_ATTEMPTS=3 UNATTENDED_MODE=branch AUTO_PUSH=1 \
+  caffeinate -dimsu bash scripts/run_product_completion_until_done.sh
+```
