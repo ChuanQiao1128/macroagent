@@ -429,6 +429,14 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
             ON user_nutrition_ledger_entries(supersedes_entry_id);
         """,
     ),
+    _SchemaMigration(
+        version=5,
+        sql="""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_nutrition_entries_supersedes_unique
+            ON user_nutrition_ledger_entries(supersedes_entry_id)
+            WHERE supersedes_entry_id IS NOT NULL;
+        """,
+    ),
 )
 
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
@@ -1176,6 +1184,11 @@ def insert_user_nutrition_ledger_entry(
                 ),
             )
         except sqlite3.IntegrityError as exc:
+            message = str(exc)
+            if "user_nutrition_ledger_entries.supersedes_entry_id" in message:
+                raise ValueError(
+                    f"supersedes_entry_id is not active: {resolved_supersedes_entry_id}"
+                ) from exc
             raise ValueError(f"entry_id already exists: {resolved_entry_id}") from exc
 
     return resolved_entry_id
