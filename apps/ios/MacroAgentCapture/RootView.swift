@@ -14,17 +14,24 @@ struct RootView: View {
             }
 
             NavigationStack {
-                MetadataPreviewView(store: store)
+                ResultView(store: store)
             }
             .tabItem {
-                Label("Metadata", systemImage: "doc.text")
+                Label("Result", systemImage: "fork.knife.circle")
             }
 
             NavigationStack {
                 ResultDebugView(store: store)
             }
             .tabItem {
-                Label("Result", systemImage: "terminal")
+                Label("Debug", systemImage: "terminal")
+            }
+
+            NavigationStack {
+                MetadataPreviewView(store: store)
+            }
+            .tabItem {
+                Label("Metadata", systemImage: "doc.text")
             }
         }
     }
