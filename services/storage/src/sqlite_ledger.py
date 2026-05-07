@@ -28,8 +28,12 @@ from services.meal import (
 from services.meal import (
     PortionCorrectionPrior as MealPortionCorrectionPrior,
 )
+from services.meal.takeoff.trace import TraceEmitter, emit_stage_event
 from services.nutrition import parse_portion_range
 from services.nutrition.src.version_metadata import LEDGER_SCHEMA_VERSION
+
+EntryKind = Literal["accepted", "corrected"]
+EntrySource = Literal["deterministic", "manual_entry"]
 
 
 class StoredMealEstimate(BaseModel):
@@ -57,6 +61,119 @@ class DailyLedgerTotals(BaseModel):
     sodium_mg: MacroRange
     fiber_g: MacroRange
     macro_best_estimate: MacroBestEstimateSet
+
+
+class UserNutritionValues(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kcal: float | None = Field(default=None, ge=0)
+    protein_g: float | None = Field(default=None, ge=0)
+    carbs_g: float | None = Field(default=None, ge=0)
+    fat_g: float | None = Field(default=None, ge=0)
+    sugar_g: float | None = Field(default=None, ge=0)
+    sodium_mg: float | None = Field(default=None, ge=0)
+    fiber_g: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _validate_has_metric(self) -> UserNutritionValues:
+        if (
+            self.kcal is None
+            and self.protein_g is None
+            and self.carbs_g is None
+            and self.fat_g is None
+            and self.sugar_g is None
+            and self.sodium_mg is None
+            and self.fiber_g is None
+        ):
+            raise ValueError("at least one nutrition metric is required")
+        return self
+
+
+class UserNutritionLedgerEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entry_id: str = Field(..., min_length=1)
+    created_at: str = Field(..., min_length=1)
+    local_date: str = Field(..., min_length=10)
+    user_id: str = Field(..., min_length=1)
+    meal_id: str = Field(..., min_length=1)
+    entry_kind: EntryKind
+    source: EntrySource
+    supersedes_entry_id: str | None = None
+    active: bool
+    trace_id: str | None = None
+    note: str | None = None
+    nutrition: UserNutritionValues
+
+
+class UserDailyNutritionTotals(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_id: str = Field(..., min_length=1)
+    local_date: str = Field(..., min_length=10)
+    meal_count: int = Field(..., ge=0)
+    active_entry_count: int = Field(..., ge=0)
+    kcal: float = Field(..., ge=0)
+    protein_g: float = Field(..., ge=0)
+    carbs_g: float = Field(..., ge=0)
+    fat_g: float = Field(..., ge=0)
+    sugar_g: float = Field(..., ge=0)
+    sodium_mg: float = Field(..., ge=0)
+    fiber_g: float = Field(..., ge=0)
+
+
+class HealthKitPreparedQuantity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    metric_key: Literal[
+        "kcal",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "sugar_g",
+        "sodium_mg",
+        "fiber_g",
+    ]
+    healthkit_identifier: str = Field(..., min_length=1)
+    unit: str = Field(..., min_length=1)
+    status: Literal["ready", "skipped"]
+    value: float | None = Field(default=None, ge=0)
+    skip_reason: Literal["value_unavailable"] | None = None
+
+    @model_validator(mode="after")
+    def _validate_status_pairing(self) -> HealthKitPreparedQuantity:
+        if self.status == "ready":
+            if self.value is None:
+                raise ValueError("ready quantity requires value")
+            if self.skip_reason is not None:
+                raise ValueError("ready quantity must not include skip_reason")
+            return self
+        if self.skip_reason is None:
+            raise ValueError("skipped quantity requires skip_reason")
+        if self.value is not None:
+            raise ValueError("skipped quantity must not include value")
+        return self
+
+
+class HealthKitPreparedEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entry_id: str = Field(..., min_length=1)
+    meal_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    local_date: str = Field(..., min_length=10)
+    created_at: str = Field(..., min_length=1)
+    quantities: list[HealthKitPreparedQuantity] = Field(min_length=1)
+
+
+class HealthKitExportPreparation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_id: str = Field(..., min_length=1)
+    local_date: str = Field(..., min_length=10)
+    prepared_at: str = Field(..., min_length=1)
+    entry_count: int = Field(..., ge=0)
+    entries: list[HealthKitPreparedEntry] = Field(default_factory=list)
 
 
 class PortionCorrectionRecord(BaseModel):
@@ -270,6 +387,61 @@ _MIGRATIONS: tuple[_SchemaMigration, ...] = (
 _EXPORT_FORMAT = "macroagent.sqlite_ledger_backup"
 _EXPORT_SCHEMA_VERSION = LEDGER_SCHEMA_VERSION
 _LATEST_SCHEMA_VERSION = _MIGRATIONS[-1].version if _MIGRATIONS else 0
+_USER_HISTORY_TRACE_STAGE = "LedgerHistory"
+_HEALTHKIT_PREP_TRACE_STAGE = "HealthKitExportPreparation"
+_HEALTHKIT_QUANTITY_MAPPINGS: tuple[tuple[str, str, str], ...] = (
+    ("kcal", "HKQuantityTypeIdentifierDietaryEnergyConsumed", "kcal"),
+    ("protein_g", "HKQuantityTypeIdentifierDietaryProtein", "g"),
+    ("carbs_g", "HKQuantityTypeIdentifierDietaryCarbohydrates", "g"),
+    ("fat_g", "HKQuantityTypeIdentifierDietaryFatTotal", "g"),
+    ("sugar_g", "HKQuantityTypeIdentifierDietarySugar", "g"),
+    ("sodium_mg", "HKQuantityTypeIdentifierDietarySodium", "mg"),
+    ("fiber_g", "HKQuantityTypeIdentifierDietaryFiber", "g"),
+)
+_USER_NUTRITION_LEDGER_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS user_nutrition_ledger_entries (
+    entry_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    local_date TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    meal_id TEXT NOT NULL,
+    entry_kind TEXT NOT NULL
+        CHECK (entry_kind IN ('accepted', 'corrected')),
+    source TEXT NOT NULL
+        CHECK (source IN ('deterministic', 'manual_entry')),
+    supersedes_entry_id TEXT,
+    active INTEGER NOT NULL CHECK (active IN (0, 1)),
+    trace_id TEXT,
+    note TEXT,
+    kcal REAL CHECK (kcal IS NULL OR kcal >= 0),
+    protein_g REAL CHECK (protein_g IS NULL OR protein_g >= 0),
+    carbs_g REAL CHECK (carbs_g IS NULL OR carbs_g >= 0),
+    fat_g REAL CHECK (fat_g IS NULL OR fat_g >= 0),
+    sugar_g REAL CHECK (sugar_g IS NULL OR sugar_g >= 0),
+    sodium_mg REAL CHECK (sodium_mg IS NULL OR sodium_mg >= 0),
+    fiber_g REAL CHECK (fiber_g IS NULL OR fiber_g >= 0),
+    CHECK (
+        kcal IS NOT NULL
+        OR protein_g IS NOT NULL
+        OR carbs_g IS NOT NULL
+        OR fat_g IS NOT NULL
+        OR sugar_g IS NOT NULL
+        OR sodium_mg IS NOT NULL
+        OR fiber_g IS NOT NULL
+    ),
+    FOREIGN KEY (supersedes_entry_id)
+        REFERENCES user_nutrition_ledger_entries(entry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_user_date
+    ON user_nutrition_ledger_entries(user_id, local_date, created_at, entry_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_active
+    ON user_nutrition_ledger_entries(user_id, local_date, active);
+
+CREATE INDEX IF NOT EXISTS idx_user_nutrition_entries_supersedes
+    ON user_nutrition_ledger_entries(supersedes_entry_id);
+"""
 
 
 def initialize_sqlite_ledger(database_path: str | Path) -> None:
@@ -858,6 +1030,400 @@ def fetch_daily_totals(database_path: str | Path, local_date: str) -> DailyLedge
     return totals
 
 
+def insert_user_nutrition_ledger_entry(
+    database_path: str | Path,
+    *,
+    user_id: str,
+    meal_id: str,
+    entry_kind: EntryKind,
+    source: EntrySource = "deterministic",
+    local_date: str | None = None,
+    created_at: str | datetime | None = None,
+    supersedes_entry_id: str | None = None,
+    trace_id: str | None = None,
+    note: str | None = None,
+    kcal: float | None = None,
+    protein_g: float | None = None,
+    carbs_g: float | None = None,
+    fat_g: float | None = None,
+    sugar_g: float | None = None,
+    sodium_mg: float | None = None,
+    fiber_g: float | None = None,
+    entry_id: str | None = None,
+) -> str:
+    """Append one user nutrition ledger row and return its entry_id."""
+    resolved_user_id = _require_non_empty_text("user_id", user_id)
+    resolved_meal_id = _require_non_empty_text("meal_id", meal_id)
+    resolved_trace_id = _optional_non_empty_text(trace_id)
+    resolved_note = _optional_non_empty_text(note)
+    resolved_supersedes_entry_id = _optional_non_empty_text(supersedes_entry_id)
+    resolved_local_date_input = _validate_local_date(local_date) if local_date is not None else None
+
+    created_dt = _coerce_created_at(created_at)
+    created_at_iso = created_dt.isoformat(timespec="seconds")
+    resolved_entry_id = (
+        _require_non_empty_text("entry_id", entry_id)
+        if entry_id
+        else str(uuid.uuid4())
+    )
+
+    nutrition = UserNutritionValues(
+        kcal=kcal,
+        protein_g=protein_g,
+        carbs_g=carbs_g,
+        fat_g=fat_g,
+        sugar_g=sugar_g,
+        sodium_mg=sodium_mg,
+        fiber_g=fiber_g,
+    )
+
+    if resolved_supersedes_entry_id is not None and entry_kind != "corrected":
+        raise ValueError("supersedes_entry_id requires entry_kind='corrected'")
+    if resolved_supersedes_entry_id is None and entry_kind == "corrected":
+        raise ValueError("entry_kind='corrected' requires supersedes_entry_id")
+
+    resolved_local_date = resolved_local_date_input or created_dt.date().isoformat()
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+
+        if resolved_supersedes_entry_id is not None:
+            superseded_row = connection.execute(
+                """
+                SELECT user_id, active, meal_id, local_date
+                FROM user_nutrition_ledger_entries
+                WHERE entry_id = ?
+                """,
+                (resolved_supersedes_entry_id,),
+            ).fetchone()
+            if superseded_row is None:
+                raise ValueError(f"supersedes_entry_id not found: {resolved_supersedes_entry_id}")
+            if str(superseded_row["user_id"]) != resolved_user_id:
+                raise ValueError("supersedes_entry_id belongs to a different user_id")
+            if int(superseded_row["active"]) != 1:
+                raise ValueError(
+                    f"supersedes_entry_id is not active: {resolved_supersedes_entry_id}"
+                )
+            superseded_meal_id = str(superseded_row["meal_id"])
+            if superseded_meal_id != resolved_meal_id:
+                raise ValueError("corrected entry meal_id must match superseded entry meal_id")
+            superseded_local_date = str(superseded_row["local_date"])
+            if resolved_local_date_input is None:
+                resolved_local_date = superseded_local_date
+            elif resolved_local_date_input != superseded_local_date:
+                raise ValueError(
+                    "corrected entry local_date must match superseded entry local_date"
+                )
+            connection.execute(
+                """
+                UPDATE user_nutrition_ledger_entries
+                SET active = 0
+                WHERE entry_id = ?
+                """,
+                (resolved_supersedes_entry_id,),
+            )
+
+        try:
+            connection.execute(
+                """
+                INSERT INTO user_nutrition_ledger_entries (
+                    entry_id,
+                    created_at,
+                    local_date,
+                    user_id,
+                    meal_id,
+                    entry_kind,
+                    source,
+                    supersedes_entry_id,
+                    active,
+                    trace_id,
+                    note,
+                    kcal,
+                    protein_g,
+                    carbs_g,
+                    fat_g,
+                    sugar_g,
+                    sodium_mg,
+                    fiber_g
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    resolved_entry_id,
+                    created_at_iso,
+                    resolved_local_date,
+                    resolved_user_id,
+                    resolved_meal_id,
+                    entry_kind,
+                    source,
+                    resolved_supersedes_entry_id,
+                    1,
+                    resolved_trace_id,
+                    resolved_note,
+                    nutrition.kcal,
+                    nutrition.protein_g,
+                    nutrition.carbs_g,
+                    nutrition.fat_g,
+                    nutrition.sugar_g,
+                    nutrition.sodium_mg,
+                    nutrition.fiber_g,
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"entry_id already exists: {resolved_entry_id}") from exc
+
+    return resolved_entry_id
+
+
+def fetch_user_meal_history(
+    database_path: str | Path,
+    *,
+    user_id: str,
+    local_date: str | None = None,
+    include_inactive: bool = False,
+    limit: int = 100,
+    emitter: TraceEmitter | None = None,
+) -> tuple[UserNutritionLedgerEntry, ...]:
+    """Fetch user-scoped meal history rows with deterministic ordering."""
+    resolved_user_id = _require_non_empty_text("user_id", user_id)
+    resolved_local_date = _validate_local_date(local_date) if local_date is not None else None
+    if limit <= 0:
+        raise ValueError("limit must be greater than 0")
+
+    where_clauses = ["user_id = ?"]
+    params: list[object] = [resolved_user_id]
+    if resolved_local_date is not None:
+        where_clauses.append("local_date = ?")
+        params.append(resolved_local_date)
+    if not include_inactive:
+        where_clauses.append("active = 1")
+    params.append(limit)
+
+    query = f"""
+        SELECT
+            entry_id,
+            created_at,
+            local_date,
+            user_id,
+            meal_id,
+            entry_kind,
+            source,
+            supersedes_entry_id,
+            active,
+            trace_id,
+            note,
+            kcal,
+            protein_g,
+            carbs_g,
+            fat_g,
+            sugar_g,
+            sodium_mg,
+            fiber_g
+        FROM user_nutrition_ledger_entries
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY created_at DESC, entry_id DESC
+        LIMIT ?
+    """
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        rows = connection.execute(query, params).fetchall()
+
+    history = tuple(_build_user_nutrition_entry(row) for row in rows)
+    _emit_ledger_to_history_event(
+        emitter=emitter,
+        user_id=resolved_user_id,
+        local_date=resolved_local_date,
+        event_name="ledger.to_history",
+        payload={
+            "history_entry_count": len(history),
+            "include_inactive": include_inactive,
+            "limit": limit,
+        },
+    )
+    return history
+
+
+def fetch_user_daily_totals(
+    database_path: str | Path,
+    *,
+    user_id: str,
+    local_date: str,
+    emitter: TraceEmitter | None = None,
+) -> UserDailyNutritionTotals:
+    """Aggregate one user's daily totals from active deterministic ledger rows only."""
+    resolved_user_id = _require_non_empty_text("user_id", user_id)
+    resolved_local_date = _validate_local_date(local_date)
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*) AS active_entry_count,
+                COUNT(DISTINCT meal_id) AS meal_count,
+                COALESCE(SUM(kcal), 0) AS kcal,
+                COALESCE(SUM(protein_g), 0) AS protein_g,
+                COALESCE(SUM(carbs_g), 0) AS carbs_g,
+                COALESCE(SUM(fat_g), 0) AS fat_g,
+                COALESCE(SUM(sugar_g), 0) AS sugar_g,
+                COALESCE(SUM(sodium_mg), 0) AS sodium_mg,
+                COALESCE(SUM(fiber_g), 0) AS fiber_g
+            FROM user_nutrition_ledger_entries
+            WHERE user_id = ?
+              AND local_date = ?
+              AND active = 1
+              AND source = 'deterministic'
+              AND entry_kind IN ('accepted', 'corrected')
+            """,
+            (resolved_user_id, resolved_local_date),
+        ).fetchone()
+
+    totals = UserDailyNutritionTotals(
+        user_id=resolved_user_id,
+        local_date=resolved_local_date,
+        meal_count=int(row["meal_count"]) if row is not None else 0,
+        active_entry_count=int(row["active_entry_count"]) if row is not None else 0,
+        kcal=float(row["kcal"]) if row is not None else 0.0,
+        protein_g=float(row["protein_g"]) if row is not None else 0.0,
+        carbs_g=float(row["carbs_g"]) if row is not None else 0.0,
+        fat_g=float(row["fat_g"]) if row is not None else 0.0,
+        sugar_g=float(row["sugar_g"]) if row is not None else 0.0,
+        sodium_mg=float(row["sodium_mg"]) if row is not None else 0.0,
+        fiber_g=float(row["fiber_g"]) if row is not None else 0.0,
+    )
+    _emit_ledger_to_history_event(
+        emitter=emitter,
+        user_id=resolved_user_id,
+        local_date=resolved_local_date,
+        event_name="ledger.daily_totals_prepared",
+        payload={
+            "active_entry_count": totals.active_entry_count,
+            "meal_count": totals.meal_count,
+            "kcal": totals.kcal,
+            "protein_g": totals.protein_g,
+            "carbs_g": totals.carbs_g,
+            "fat_g": totals.fat_g,
+            "sugar_g": totals.sugar_g,
+            "sodium_mg": totals.sodium_mg,
+            "fiber_g": totals.fiber_g,
+        },
+    )
+    return totals
+
+
+def prepare_healthkit_export(
+    database_path: str | Path,
+    *,
+    user_id: str,
+    local_date: str,
+    emitter: TraceEmitter | None = None,
+) -> HealthKitExportPreparation:
+    """Prepare user/day deterministic ledger rows for HealthKit export."""
+    resolved_user_id = _require_non_empty_text("user_id", user_id)
+    resolved_local_date = _validate_local_date(local_date)
+
+    with _connect(_normalize_database_path(database_path)) as connection:
+        _apply_migrations(connection, target_version=_LATEST_SCHEMA_VERSION)
+        rows = connection.execute(
+            """
+            SELECT
+                entry_id,
+                created_at,
+                local_date,
+                user_id,
+                meal_id,
+                entry_kind,
+                source,
+                supersedes_entry_id,
+                active,
+                trace_id,
+                note,
+                kcal,
+                protein_g,
+                carbs_g,
+                fat_g,
+                sugar_g,
+                sodium_mg,
+                fiber_g
+            FROM user_nutrition_ledger_entries
+            WHERE user_id = ?
+              AND local_date = ?
+              AND active = 1
+              AND source = 'deterministic'
+              AND entry_kind IN ('accepted', 'corrected')
+            ORDER BY created_at ASC, entry_id ASC
+            """,
+            (resolved_user_id, resolved_local_date),
+        ).fetchall()
+
+    ready_count = 0
+    skipped_count = 0
+    prepared_entries: list[HealthKitPreparedEntry] = []
+    for row in rows:
+        history_entry = _build_user_nutrition_entry(row)
+        quantities: list[HealthKitPreparedQuantity] = []
+        for metric_key, identifier, unit in _HEALTHKIT_QUANTITY_MAPPINGS:
+            metric_value = getattr(history_entry.nutrition, metric_key)
+            if metric_value is None:
+                skipped_count += 1
+                quantities.append(
+                    HealthKitPreparedQuantity(
+                        metric_key=metric_key,
+                        healthkit_identifier=identifier,
+                        unit=unit,
+                        status="skipped",
+                        value=None,
+                        skip_reason="value_unavailable",
+                    )
+                )
+            else:
+                ready_count += 1
+                quantities.append(
+                    HealthKitPreparedQuantity(
+                        metric_key=metric_key,
+                        healthkit_identifier=identifier,
+                        unit=unit,
+                        status="ready",
+                        value=metric_value,
+                        skip_reason=None,
+                    )
+                )
+        prepared_entries.append(
+            HealthKitPreparedEntry(
+                entry_id=history_entry.entry_id,
+                meal_id=history_entry.meal_id,
+                user_id=history_entry.user_id,
+                local_date=history_entry.local_date,
+                created_at=history_entry.created_at,
+                quantities=quantities,
+            )
+        )
+
+    preparation = HealthKitExportPreparation(
+        user_id=resolved_user_id,
+        local_date=resolved_local_date,
+        prepared_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        entry_count=len(prepared_entries),
+        entries=prepared_entries,
+    )
+
+    if emitter is not None:
+        emit_stage_event(
+            emitter,
+            trace_id=f"healthkit-export:{resolved_user_id}:{resolved_local_date}",
+            stage=_HEALTHKIT_PREP_TRACE_STAGE,
+            event_name="healthkit.export_prepared",
+            payload={
+                "entry_count": preparation.entry_count,
+                "ready_quantity_count": ready_count,
+                "skipped_quantity_count": skipped_count,
+                "supported_quantity_count": len(_HEALTHKIT_QUANTITY_MAPPINGS),
+            },
+        )
+
+    return preparation
+
+
 def export_ledger_backup(database_path: str | Path) -> dict[str, object]:
     """Export full ledger contents as a deterministic JSON-safe dictionary.
 
@@ -1266,6 +1832,12 @@ def _apply_migrations(
             (migration.version, datetime.now().astimezone().isoformat(timespec="seconds")),
         )
 
+    _ensure_user_nutrition_ledger_schema(connection)
+
+
+def _ensure_user_nutrition_ledger_schema(connection: sqlite3.Connection) -> None:
+    connection.executescript(_USER_NUTRITION_LEDGER_SCHEMA_SQL)
+
 
 def _build_best_estimate_set_from_row(row: sqlite3.Row) -> MacroBestEstimateSet:
     return MacroBestEstimateSet(
@@ -1524,6 +2096,35 @@ def _build_portion_correction_record(row: sqlite3.Row) -> PortionCorrectionRecor
     )
 
 
+def _build_user_nutrition_entry(row: sqlite3.Row) -> UserNutritionLedgerEntry:
+    return UserNutritionLedgerEntry(
+        entry_id=str(row["entry_id"]),
+        created_at=str(row["created_at"]),
+        local_date=str(row["local_date"]),
+        user_id=str(row["user_id"]),
+        meal_id=str(row["meal_id"]),
+        entry_kind=str(row["entry_kind"]),
+        source=str(row["source"]),
+        supersedes_entry_id=(
+            str(row["supersedes_entry_id"])
+            if row["supersedes_entry_id"] is not None
+            else None
+        ),
+        active=bool(int(row["active"])),
+        trace_id=str(row["trace_id"]) if row["trace_id"] is not None else None,
+        note=str(row["note"]) if row["note"] is not None else None,
+        nutrition=UserNutritionValues(
+            kcal=float(row["kcal"]) if row["kcal"] is not None else None,
+            protein_g=float(row["protein_g"]) if row["protein_g"] is not None else None,
+            carbs_g=float(row["carbs_g"]) if row["carbs_g"] is not None else None,
+            fat_g=float(row["fat_g"]) if row["fat_g"] is not None else None,
+            sugar_g=float(row["sugar_g"]) if row["sugar_g"] is not None else None,
+            sodium_mg=float(row["sodium_mg"]) if row["sodium_mg"] is not None else None,
+            fiber_g=float(row["fiber_g"]) if row["fiber_g"] is not None else None,
+        ),
+    )
+
+
 def _build_prior_from_row(
     *,
     strategy: Literal["macro_entry", "normalized_component"],
@@ -1546,6 +2147,20 @@ def _build_prior_from_row(
 
 def _normalize_database_path(database_path: str | Path) -> str:
     return str(database_path)
+
+
+def _require_non_empty_text(name: str, value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{name} must not be empty")
+    return normalized
+
+
+def _optional_non_empty_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized if normalized else None
 
 
 def _coerce_created_at(value: str | datetime | None) -> datetime:
@@ -1672,6 +2287,30 @@ def _validate_local_date(local_date_value: str) -> str:
     return parsed.isoformat()
 
 
+def _emit_ledger_to_history_event(
+    *,
+    emitter: TraceEmitter | None,
+    user_id: str,
+    local_date: str | None,
+    event_name: str,
+    payload: dict[str, object],
+) -> None:
+    if emitter is None:
+        return
+    trace_scope = local_date if local_date is not None else "all-days"
+    emit_stage_event(
+        emitter,
+        trace_id=f"ledger-history:{user_id}:{trace_scope}",
+        stage=_USER_HISTORY_TRACE_STAGE,
+        event_name=event_name,
+        payload={
+            "user_id": user_id,
+            "local_date": local_date,
+            **payload,
+        },
+    )
+
+
 def _normalize_component_name(value: str) -> str:
     if not isinstance(value, str):
         return ""
@@ -1723,17 +2362,27 @@ def _connect(database_path: str) -> sqlite3.Connection:
 
 __all__ = [
     "DailyLedgerTotals",
+    "HealthKitExportPreparation",
+    "HealthKitPreparedEntry",
+    "HealthKitPreparedQuantity",
     "PortionCorrectionPrior",
     "PortionCorrectionPriors",
     "PortionCorrectionRecord",
     "StoredMealEstimate",
+    "UserDailyNutritionTotals",
+    "UserNutritionLedgerEntry",
+    "UserNutritionValues",
     "build_portion_correction_prior_resolver",
     "export_ledger_backup",
     "fetch_daily_totals",
     "fetch_meal_by_id",
     "fetch_portion_correction_by_id",
     "fetch_portion_correction_priors",
+    "fetch_user_daily_totals",
+    "fetch_user_meal_history",
     "initialize_sqlite_ledger",
     "insert_meal_estimate",
     "insert_portion_correction",
+    "insert_user_nutrition_ledger_entry",
+    "prepare_healthkit_export",
 ]
