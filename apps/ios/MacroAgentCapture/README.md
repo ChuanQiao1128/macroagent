@@ -16,6 +16,7 @@ For smoke testing on a real iPhone, the checked-in Xcode target includes:
 - Camera permission: `NSCameraUsageDescription`
 - Local network permission: `NSLocalNetworkUsageDescription` (for calling Mac LAN server)
 - Motion permission: `NSMotionUsageDescription` (used for pitch/roll near shutter time)
+- ARKit scene-depth support is sampled when the device supports it; no raw depth map is stored.
 - App Transport Security exception for local HTTP development traffic
 
 ## Real Device Requirement
@@ -36,7 +37,8 @@ Both modes produce:
 - `image_identity.width_px`
 - `image_identity.height_px`
 - `image_identity.byte_size`
-- v0.4 `capture_metadata` fields including motion, depth, OCR, barcode, and reference hint values
+- v0.6 `capture_metadata` fields including motion, AVFoundation depth, ARKit
+  scene-depth summary, OCR, barcode, and reference hint values
 
 ## Mock-First Backend Behavior (Explicit)
 
@@ -49,6 +51,7 @@ Both modes produce:
 - Raw image bytes are kept in memory only (`CaptureDraft.encodedImageBytes`).
 - Raw photo files are not written to the repository.
 - Raw image bytes are not serialized into metadata payload fields.
+- Raw ARKit depth maps and confidence maps are not serialized into metadata payload fields.
 - Barcode detection and OCR are executed locally on-device with Apple Vision.
 - `barcode_payload` is sent only when it passes a local safety filter.
 - `ocr_text_snippets` are trimmed to short food/package-oriented snippets and filtered to avoid likely email/phone/long-identifier values.

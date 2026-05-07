@@ -22,6 +22,7 @@ ScaleEvidenceType = Literal[
     "manual_selection",
     "phone_motion_calibration",
     "lidar_depth",
+    "arkit_scene_depth",
     "multi_shot_photogrammetry",
     "before_after_delta",
 ]
@@ -181,6 +182,7 @@ class ScaleEvidenceCandidate(StrictModel):
         "restaurant_source",
         "label_ocr",
         "manual",
+        "device_depth",
     ]
     bbox: list[float] | None = None
     known_dimension_mm: float | None = None
@@ -249,6 +251,7 @@ class PortionRange(StrictModel):
         "manual_user_selection",
         "personal_prior",
         "lidar_depth",
+        "arkit_scene_depth",
         "multi_shot",
         "before_after_delta",
     ]

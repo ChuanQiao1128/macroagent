@@ -51,6 +51,34 @@ struct CaptureScreenView: View {
                 KeyValueRow(label: "depth_available", value: "\(store.captureDraft.captureMetadata.depthAvailable)")
                 KeyValueRow(label: "depth_quality", value: store.captureDraft.captureMetadata.depthQuality.rawValue)
                 KeyValueRow(label: "lidar_available", value: "\(store.captureDraft.captureMetadata.lidarAvailable)")
+                KeyValueRow(
+                    label: "arkit_scene_depth_supported",
+                    value: "\(store.captureDraft.captureMetadata.arkitSceneDepthSupported)"
+                )
+                KeyValueRow(
+                    label: "arkit_smoothed_scene_depth_supported",
+                    value: "\(store.captureDraft.captureMetadata.arkitSmoothedSceneDepthSupported)"
+                )
+                KeyValueRow(
+                    label: "arkit_depth_available",
+                    value: "\(store.captureDraft.captureMetadata.arkitDepthAvailable)"
+                )
+                KeyValueRow(
+                    label: "arkit_depth_quality",
+                    value: store.captureDraft.captureMetadata.arkitDepthQuality.rawValue
+                )
+                KeyValueRow(
+                    label: "arkit_depth_map_size",
+                    value: arkitDepthMapSize(store.captureDraft.captureMetadata)
+                )
+                KeyValueRow(
+                    label: "arkit_confidence_coverage",
+                    value: formattedOptional(store.captureDraft.captureMetadata.arkitConfidenceCoverage)
+                )
+                KeyValueRow(
+                    label: "camera_intrinsics_available",
+                    value: "\(store.captureDraft.captureMetadata.cameraIntrinsicsAvailable)"
+                )
                 KeyValueRow(label: "barcode_payload", value: store.captureDraft.captureMetadata.barcodePayload ?? "<none>")
                 KeyValueRow(
                     label: "ocr_text_snippets",
@@ -116,6 +144,24 @@ struct CaptureScreenView: View {
 
     private func formatted(_ value: Double) -> String {
         String(format: "%.1f", value)
+    }
+
+    private func formattedOptional(_ value: Double?) -> String {
+        guard let value else {
+            return "<none>"
+        }
+
+        return String(format: "%.2f", value)
+    }
+
+    private func arkitDepthMapSize(_ metadata: CaptureMetadata) -> String {
+        guard let width = metadata.arkitDepthMapWidthPX,
+              let height = metadata.arkitDepthMapHeightPX
+        else {
+            return "<none>"
+        }
+
+        return "\(width)x\(height)"
     }
 }
 

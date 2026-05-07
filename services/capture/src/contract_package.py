@@ -22,6 +22,14 @@ class CaptureQualitySummary(StrictModel):
     depth_available: bool
     depth_quality: Literal["none", "low", "medium", "high", "unknown"]
     lidar_available: bool
+    arkit_scene_depth_supported: bool = False
+    arkit_smoothed_scene_depth_supported: bool = False
+    arkit_depth_available: bool = False
+    arkit_depth_quality: Literal["none", "low", "medium", "high", "unknown"] = "none"
+    arkit_depth_map_width_px: int | None = Field(default=None, gt=0)
+    arkit_depth_map_height_px: int | None = Field(default=None, gt=0)
+    arkit_confidence_coverage: float | None = Field(default=None, ge=0, le=1)
+    camera_intrinsics_available: bool = False
     camera_position: Literal["front", "back", "unknown"]
     orientation: Literal[
         "portrait",
@@ -121,6 +129,14 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "depth_available": True,
             "depth_quality": "high",
             "lidar_available": True,
+            "arkit_scene_depth_supported": True,
+            "arkit_smoothed_scene_depth_supported": True,
+            "arkit_depth_available": True,
+            "arkit_depth_quality": "high",
+            "arkit_depth_map_width_px": 256,
+            "arkit_depth_map_height_px": 192,
+            "arkit_confidence_coverage": 0.86,
+            "camera_intrinsics_available": True,
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": ["brown rice", "grilled salmon"],
@@ -151,6 +167,14 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "depth_available": False,
             "depth_quality": "none",
             "lidar_available": False,
+            "arkit_scene_depth_supported": False,
+            "arkit_smoothed_scene_depth_supported": False,
+            "arkit_depth_available": False,
+            "arkit_depth_quality": "none",
+            "arkit_depth_map_width_px": None,
+            "arkit_depth_map_height_px": None,
+            "arkit_confidence_coverage": None,
+            "camera_intrinsics_available": False,
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": [],
@@ -181,6 +205,14 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "depth_available": False,
             "depth_quality": "low",
             "lidar_available": False,
+            "arkit_scene_depth_supported": False,
+            "arkit_smoothed_scene_depth_supported": False,
+            "arkit_depth_available": False,
+            "arkit_depth_quality": "none",
+            "arkit_depth_map_width_px": None,
+            "arkit_depth_map_height_px": None,
+            "arkit_confidence_coverage": None,
+            "camera_intrinsics_available": False,
             "barcode_payload": "049000042511",
             "barcode_payload_safe": True,
             "ocr_text_snippets": ["Nutrition Facts", "Serving size 55g"],
@@ -211,6 +243,14 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "depth_available": False,
             "depth_quality": "none",
             "lidar_available": False,
+            "arkit_scene_depth_supported": False,
+            "arkit_smoothed_scene_depth_supported": False,
+            "arkit_depth_available": False,
+            "arkit_depth_quality": "none",
+            "arkit_depth_map_width_px": None,
+            "arkit_depth_map_height_px": None,
+            "arkit_confidence_coverage": None,
+            "camera_intrinsics_available": False,
             "barcode_payload": None,
             "barcode_payload_safe": False,
             "ocr_text_snippets": [],
@@ -250,13 +290,21 @@ def export_contract_package(base_dir: Path | None = None) -> None:
             "depth_available": True,
             "depth_quality": "high",
             "lidar_available": True,
+            "arkit_scene_depth_supported": True,
+            "arkit_smoothed_scene_depth_supported": True,
+            "arkit_depth_available": True,
+            "arkit_depth_quality": "high",
+            "arkit_depth_map_width_px": 256,
+            "arkit_depth_map_height_px": 192,
+            "arkit_confidence_coverage": 0.86,
+            "camera_intrinsics_available": True,
             "camera_position": "back",
             "orientation": "portrait",
             "pitch_degrees": 1.2,
             "roll_degrees": -0.4,
             "lens_hint": "wide",
         },
-        "scale_evidence_ids": ["scale:lidar_depth:1", "scale:reference_object:1"],
+        "scale_evidence_ids": artifact_scale_evidence_ids(top_down_depth_request),
         "barcode_detected": False,
         "barcode_value_stored": False,
         "ocr_detected": True,

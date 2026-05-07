@@ -84,6 +84,11 @@ def test_build_sanitized_capture_trace_artifact_contains_only_safe_debuggable_fi
         "depth_available": True,
         "depth_quality": "medium",
         "lidar_available": True,
+        "arkit_scene_depth_supported": False,
+        "arkit_smoothed_scene_depth_supported": False,
+        "arkit_depth_available": False,
+        "arkit_depth_quality": "none",
+        "camera_intrinsics_available": False,
         "camera_position": "back",
         "orientation": "portrait",
         "pitch_degrees": 2.5,
@@ -167,6 +172,42 @@ def test_build_sanitized_capture_trace_artifact_stores_barcode_value_only_when_s
     assert unsafe["barcode_value_stored"] is False
     assert safe["barcode_detected"] is True
     assert safe["barcode_value_stored"] is True
+
+
+def test_build_sanitized_capture_trace_artifact_keeps_only_derived_arkit_depth_summary() -> None:
+    payload = _request_payload()
+    payload["capture_metadata"].update(
+        {
+            "arkit_scene_depth_supported": True,
+            "arkit_smoothed_scene_depth_supported": True,
+            "arkit_depth_available": True,
+            "arkit_depth_quality": "medium",
+            "arkit_depth_map_width_px": 256,
+            "arkit_depth_map_height_px": 192,
+            "arkit_confidence_coverage": 0.7567,
+            "camera_intrinsics_available": True,
+        }
+    )
+    request = PhotoAnalyzeRequest.model_validate(payload)
+    scale_evidence = resolve_scale_evidence_from_capture(
+        trace_id="trace-capture-arkit",
+        capture_metadata=request.capture_metadata,
+    )
+
+    artifact = build_sanitized_capture_trace_artifact(
+        request=request,
+        scale_evidence=scale_evidence,
+    )
+
+    summary = artifact["capture_quality_summary"]
+    assert summary["arkit_depth_available"] is True
+    assert summary["arkit_depth_quality"] == "medium"
+    assert summary["arkit_depth_map_width_px"] == 256
+    assert summary["arkit_depth_map_height_px"] == 192
+    assert summary["arkit_confidence_coverage"] == 0.757
+    assert "scale:arkit_scene_depth:1" in artifact["scale_evidence_ids"]
+    assert "arkit_depth_map" not in artifact
+    assert "arkit_confidence_map" not in artifact
 
 
 @pytest.mark.parametrize(

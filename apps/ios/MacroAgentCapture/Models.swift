@@ -101,6 +101,14 @@ struct CaptureMetadata: Codable, Hashable {
     let depthAvailable: Bool
     let depthQuality: DepthQuality
     let lidarAvailable: Bool
+    let arkitSceneDepthSupported: Bool
+    let arkitSmoothedSceneDepthSupported: Bool
+    let arkitDepthAvailable: Bool
+    let arkitDepthQuality: DepthQuality
+    let arkitDepthMapWidthPX: Int?
+    let arkitDepthMapHeightPX: Int?
+    let arkitConfidenceCoverage: Double?
+    let cameraIntrinsicsAvailable: Bool
     let barcodePayload: String?
     let barcodePayloadSafe: Bool
     let ocrTextSnippets: [String]
@@ -119,6 +127,14 @@ struct CaptureMetadata: Codable, Hashable {
         case depthAvailable = "depth_available"
         case depthQuality = "depth_quality"
         case lidarAvailable = "lidar_available"
+        case arkitSceneDepthSupported = "arkit_scene_depth_supported"
+        case arkitSmoothedSceneDepthSupported = "arkit_smoothed_scene_depth_supported"
+        case arkitDepthAvailable = "arkit_depth_available"
+        case arkitDepthQuality = "arkit_depth_quality"
+        case arkitDepthMapWidthPX = "arkit_depth_map_width_px"
+        case arkitDepthMapHeightPX = "arkit_depth_map_height_px"
+        case arkitConfidenceCoverage = "arkit_confidence_coverage"
+        case cameraIntrinsicsAvailable = "camera_intrinsics_available"
         case barcodePayload = "barcode_payload"
         case barcodePayloadSafe = "barcode_payload_safe"
         case ocrTextSnippets = "ocr_text_snippets"

@@ -38,6 +38,14 @@ class DeviceCaptureMetadata(StrictModel):
     depth_available: bool
     depth_quality: Literal["none", "low", "medium", "high", "unknown"]
     lidar_available: bool
+    arkit_scene_depth_supported: bool = False
+    arkit_smoothed_scene_depth_supported: bool = False
+    arkit_depth_available: bool = False
+    arkit_depth_quality: Literal["none", "low", "medium", "high", "unknown"] = "none"
+    arkit_depth_map_width_px: int | None = Field(default=None, gt=0)
+    arkit_depth_map_height_px: int | None = Field(default=None, gt=0)
+    arkit_confidence_coverage: float | None = Field(default=None, ge=0, le=1)
+    camera_intrinsics_available: bool = False
     barcode_payload: str | None = None
     barcode_payload_safe: bool = False
     ocr_text_snippets: list[str] = Field(default_factory=list)

@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import ARKit
 import CoreMotion
 import CryptoKit
 import Foundation
@@ -80,6 +81,159 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let motionSnapshot: MotionSnapshot?
     }
 
+    private struct ARKitDepthSnapshot {
+        let sceneDepthSupported: Bool
+        let smoothedSceneDepthSupported: Bool
+        let lidarAvailable: Bool
+        let depthAvailable: Bool
+        let depthQuality: DepthQuality
+        let depthMapWidthPX: Int?
+        let depthMapHeightPX: Int?
+        let confidenceCoverage: Double?
+        let cameraIntrinsicsAvailable: Bool
+
+        static let unsupported = ARKitDepthSnapshot(
+            sceneDepthSupported: false,
+            smoothedSceneDepthSupported: false,
+            lidarAvailable: false,
+            depthAvailable: false,
+            depthQuality: .none,
+            depthMapWidthPX: nil,
+            depthMapHeightPX: nil,
+            confidenceCoverage: nil,
+            cameraIntrinsicsAvailable: false
+        )
+    }
+
+    private final class ARKitDepthSnapshotSampler: NSObject, ARSessionDelegate, @unchecked Sendable {
+        private let session = ARSession()
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<ARKitDepthSnapshot, Never>?
+        private var latestFrame: ARFrame?
+        private var finished = false
+        private let sceneDepthSupported: Bool
+        private let smoothedSceneDepthSupported: Bool
+
+        private init(sceneDepthSupported: Bool, smoothedSceneDepthSupported: Bool) {
+            self.sceneDepthSupported = sceneDepthSupported
+            self.smoothedSceneDepthSupported = smoothedSceneDepthSupported
+            super.init()
+        }
+
+        static func capture(timeoutNanoseconds: UInt64 = 650_000_000) async -> ARKitDepthSnapshot {
+            guard ARWorldTrackingConfiguration.isSupported else {
+                return .unsupported
+            }
+
+            let sceneDepthSupported = ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+            let smoothedSceneDepthSupported = ARWorldTrackingConfiguration
+                .supportsFrameSemantics(.smoothedSceneDepth)
+            guard sceneDepthSupported || smoothedSceneDepthSupported else {
+                return ARKitDepthSnapshot(
+                    sceneDepthSupported: false,
+                    smoothedSceneDepthSupported: false,
+                    lidarAvailable: DeviceCapabilities.hasLiDARCamera(),
+                    depthAvailable: false,
+                    depthQuality: .none,
+                    depthMapWidthPX: nil,
+                    depthMapHeightPX: nil,
+                    confidenceCoverage: nil,
+                    cameraIntrinsicsAvailable: false
+                )
+            }
+
+            let sampler = ARKitDepthSnapshotSampler(
+                sceneDepthSupported: sceneDepthSupported,
+                smoothedSceneDepthSupported: smoothedSceneDepthSupported
+            )
+            return await sampler.capture(timeoutNanoseconds: timeoutNanoseconds)
+        }
+
+        private func capture(timeoutNanoseconds: UInt64) async -> ARKitDepthSnapshot {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                self.continuation = continuation
+                lock.unlock()
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else {
+                        return
+                    }
+
+                    let configuration = ARWorldTrackingConfiguration()
+                    if smoothedSceneDepthSupported {
+                        configuration.frameSemantics.insert(.smoothedSceneDepth)
+                    } else if sceneDepthSupported {
+                        configuration.frameSemantics.insert(.sceneDepth)
+                    }
+                    session.delegate = self
+                    session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+                }
+
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    await self?.finishFromTimeout()
+                }
+            }
+        }
+
+        @MainActor
+        private func finishFromTimeout() {
+            finish(with: snapshot(from: latestFrame))
+        }
+
+        private func finish(with snapshot: ARKitDepthSnapshot) {
+            lock.lock()
+            guard !finished else {
+                lock.unlock()
+                return
+            }
+            finished = true
+            let continuation = continuation
+            self.continuation = nil
+            lock.unlock()
+
+            DispatchQueue.main.async { [weak self] in
+                self?.session.pause()
+                self?.session.delegate = nil
+            }
+            continuation?.resume(returning: snapshot)
+        }
+
+        func session(_ session: ARSession, didUpdate frame: ARFrame) {
+            latestFrame = frame
+            let snapshot = snapshot(from: frame)
+            if snapshot.depthAvailable {
+                finish(with: snapshot)
+            }
+        }
+
+        private func snapshot(from frame: ARFrame?) -> ARKitDepthSnapshot {
+            let depthData = frame?.smoothedSceneDepth ?? frame?.sceneDepth
+            let depthMap = depthData?.depthMap
+            let width = depthMap.map(CVPixelBufferGetWidth)
+            let height = depthMap.map(CVPixelBufferGetHeight)
+            let confidenceCoverage = ARKitConfidenceEstimator.mediumOrHighCoverage(
+                from: depthData?.confidenceMap
+            )
+
+            return ARKitDepthSnapshot(
+                sceneDepthSupported: sceneDepthSupported,
+                smoothedSceneDepthSupported: smoothedSceneDepthSupported,
+                lidarAvailable: DeviceCapabilities.hasLiDARCamera(),
+                depthAvailable: depthData != nil,
+                depthQuality: ARKitDepthQualityEstimator.from(
+                    depthMap: depthMap,
+                    confidenceCoverage: confidenceCoverage
+                ),
+                depthMapWidthPX: width,
+                depthMapHeightPX: height,
+                confidenceCoverage: confidenceCoverage,
+                cameraIntrinsicsAvailable: frame != nil
+            )
+        }
+    }
+
     private let defaultUserID: String
     private let sessionQueue = DispatchQueue(label: "com.macroagent.capture.session")
     private let continuationLock = NSLock()
@@ -139,6 +293,7 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
         let depthAvailable = capturedPhoto.photo.depthData != nil
         let depthQuality = DepthQualityEstimator.from(depthData: capturedPhoto.photo.depthData)
         let visionMetadata = VisionMetadataExtractor.extract(from: encodedBytes)
+        let arDepthSnapshot = await ARKitDepthSnapshotSampler.capture()
 
         let metadata = CaptureMetadata(
             deviceModel: DeviceIdentity.hardwareModelIdentifier(),
@@ -151,7 +306,15 @@ final class AVFoundationCaptureService: NSObject, CaptureService {
             lensHint: LensHintResolver.resolve(for: runtime.camera.deviceType),
             depthAvailable: depthAvailable,
             depthQuality: depthQuality,
-            lidarAvailable: runtime.lidarAvailable,
+            lidarAvailable: runtime.lidarAvailable || arDepthSnapshot.lidarAvailable,
+            arkitSceneDepthSupported: arDepthSnapshot.sceneDepthSupported,
+            arkitSmoothedSceneDepthSupported: arDepthSnapshot.smoothedSceneDepthSupported,
+            arkitDepthAvailable: arDepthSnapshot.depthAvailable,
+            arkitDepthQuality: arDepthSnapshot.depthQuality,
+            arkitDepthMapWidthPX: arDepthSnapshot.depthMapWidthPX,
+            arkitDepthMapHeightPX: arDepthSnapshot.depthMapHeightPX,
+            arkitConfidenceCoverage: arDepthSnapshot.confidenceCoverage,
+            cameraIntrinsicsAvailable: arDepthSnapshot.cameraIntrinsicsAvailable,
             barcodePayload: visionMetadata.barcodePayload,
             barcodePayloadSafe: visionMetadata.barcodePayloadSafe,
             ocrTextSnippets: visionMetadata.ocrTextSnippets,
@@ -705,6 +868,67 @@ private enum DepthQualityEstimator {
     }
 }
 
+private enum ARKitDepthQualityEstimator {
+    static func from(depthMap: CVPixelBuffer?, confidenceCoverage: Double?) -> DepthQuality {
+        guard let depthMap else {
+            return .none
+        }
+
+        let width = CVPixelBufferGetWidth(depthMap)
+        let height = CVPixelBufferGetHeight(depthMap)
+        guard width > 0, height > 0 else {
+            return .unknown
+        }
+
+        let shorterSide = min(width, height)
+        if shorterSide >= 192, (confidenceCoverage ?? 0.70) >= 0.70 {
+            return .high
+        }
+
+        if shorterSide >= 160, (confidenceCoverage ?? 0.45) >= 0.45 {
+            return .medium
+        }
+
+        return .low
+    }
+}
+
+private enum ARKitConfidenceEstimator {
+    static func mediumOrHighCoverage(from confidenceMap: CVPixelBuffer?) -> Double? {
+        guard let confidenceMap else {
+            return nil
+        }
+
+        CVPixelBufferLockBaseAddress(confidenceMap, .readOnly)
+        defer {
+            CVPixelBufferUnlockBaseAddress(confidenceMap, .readOnly)
+        }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(confidenceMap) else {
+            return nil
+        }
+
+        let width = CVPixelBufferGetWidth(confidenceMap)
+        let height = CVPixelBufferGetHeight(confidenceMap)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(confidenceMap)
+        guard width > 0, height > 0, bytesPerRow >= width else {
+            return nil
+        }
+
+        var usablePixels = 0
+        let totalPixels = width * height
+        let rawPointer = baseAddress.assumingMemoryBound(to: UInt8.self)
+        for row in 0..<height {
+            let rowPointer = rawPointer.advanced(by: row * bytesPerRow)
+            for column in 0..<width where rowPointer[column] >= 1 {
+                usablePixels += 1
+            }
+        }
+
+        return Double(usablePixels) / Double(totalPixels)
+    }
+}
+
 private enum LensHintResolver {
     static func resolve(for deviceType: AVCaptureDevice.DeviceType) -> String {
         switch deviceType {
@@ -850,6 +1074,14 @@ private enum SampleCaptureFactory {
             depthAvailable: false,
             depthQuality: .none,
             lidarAvailable: false,
+            arkitSceneDepthSupported: false,
+            arkitSmoothedSceneDepthSupported: false,
+            arkitDepthAvailable: false,
+            arkitDepthQuality: .none,
+            arkitDepthMapWidthPX: nil,
+            arkitDepthMapHeightPX: nil,
+            arkitConfidenceCoverage: nil,
+            cameraIntrinsicsAvailable: false,
             barcodePayload: visionMetadata.barcodePayload,
             barcodePayloadSafe: visionMetadata.barcodePayloadSafe,
             ocrTextSnippets: visionMetadata.ocrTextSnippets,

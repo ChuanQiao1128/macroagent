@@ -3,6 +3,78 @@
     "CaptureQualitySummary": {
       "additionalProperties": false,
       "properties": {
+        "arkit_confidence_coverage": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arkit Confidence Coverage"
+        },
+        "arkit_depth_available": {
+          "default": false,
+          "title": "Arkit Depth Available",
+          "type": "boolean"
+        },
+        "arkit_depth_map_height_px": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arkit Depth Map Height Px"
+        },
+        "arkit_depth_map_width_px": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arkit Depth Map Width Px"
+        },
+        "arkit_depth_quality": {
+          "default": "none",
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "unknown"
+          ],
+          "title": "Arkit Depth Quality",
+          "type": "string"
+        },
+        "arkit_scene_depth_supported": {
+          "default": false,
+          "title": "Arkit Scene Depth Supported",
+          "type": "boolean"
+        },
+        "arkit_smoothed_scene_depth_supported": {
+          "default": false,
+          "title": "Arkit Smoothed Scene Depth Supported",
+          "type": "boolean"
+        },
+        "camera_intrinsics_available": {
+          "default": false,
+          "title": "Camera Intrinsics Available",
+          "type": "boolean"
+        },
         "camera_position": {
           "enum": [
             "front",

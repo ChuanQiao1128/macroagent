@@ -52,11 +52,24 @@ def build_sanitized_capture_trace_artifact(
         "depth_available": metadata.depth_available,
         "depth_quality": metadata.depth_quality,
         "lidar_available": metadata.lidar_available,
+        "arkit_scene_depth_supported": metadata.arkit_scene_depth_supported,
+        "arkit_smoothed_scene_depth_supported": metadata.arkit_smoothed_scene_depth_supported,
+        "arkit_depth_available": metadata.arkit_depth_available,
+        "arkit_depth_quality": metadata.arkit_depth_quality,
+        "camera_intrinsics_available": metadata.camera_intrinsics_available,
         "camera_position": metadata.camera_position,
         "orientation": metadata.orientation,
         "pitch_degrees": round(metadata.pitch_degrees, 1),
         "roll_degrees": round(metadata.roll_degrees, 1),
     }
+    if metadata.arkit_depth_map_width_px and metadata.arkit_depth_map_height_px:
+        capture_quality_summary["arkit_depth_map_width_px"] = metadata.arkit_depth_map_width_px
+        capture_quality_summary["arkit_depth_map_height_px"] = metadata.arkit_depth_map_height_px
+    if metadata.arkit_confidence_coverage is not None:
+        capture_quality_summary["arkit_confidence_coverage"] = round(
+            metadata.arkit_confidence_coverage,
+            3,
+        )
     if metadata.lens_hint:
         capture_quality_summary["lens_hint"] = metadata.lens_hint
 

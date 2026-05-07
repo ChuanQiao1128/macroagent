@@ -50,6 +50,27 @@ from `analyze_photo_facade_response`:
   - Suggested mapping: unsupported/off=`none`, noisy=`low`, usable=`medium`, strong=`high`, indeterminate=`unknown`.
 - `lidar_available`
   - Source: `ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)` or `.smoothedSceneDepth`.
+- `arkit_scene_depth_supported`
+  - Source: `ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)`.
+  - Indicates device/runtime support only; it does not prove the current capture has usable depth.
+- `arkit_smoothed_scene_depth_supported`
+  - Source: `ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth)`.
+  - Prefer smoothed scene depth for scale evidence when supported.
+- `arkit_depth_available`
+  - Source: current `ARFrame.sceneDepth` or `ARFrame.smoothedSceneDepth` during the capture window.
+  - True only when the app saw a derived ARKit depth frame for this request.
+- `arkit_depth_quality`
+  - Source: app policy from ARKit depth map dimensions and confidence coverage.
+  - Suggested mapping: no frame=`none`, low coverage=`low`, usable=`medium`, strong=`high`.
+- `arkit_depth_map_width_px` / `arkit_depth_map_height_px`
+  - Source: dimensions of the ephemeral ARKit depth map.
+  - Send dimensions only, never the raw depth map.
+- `arkit_confidence_coverage`
+  - Source: share of ARKit confidence-map pixels at medium/high confidence.
+  - This is a derived scalar in `[0, 1]`; do not send confidence-map pixels.
+- `camera_intrinsics_available`
+  - Source: current `ARFrame.camera.intrinsics` availability.
+  - Required before ARKit scene depth may be treated as high-confidence scale evidence.
 - `barcode_payload`
   - Source: local Vision barcode detection (`VNDetectBarcodesRequest`) string value.
   - Do not send raw image bytes.

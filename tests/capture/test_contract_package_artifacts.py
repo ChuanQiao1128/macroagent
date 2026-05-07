@@ -130,5 +130,11 @@ def test_ios_field_guide_covers_required_iphone_api_mappings() -> None:
         "depth_available",
         "depth_quality",
         "lidar_available",
+        "arkit_scene_depth_supported",
+        "arkit_smoothed_scene_depth_supported",
+        "arkit_depth_available",
+        "arkit_depth_quality",
+        "arkit_confidence_coverage",
+        "camera_intrinsics_available",
     ):
         assert expected_phrase in guide

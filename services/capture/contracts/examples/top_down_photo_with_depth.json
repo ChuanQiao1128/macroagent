@@ -62,6 +62,14 @@
     "barcode_detected": false,
     "barcode_value_stored": false,
     "capture_quality_summary": {
+      "arkit_confidence_coverage": 0.86,
+      "arkit_depth_available": true,
+      "arkit_depth_map_height_px": 192,
+      "arkit_depth_map_width_px": 256,
+      "arkit_depth_quality": "high",
+      "arkit_scene_depth_supported": true,
+      "arkit_smoothed_scene_depth_supported": true,
+      "camera_intrinsics_available": true,
       "camera_position": "back",
       "depth_available": true,
       "depth_quality": "high",
@@ -83,14 +91,23 @@
     "ocr_text_stored": false,
     "prompt_version": "vision_prompt_placeholder",
     "scale_evidence_ids": [
+      "scale:arkit_scene_depth:1",
       "scale:lidar_depth:1",
       "scale:reference_object:1"
     ]
   },
   "photo_analyze_request": {
     "capture_metadata": {
+      "arkit_confidence_coverage": 0.86,
+      "arkit_depth_available": true,
+      "arkit_depth_map_height_px": 192,
+      "arkit_depth_map_width_px": 256,
+      "arkit_depth_quality": "high",
+      "arkit_scene_depth_supported": true,
+      "arkit_smoothed_scene_depth_supported": true,
       "barcode_payload": null,
       "barcode_payload_safe": false,
+      "camera_intrinsics_available": true,
       "camera_position": "back",
       "capture_timestamp": "2026-05-01T12:34:56+00:00",
       "depth_available": true,

@@ -72,6 +72,10 @@ def resolve_scale_evidence_from_capture(
     """Map iPhone capture metadata to deterministic scale evidence objects."""
     candidates: list[ScaleEvidenceCandidate] = []
 
+    arkit_candidate = _build_arkit_scene_depth_candidate(capture_metadata)
+    if arkit_candidate is not None:
+        candidates.append(arkit_candidate)
+
     lidar_candidate = _build_lidar_candidate(capture_metadata)
     if lidar_candidate is not None:
         candidates.append(lidar_candidate)
@@ -104,10 +108,47 @@ def resolve_scale_evidence_from_capture(
                 "resolution_status": resolution.status,
                 "scale_confidence": resolution.scale_confidence,
                 "prompt_user_for_reference": resolution.prompt_user_for_reference,
+                "arkit_depth_available": capture_metadata.arkit_depth_available,
+                "arkit_depth_quality": capture_metadata.arkit_depth_quality,
+                "arkit_confidence_coverage": capture_metadata.arkit_confidence_coverage,
             },
         )
 
     return result
+
+
+def _build_arkit_scene_depth_candidate(
+    metadata: DeviceCaptureMetadata,
+) -> ScaleEvidenceCandidate | None:
+    if not metadata.arkit_scene_depth_supported and not metadata.arkit_depth_available:
+        return None
+
+    if metadata.arkit_depth_quality in {"high", "medium"}:
+        confidence_label = "high" if metadata.arkit_depth_quality == "high" else "medium"
+        confidence_score = 0.96 if metadata.arkit_depth_quality == "high" else 0.86
+        usable = True
+        rejection_reason = None
+    else:
+        confidence_label = "low"
+        confidence_score = 0.42
+        usable = False
+        rejection_reason = "arkit_depth_quality_insufficient"
+
+    if metadata.arkit_depth_available and not metadata.camera_intrinsics_available:
+        confidence_score = min(confidence_score, 0.58)
+        usable = False
+        rejection_reason = "camera_intrinsics_missing"
+
+    return ScaleEvidenceCandidate(
+        evidence_id="scale:arkit_scene_depth:1",
+        evidence_type="arkit_scene_depth",
+        object_type="scene_depth_map",
+        detection_source="device_depth",
+        confidence_label=confidence_label,
+        confidence_score=confidence_score,
+        usable_for_scale=usable,
+        rejection_reason=rejection_reason,
+    )
 
 
 def _build_lidar_candidate(metadata: DeviceCaptureMetadata) -> ScaleEvidenceCandidate | None:
@@ -226,6 +267,19 @@ def _resolve(
                 policy_refs=_POLICY_REFS,
             )
 
+        if selected.evidence_type == "arkit_scene_depth":
+            return ScaleEvidenceResolution(
+                resolution_id="scale_resolution:capture:1",
+                status="confirmed",
+                candidate_ids=candidate_ids,
+                selected_candidate_id=selected.evidence_id,
+                scale_confidence="high",
+                expected_range_reduction_kcal=60.0,
+                prompt_user_for_reference=False,
+                trace_message="ARKit scene-depth metadata confirmed and selected for scale.",
+                policy_refs=_POLICY_REFS,
+            )
+
         if selected.evidence_type == "lidar_depth":
             return ScaleEvidenceResolution(
                 resolution_id="scale_resolution:capture:1",
@@ -302,10 +356,11 @@ def _select_preferred_usable_candidate(
     candidates: list[ScaleEvidenceCandidate],
 ) -> ScaleEvidenceCandidate | None:
     priority = {
-        "lidar_depth": 0,
-        "barcode_serving": 1,
-        "label_ocr_serving": 2,
-        "reference_object": 3,
+        "arkit_scene_depth": 0,
+        "lidar_depth": 1,
+        "barcode_serving": 2,
+        "label_ocr_serving": 3,
+        "reference_object": 4,
     }
     usable_candidates = [candidate for candidate in candidates if candidate.usable_for_scale]
     if not usable_candidates:

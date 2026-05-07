@@ -97,8 +97,16 @@
   },
   "photo_analyze_request": {
     "capture_metadata": {
+      "arkit_confidence_coverage": null,
+      "arkit_depth_available": false,
+      "arkit_depth_map_height_px": null,
+      "arkit_depth_map_width_px": null,
+      "arkit_depth_quality": "none",
+      "arkit_scene_depth_supported": false,
+      "arkit_smoothed_scene_depth_supported": false,
       "barcode_payload": null,
       "barcode_payload_safe": false,
+      "camera_intrinsics_available": false,
       "camera_position": "back",
       "capture_timestamp": "2026-05-01T12:44:48+00:00",
       "depth_available": false,

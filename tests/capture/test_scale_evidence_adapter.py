@@ -61,6 +61,63 @@ def test_depth_lidar_confidence_is_stronger_than_photo_only_reference() -> None:
     ]
 
 
+def test_arkit_scene_depth_is_preferred_over_photo_depth_and_reference() -> None:
+    result = resolve_scale_evidence_from_capture(
+        trace_id="trace-arkit-depth",
+        capture_metadata=_metadata(
+            depth_available=True,
+            depth_quality="high",
+            lidar_available=True,
+            arkit_scene_depth_supported=True,
+            arkit_smoothed_scene_depth_supported=True,
+            arkit_depth_available=True,
+            arkit_depth_quality="high",
+            arkit_depth_map_width_px=256,
+            arkit_depth_map_height_px=192,
+            arkit_confidence_coverage=0.88,
+            camera_intrinsics_available=True,
+            reference_object_hint="fork",
+        ),
+    )
+
+    resolution = _resolution(result)
+
+    assert resolution.selected_candidate_id == "scale:arkit_scene_depth:1"
+    assert resolution.status == "confirmed"
+    assert resolution.scale_confidence == "high"
+    assert resolution.expected_range_reduction_kcal == 60.0
+    assert [candidate.evidence_id for candidate in result.candidates][:2] == [
+        "scale:arkit_scene_depth:1",
+        "scale:lidar_depth:1",
+    ]
+
+
+def test_arkit_scene_depth_requires_usable_quality_and_intrinsics() -> None:
+    result = resolve_scale_evidence_from_capture(
+        trace_id="trace-arkit-missing-intrinsics",
+        capture_metadata=_metadata(
+            arkit_scene_depth_supported=True,
+            arkit_depth_available=True,
+            arkit_depth_quality="high",
+            arkit_depth_map_width_px=256,
+            arkit_depth_map_height_px=192,
+            arkit_confidence_coverage=0.9,
+            camera_intrinsics_available=False,
+        ),
+    )
+
+    candidate = next(
+        candidate
+        for candidate in result.candidates
+        if candidate.evidence_type == "arkit_scene_depth"
+    )
+    resolution = _resolution(result)
+
+    assert candidate.usable_for_scale is False
+    assert candidate.rejection_reason == "camera_intrinsics_missing"
+    assert resolution.status == "missing_needs_reference"
+
+
 def test_barcode_metadata_maps_to_barcode_scale_evidence() -> None:
     result = resolve_scale_evidence_from_capture(
         trace_id="trace-barcode",
@@ -180,6 +237,9 @@ def test_capture_scale_adapter_emits_trace_event_with_resolution_payload() -> No
         "resolution_status": resolution.status,
         "scale_confidence": resolution.scale_confidence,
         "prompt_user_for_reference": resolution.prompt_user_for_reference,
+        "arkit_depth_available": False,
+        "arkit_depth_quality": "none",
+        "arkit_confidence_coverage": None,
     }
 
 
