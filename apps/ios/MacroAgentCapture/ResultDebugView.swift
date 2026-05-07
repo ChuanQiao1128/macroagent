@@ -40,8 +40,8 @@ struct ResultDebugView: View {
                     }
 
                     if let nutrition = response.nutrition {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("nutrition (best / min / max / source)")
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("nutrition")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             NutritionMetricRow(label: "kcal", metric: nutrition.kcal)
@@ -92,6 +92,9 @@ struct ResultDebugView: View {
             }
         }
         .navigationTitle("Result / Debug")
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 96)
+        }
     }
 }
 
@@ -100,16 +103,34 @@ private struct NutritionMetricRow: View {
     let metric: NutritionMetric
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption2)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(formatted(metric.bestEstimate))
+                    .font(.body.monospacedDigit())
+            }
+
+            Text("range \(formatted(metric.minEstimate)) - \(formatted(metric.maxEstimate))")
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
-            Text(
-                "\(metric.bestEstimate) / \(metric.minEstimate) / \(metric.maxEstimate) / \(metric.source)"
-            )
-            .font(.footnote.monospacedDigit())
-            .textSelection(.enabled)
+
+            Text(metric.source)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .textSelection(.enabled)
         }
+        .padding(.vertical, 4)
+    }
+
+    private func formatted(_ value: Double) -> String {
+        if label == "kcal" || label == "sodium_mg" {
+            return String(format: "%.0f", value)
+        }
+
+        return String(format: "%.1f", value)
     }
 }
 
